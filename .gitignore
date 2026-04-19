@@ -1,0 +1,11 @@
+# ai codegen
+AGENTS.md
+CLAUDE.md
+.agents
+.claude
+
+# wails
+build
+node_modules
+frontend/dist
+frontend/package.json.md5
