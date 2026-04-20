@@ -1,0 +1,80 @@
+:root {
+  /* Accent */
+  --accent-primary: #0066FF;
+  --accent-hover: #0052CC;
+
+  /* Foreground */
+  --foreground-primary: #1A1A1A;
+  --foreground-secondary: #666666;
+  --foreground-tertiary: #999999;
+  --foreground-inverse: #FFFFFF;
+
+  /* Surface */
+  --surface-primary: #FFFFFF;
+  --surface-secondary: #F7F7F7;
+  --surface-sidebar: #FAFAFA;
+  --surface-hover: #F0F0F0;
+  --surface-active: #E8E8E8;
+
+  /* Border */
+  --border-subtle: #E5E5E5;
+  --border-strong: #D0D0D0;
+
+  /* Code */
+  --code-bg: #F5F5F5;
+  --code-inline-bg: #EDEDED;
+
+  /* Shadow */
+  --shadow-sm: 4px;
+  --shadow-md: 8px;
+
+  /* Font */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+
+  /* Font Size */
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 32px;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+
+  /* Layout */
+  --sidebar-width: 260px;
+  --toolbar-height: 44px;
+  --status-bar-height: 28px;
+  --sidebar-header-height: 48px;
+}
+
+/* Dark theme */
+[data-theme='dark'] {
+  --accent-primary: #0066FF;
+  --accent-hover: #0052CC;
+
+  --foreground-primary: #E8E8E8;
+  --foreground-secondary: #B0B0B0;
+  --foreground-tertiary: #777777;
+  --foreground-inverse: #FFFFFF;
+
+  --surface-primary: #1A1A1A;
+  --surface-secondary: #252525;
+  --surface-sidebar: #1E1E1E;
+  --surface-hover: #2A2A2A;
+  --surface-active: #333333;
+
+  --border-subtle: #333333;
+  --border-strong: #D0D0D0;
+
+  --code-bg: #2A2A2A;
+  --code-inline-bg: #333333;
+}

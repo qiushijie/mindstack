@@ -9,3 +9,9 @@ build
 node_modules
 frontend/dist
 frontend/package.json.md5
+
+# tool
+.playwright-mcp
+
+# test
+frontend/coverage
