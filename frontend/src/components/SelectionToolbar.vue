@@ -1,5 +1,4 @@
 <script lang="ts" setup>
-import { computed } from 'vue'
 import {
   Bold,
   Italic,
@@ -11,48 +10,14 @@ import {
   Quote,
   Link,
 } from 'lucide-vue-next'
-import type { EditorBlock } from '../types/editor'
 
-const props = defineProps<{
-  block: EditorBlock | null
+defineProps<{
+  activeLabels: Set<string>
 }>()
 
 const emit = defineEmits<{
   select: [label: string]
 }>()
-
-const activeLabel = computed(() => {
-  const b = props.block
-  if (!b) return null
-  switch (b.type) {
-    case 'heading':
-      return 'H' + b.level
-    case 'paragraph':
-      return 'Text'
-    case 'bullet_list':
-      return 'List'
-    case 'ordered_list':
-      return 'OrderedList'
-    case 'todo_list':
-      return 'Todo'
-    case 'code_block':
-      return 'Code'
-    case 'blockquote':
-      return 'Quote'
-    default:
-      return null
-  }
-})
-
-const inlineActive = computed(() => {
-  const b = props.block
-  if (!b || !('content' in b)) return { strong: false, em: false, del: false }
-  return {
-    strong: b.content.some(c => c.type === 'strong'),
-    em: b.content.some(c => c.type === 'em'),
-    del: b.content.some(c => c.type === 'del'),
-  }
-})
 
 interface ToolbarItem {
   icon?: any
@@ -92,17 +57,6 @@ const rows: { items: ToolbarItem[] }[] = [
     ],
   },
 ]
-
-function isActive(label: string): boolean {
-  if (label === 'Bold') return inlineActive.value.strong
-  if (label === 'Italic') return inlineActive.value.em
-  if (label === 'Strikethrough') return inlineActive.value.del
-  if (label === 'Text') {
-    if (activeLabel.value !== 'Text') return false
-    return !inlineActive.value.strong && !inlineActive.value.em && !inlineActive.value.del
-  }
-  return activeLabel.value === label
-}
 </script>
 
 <template>
@@ -114,7 +68,7 @@ function isActive(label: string): boolean {
           v-for="item in row.items"
           :key="item.label"
           class="toolbar-btn"
-          :class="{ active: isActive(item.label) }"
+          :class="{ active: activeLabels.has(item.label) }"
           @pointerdown.prevent="emit('select', item.label)"
           @keydown.enter.prevent="emit('select', item.label)"
           @keydown.space.prevent="emit('select', item.label)"
@@ -152,6 +106,7 @@ function isActive(label: string): boolean {
 }
 
 .toolbar-btn {
+  position: relative;
   width: 32px;
   height: 32px;
   border: none;
@@ -175,6 +130,7 @@ function isActive(label: string): boolean {
 
 .toolbar-btn.active {
   background-color: var(--surface-active);
+  color: var(--foreground-primary);
 }
 
 .btn-text {

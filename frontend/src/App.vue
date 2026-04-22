@@ -6,8 +6,11 @@ import AppEditor from './components/AppEditor.vue'
 import AppStatusBar from './components/AppStatusBar.vue'
 import AppSettings from './components/AppSettings.vue'
 import { useNavigation } from './composables/useNavigation'
+import { provideEditorState } from './composables/useEditorState'
 
 const { currentPage, navigateTo } = useNavigation()
+
+provideEditorState()
 
 onMounted(() => {
   EventsOn('menu:navigate', (page: string) => {
