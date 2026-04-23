@@ -2,50 +2,18 @@
 import {
   Plus,
   Search,
-  FileText,
-  Folder,
-  FolderOpen,
 } from 'lucide-vue-next'
+import { useFileTree } from '../composables/useFileTree'
+import type { TreeNode } from '../types/file'
+import SidebarTreeNode from './SidebarTreeNode.vue'
 
-interface FileItem {
-  name: string
-  icon: 'file' | 'folder' | 'folder-open'
-  indent?: number
-  active?: boolean
-}
+const { rootPath, treeData, selectedFilePath, folderName, selectFile, toggleDir, newFile, openFolder } = useFileTree()
 
-interface FileSection {
-  label: string
-  items: FileItem[]
-}
-
-const sections: FileSection[] = [
-  {
-    label: 'FAVORITES',
-    items: [
-      { name: 'Getting Started', icon: 'file', active: true },
-      { name: 'Project Overview', icon: 'file' },
-      { name: 'Architecture Notes', icon: 'file' },
-    ],
-  },
-  {
-    label: 'WORKSPACE',
-    items: [
-      { name: 'Documentation', icon: 'folder' },
-      { name: 'API Reference', icon: 'folder-open' },
-      { name: 'Authentication', icon: 'file', indent: 1 },
-      { name: 'Endpoints', icon: 'file', indent: 1 },
-      { name: 'Technical Specs', icon: 'folder' },
-      { name: 'Meeting Notes', icon: 'folder' },
-    ],
-  },
-]
-
-function getItemIcon(icon: string) {
-  switch (icon) {
-    case 'folder': return Folder
-    case 'folder-open': return FolderOpen
-    default: return FileText
+function handleItemClick(node: TreeNode) {
+  if (node.isDir) {
+    toggleDir(node.path)
+  } else {
+    selectFile(node.path)
   }
 }
 </script>
@@ -53,8 +21,8 @@ function getItemIcon(icon: string) {
 <template>
   <aside class="sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-logo">MindStack</span>
-      <button class="sidebar-new-btn">
+      <span class="sidebar-logo">{{ folderName }}</span>
+      <button class="sidebar-new-btn" @click="newFile">
         <Plus :size="20" />
       </button>
     </div>
@@ -68,24 +36,20 @@ function getItemIcon(icon: string) {
 
     <div class="sidebar-divider" />
 
-    <div class="sidebar-tree">
-      <template v-for="section in sections" :key="section.label">
-        <span class="section-label">{{ section.label }}</span>
-        <div
-          v-for="item in section.items"
-          :key="item.name"
-          class="tree-item"
-          :class="{ active: item.active }"
-          :style="{ paddingLeft: item.indent ? '32px' : '8px' }"
-        >
-          <component
-            :is="getItemIcon(item.icon)"
-            :size="item.indent ? 14 : 16"
-            class="tree-item-icon"
-          />
-          <span class="tree-item-text">{{ item.name }}</span>
-        </div>
-      </template>
+    <div v-if="!rootPath" class="sidebar-empty">
+      <span class="empty-text">Open a folder to get started</span>
+    </div>
+
+    <div v-else class="sidebar-tree">
+      <span class="section-label">WORKSPACE</span>
+      <SidebarTreeNode
+        v-for="node in treeData"
+        :key="node.path"
+        :node="node"
+        :selected-path="selectedFilePath"
+        :depth="0"
+        @select="handleItemClick"
+      />
     </div>
   </aside>
 </template>
@@ -160,6 +124,20 @@ function getItemIcon(icon: string) {
   background-color: var(--border-subtle);
 }
 
+.sidebar-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+}
+
+.empty-text {
+  font-size: 13px;
+  color: var(--foreground-tertiary);
+  text-align: center;
+}
+
 .sidebar-tree {
   flex: 1;
   overflow-y: auto;
@@ -175,45 +153,5 @@ function getItemIcon(icon: string) {
   color: var(--foreground-tertiary);
   letter-spacing: 0.5px;
   padding: 4px var(--spacing-sm);
-}
-
-.tree-item {
-  height: 30px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: 0 var(--spacing-sm);
-  cursor: pointer;
-  color: var(--foreground-secondary);
-}
-
-.tree-item:hover {
-  background-color: var(--surface-hover);
-}
-
-.tree-item.active {
-  background-color: var(--accent-primary);
-  color: var(--foreground-inverse);
-}
-
-.tree-item.active .tree-item-icon {
-  color: var(--foreground-inverse);
-}
-
-.tree-item-icon {
-  flex-shrink: 0;
-  color: var(--foreground-tertiary);
-}
-
-.tree-item-text {
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tree-item.active .tree-item-text {
-  color: var(--foreground-inverse);
 }
 </style>

@@ -50,6 +50,9 @@ func buildMenu(app *App) *menu.Menu {
 		runtime.EventsEmit(app.ctx, "menu:file:new")
 	})
 	fileMenu.AddSeparator()
+	fileMenu.AddText("Open File...", keys.Key("ctrl+shift+o"), func(_ *menu.CallbackData) {
+		runtime.EventsEmit(app.ctx, "menu:file:open-file")
+	})
 	fileMenu.AddText("Open Folder...", keys.CmdOrCtrl("o"), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(app.ctx, "menu:file:open")
 	})

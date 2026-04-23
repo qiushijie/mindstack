@@ -26,6 +26,7 @@ interface UseCodeMirrorReturn {
   doc: Ref<string>
   focus: () => void
   destroy: () => void
+  setContent: (content: string) => void
 }
 
 type ShallowRef<T> = ReturnType<typeof shallowRef<T>>
@@ -83,6 +84,14 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     sharedView.value = null
   })
 
+  function setContent(content: string) {
+    if (!view.value) return
+    view.value.dispatch({
+      changes: { from: 0, to: view.value.state.doc.length, insert: content },
+      selection: { anchor: 0 },
+    })
+  }
+
   function focus() {
     view.value?.focus()
   }
@@ -100,5 +109,5 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     }
   })
 
-  return { view, doc, focus, destroy }
+  return { view, doc, focus, destroy, setContent }
 }

@@ -2,11 +2,11 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { syntaxTree } from '@codemirror/language'
 import { useCodeMirror } from '../composables/useCodeMirror'
-import { sampleMarkdown } from '../data/sampleMarkdown'
 import SelectionToolbar from './SelectionToolbar.vue'
 import { wrapInline, toggleBlockType, insertLink } from '../utils/markdownUtils'
 import { BlockType, getBlockTypeAtLine, isFullBlockSelection, blockTypeToLabel } from '../utils/syntaxUtils'
 import { getBlockConfigByToolbarLabel } from '../utils/blockRegistry'
+import { useFileTree } from '../composables/useFileTree'
 
 const containerRef = ref<HTMLElement | null>(null)
 const toolbarState = ref({
@@ -16,9 +16,18 @@ const toolbarState = ref({
 })
 const activeLabels = ref<Set<string>>(new Set())
 
-const { view, focus } = useCodeMirror({
+const { markDirty } = useFileTree()
+
+const { view, focus, setContent } = useCodeMirror({
   container: containerRef,
-  initialDoc: sampleMarkdown,
+  initialDoc: '',
+  onChange: () => markDirty(),
+})
+
+const { setEditorAdapter } = useFileTree()
+setEditorAdapter({
+  setContent: (content: string) => setContent(content),
+  getContent: () => view.value?.state.doc.toString() ?? '',
 })
 
 function detectActiveLabels(): Set<string> {
