@@ -30,4 +30,15 @@ format: markdown
 - [ ] Enable real-time collaboration
 
 Use inline code like \`config.yaml\` to reference files. Connect notes with [[bi-directional links]] for a powerful knowledge graph experience.
+
+## Data Overview
+
+A summary of key metrics for Q1 2026.
+
+| Name | Value | Change | Status |
+|------|-------|--------|--------|
+| Revenue | $128,400 | +12.5% | On Track |
+| Users | 3,421 | +8.3% | Growing |
+| Retention | 87.2% | -2.1% | Monitor |
+| NPS Score | 72 | +5.0% | Good |
 `

@@ -15,3 +15,5 @@ frontend/package.json.md5
 
 # test
 frontend/coverage
+.playwright-cli/
+*.out

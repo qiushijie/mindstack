@@ -7,6 +7,8 @@ import { wrapInline, toggleBlockType, insertLink } from '../utils/markdownUtils'
 import { BlockType, getBlockTypeAtLine, isFullBlockSelection, blockTypeToLabel } from '../utils/syntaxUtils'
 import { getBlockConfigByToolbarLabel } from '../utils/blockRegistry'
 import { useFileTree } from '../composables/useFileTree'
+import { getTableCellFromEvent } from '../extensions/tableWidget'
+import { parseTable, addRowBelow, addRowAbove, deleteRow, addColumnLeft, addColumnRight, deleteColumn, type TableData } from '../utils/tableUtils'
 
 const containerRef = ref<HTMLElement | null>(null)
 const toolbarState = ref({
@@ -154,6 +156,19 @@ function handleDocMousedown(e: MouseEvent) {
 
 function handleContextMenu(e: MouseEvent) {
   e.preventDefault()
+
+  // Check if right-clicking on a table
+  tableContext.value = null
+  if (view.value) {
+    const cellInfo = getTableCellFromEvent(view.value, e)
+    if (cellInfo) {
+      const tableData = parseTable(view.value, cellInfo.tableFrom, cellInfo.tableTo)
+      if (tableData) {
+        tableContext.value = { tableData, rowIdx: cellInfo.rowIdx, colIdx: cellInfo.colIdx }
+      }
+    }
+  }
+
   contextMenuState.value = {
     visible: true,
     left: e.clientX,
@@ -217,7 +232,38 @@ function handleContextAction(action: string) {
     case 'refresh':
       location.reload()
       break
+    case 'addRowAbove':
+      if (v && tableContext.value) {
+        addRowAbove(v, tableContext.value.tableData, tableContext.value.rowIdx)
+      }
+      break
+    case 'addRowBelow':
+      if (v && tableContext.value) {
+        addRowBelow(v, tableContext.value.tableData, tableContext.value.rowIdx)
+      }
+      break
+    case 'deleteRow':
+      if (v && tableContext.value) {
+        deleteRow(v, tableContext.value.tableData, tableContext.value.rowIdx)
+      }
+      break
+    case 'addColumnLeft':
+      if (v && tableContext.value) {
+        addColumnLeft(v, tableContext.value.tableData, tableContext.value.rowIdx, tableContext.value.colIdx)
+      }
+      break
+    case 'addColumnRight':
+      if (v && tableContext.value) {
+        addColumnRight(v, tableContext.value.tableData, tableContext.value.rowIdx, tableContext.value.colIdx)
+      }
+      break
+    case 'deleteColumn':
+      if (v && tableContext.value) {
+        deleteColumn(v, tableContext.value.tableData, tableContext.value.rowIdx, tableContext.value.colIdx)
+      }
+      break
   }
+  tableContext.value = null
 }
 
 const contextMenuState = ref({
@@ -225,6 +271,12 @@ const contextMenuState = ref({
   left: 0,
   top: 0,
 })
+
+const tableContext = ref<{
+  tableData: TableData
+  rowIdx: number
+  colIdx: number
+} | null>(null)
 
 onMounted(() => {
   focus()
@@ -260,11 +312,22 @@ onUnmounted(() => {
         zIndex: 200,
       }"
     >
-      <button class="ctx-item" @click="handleContextAction('cut')">Cut</button>
-      <button class="ctx-item" @click="handleContextAction('copy')">Copy</button>
-      <button class="ctx-item" @click="handleContextAction('paste')">Paste</button>
-      <div class="ctx-separator" />
-      <button class="ctx-item" @click="handleContextAction('refresh')">Refresh</button>
+      <template v-if="tableContext">
+        <button class="ctx-item" @click="handleContextAction('addRowAbove')">Add Row Above</button>
+        <button class="ctx-item" @click="handleContextAction('addRowBelow')">Add Row Below</button>
+        <button class="ctx-item" @click="handleContextAction('deleteRow')">Delete Row</button>
+        <div class="ctx-separator" />
+        <button class="ctx-item" @click="handleContextAction('addColumnLeft')">Add Column Left</button>
+        <button class="ctx-item" @click="handleContextAction('addColumnRight')">Add Column Right</button>
+        <button class="ctx-item" @click="handleContextAction('deleteColumn')">Delete Column</button>
+      </template>
+      <template v-else>
+        <button class="ctx-item" @click="handleContextAction('cut')">Cut</button>
+        <button class="ctx-item" @click="handleContextAction('copy')">Copy</button>
+        <button class="ctx-item" @click="handleContextAction('paste')">Paste</button>
+        <div class="ctx-separator" />
+        <button class="ctx-item" @click="handleContextAction('refresh')">Refresh</button>
+      </template>
     </div>
   </div>
 </template>

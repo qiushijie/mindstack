@@ -8,6 +8,7 @@ import { keymap } from '@codemirror/view'
 import { createEditorTheme } from '../extensions/theme'
 import { createKeymapExtension } from '../extensions/keymap'
 import { markdownStyles, checkboxClickHandler } from '../extensions/markdownStyles'
+import { tablePlugin, tableEditHandler } from '../extensions/tableWidget'
 import { createBlockGutter } from '../extensions/blockGutter'
 import { createDragSort } from '../extensions/dragSort'
 import { createInputHandler } from '../extensions/inputHandler'
@@ -46,6 +47,8 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       createKeymapExtension(),
       markdownStyles,
       checkboxClickHandler,
+      tablePlugin,
+      tableEditHandler,
       ...createBlockGutter(),
       ...createDragSort(),
       createInputHandler(),

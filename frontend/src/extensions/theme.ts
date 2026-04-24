@@ -251,6 +251,52 @@ const editorTheme = EditorView.theme({
     fontSize: 'var(--font-size-sm)',
     color: 'var(--foreground-tertiary)',
   },
+
+  // Table widget
+  '.cm-table-widget': {
+    borderCollapse: 'separate' as unknown as string,
+    borderSpacing: '0',
+    width: '100%',
+    borderRadius: '4px',
+    overflow: 'hidden',
+    border: '1px solid var(--border-strong)',
+    fontSize: 'var(--font-size-md)',
+    fontFamily: 'var(--font-sans)',
+    tableLayout: 'fixed' as unknown as string,
+  },
+  '.cm-table-widget thead': {
+    backgroundColor: 'var(--surface-secondary)',
+  },
+  '.cm-table-widget th': {
+    padding: '10px 16px',
+    textAlign: 'left' as unknown as string,
+    fontWeight: '600',
+    color: 'var(--foreground-primary)',
+    fontSize: 'var(--font-size-sm)',
+    borderRight: '1px solid var(--border-subtle)',
+    borderBottom: '1px solid var(--border-subtle)',
+    cursor: 'default',
+  },
+  '.cm-table-widget th:last-child': {
+    borderRight: 'none',
+  },
+  '.cm-table-widget td': {
+    padding: '10px 16px',
+    textAlign: 'left' as unknown as string,
+    color: 'var(--foreground-primary)',
+    borderRight: '1px solid var(--border-subtle)',
+    borderBottom: '1px solid var(--border-subtle)',
+    cursor: 'text',
+  },
+  '.cm-table-widget td:last-child': {
+    borderRight: 'none',
+  },
+  '.cm-table-widget tbody tr:last-child td': {
+    borderBottom: 'none',
+  },
+  '.cm-table-widget tbody tr:hover': {
+    backgroundColor: 'var(--surface-hover)',
+  },
 }, { dark: false })
 
 const highlightStyle = HighlightStyle.define([
