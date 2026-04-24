@@ -9,6 +9,7 @@ import {
   ArrowLeft,
 } from 'lucide-vue-next'
 import { useNavigation } from '../composables/useNavigation'
+import { useSettings } from '../composables/useSettings'
 
 const { navigateTo } = useNavigation()
 
@@ -31,8 +32,7 @@ const navItems: NavItem[] = [
 
 const theme = ref<'light' | 'dark'>('light')
 const language = ref('en')
-const autoSave = ref(true)
-const autoSaveDelay = ref('5s')
+const { autoSave, autoSaveDelay } = useSettings()
 const fontFamily = ref('Inter')
 const fontSize = ref(16)
 const tabSize = ref(2)
@@ -134,7 +134,7 @@ const autoPull = ref(false)
                 <span class="setting-desc">Time in seconds before auto save triggers</span>
               </div>
               <div class="input-value wide">
-                {{ autoSaveDelay }}
+                {{ autoSaveDelay }}s
               </div>
             </div>
           </div>

@@ -27,7 +27,7 @@ export function parseTable(view: EditorView, tableFrom: number, tableTo: number)
   if (!current || current.name !== 'Table') return null
 
   const headers: TableCell[] = []
-  const rows: TableCell[][] = []
+  const rows: { colIdx: number; cell: TableCell }[][] = []
 
   const tableStart = current.from
   const tableEnd = current.to

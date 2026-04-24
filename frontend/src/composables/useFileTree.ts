@@ -10,6 +10,7 @@ import {
 } from '../../wailsjs/go/main/App'
 import { main } from '../../wailsjs/go/models'
 import type { TreeNode } from '../types/file'
+import { useSettings } from './useSettings'
 
 export interface EditorAdapter {
   setContent(content: string): void
@@ -22,8 +23,11 @@ const selectedFilePath = ref('')
 const selectedFileContent = ref('')
 const isDirty = ref(false)
 let editorAdapter: EditorAdapter | null = null
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 
 export function useFileTree() {
+  const { autoSave, autoSaveDelay } = useSettings()
+
   const folderName = computed(() => {
     if (!rootPath.value) return 'MindStack'
     const parts = rootPath.value.replace(/\/$/, '').split('/')
@@ -91,6 +95,7 @@ export function useFileTree() {
     const path = await OpenFolderDialog()
     if (!path) return
 
+    clearAutoSaveTimer()
     rootPath.value = path
     selectedFilePath.value = ''
     selectedFileContent.value = ''
@@ -116,9 +121,17 @@ export function useFileTree() {
     await saveAppConfig()
   }
 
+  function clearAutoSaveTimer() {
+    if (autoSaveTimer !== null) {
+      clearTimeout(autoSaveTimer)
+      autoSaveTimer = null
+    }
+  }
+
   async function selectFile(path: string) {
     if (path === selectedFilePath.value) return
 
+    clearAutoSaveTimer()
     const content = await ReadFileContent(path)
     selectedFilePath.value = path
     selectedFileContent.value = content
@@ -147,6 +160,7 @@ export function useFileTree() {
   async function saveCurrentFile() {
     if (!selectedFilePath.value) return
 
+    clearAutoSaveTimer()
     const content = editorAdapter ? editorAdapter.getContent() : selectedFileContent.value
     const err = await SaveFileContent(selectedFilePath.value, content)
     if (!err) {
@@ -155,6 +169,7 @@ export function useFileTree() {
   }
 
   function newFile() {
+    clearAutoSaveTimer()
     selectedFilePath.value = ''
     selectedFileContent.value = ''
     isDirty.value = false
@@ -165,6 +180,13 @@ export function useFileTree() {
 
   function markDirty() {
     isDirty.value = true
+
+    if (autoSave.value && selectedFilePath.value) {
+      clearAutoSaveTimer()
+      autoSaveTimer = setTimeout(() => {
+        saveCurrentFile()
+      }, autoSaveDelay.value * 1000)
+    }
   }
 
   async function refreshTree() {

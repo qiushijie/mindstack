@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Mock wailsjs modules before importing the composable
 vi.mock('../../../wailsjs/go/main/App', () => ({
@@ -24,6 +24,15 @@ vi.mock('../../../wailsjs/go/models', () => ({
       }
     },
   },
+}))
+
+// Mock useSettings to control auto-save behavior
+vi.mock('../useSettings', () => ({
+  useSettings: () => ({
+    autoSave: { value: true },
+    autoSaveDelay: { value: 1 },
+    loadSettings: vi.fn(),
+  }),
 }))
 
 import {
@@ -398,6 +407,140 @@ describe('useFileTree', () => {
       markDirty()
 
       expect(isDirty.value).toBe(true)
+    })
+  })
+
+  describe('auto-save', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('auto-saves after delay when autoSave is enabled and file is selected', async () => {
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectedFilePath, setEditorAdapter, markDirty } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      setEditorAdapter(mockAdapter)
+      selectedFilePath.value = '/root/file.md'
+
+      markDirty()
+
+      expect(SaveFileContent).not.toHaveBeenCalled()
+
+      vi.advanceTimersByTime(1000)
+      await vi.runOnlyPendingTimersAsync()
+
+      expect(SaveFileContent).toHaveBeenCalledWith('/root/file.md', 'content')
+    })
+
+    it('resets timer on subsequent markDirty calls', async () => {
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectedFilePath, setEditorAdapter, markDirty } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      setEditorAdapter(mockAdapter)
+      selectedFilePath.value = '/root/file.md'
+
+      markDirty()
+      vi.advanceTimersByTime(500)
+
+      markDirty()
+      vi.advanceTimersByTime(500)
+
+      expect(SaveFileContent).not.toHaveBeenCalled()
+
+      vi.advanceTimersByTime(500)
+      await vi.runOnlyPendingTimersAsync()
+
+      expect(SaveFileContent).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not auto-save when selectedFilePath is empty', () => {
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { markDirty } = useFileTree()
+
+      markDirty()
+      vi.advanceTimersByTime(5000)
+
+      expect(SaveFileContent).not.toHaveBeenCalled()
+    })
+
+    it('cancels auto-save on manual saveCurrentFile', async () => {
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectedFilePath, setEditorAdapter, markDirty, saveCurrentFile } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      setEditorAdapter(mockAdapter)
+      selectedFilePath.value = '/root/file.md'
+
+      markDirty()
+
+      await saveCurrentFile()
+
+      vi.advanceTimersByTime(5000)
+      await vi.runOnlyPendingTimersAsync()
+
+      expect(SaveFileContent).toHaveBeenCalledTimes(1)
+    })
+
+    it('cancels auto-save on selectFile', async () => {
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+      vi.mocked(ReadFileContent).mockResolvedValue('new content')
+
+      const { selectedFilePath, setEditorAdapter, markDirty, selectFile } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      setEditorAdapter(mockAdapter)
+      selectedFilePath.value = '/root/file.md'
+
+      markDirty()
+
+      await selectFile('/root/other.md')
+
+      vi.advanceTimersByTime(5000)
+      await vi.runOnlyPendingTimersAsync()
+
+      expect(SaveFileContent).not.toHaveBeenCalled()
+    })
+
+    it('cancels auto-save on newFile', () => {
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectedFilePath, setEditorAdapter, markDirty, newFile } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      setEditorAdapter(mockAdapter)
+      selectedFilePath.value = '/root/file.md'
+
+      markDirty()
+      newFile()
+
+      vi.advanceTimersByTime(5000)
+
+      expect(SaveFileContent).not.toHaveBeenCalled()
+    })
+
+    it('cancels auto-save on openFolder', async () => {
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+      vi.mocked(OpenFolderDialog).mockResolvedValue('/newroot')
+      vi.mocked(ReadDirEntries).mockResolvedValue([])
+
+      const { selectedFilePath, setEditorAdapter, markDirty, openFolder } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      setEditorAdapter(mockAdapter)
+      selectedFilePath.value = '/root/file.md'
+
+      markDirty()
+
+      await openFolder()
+
+      vi.advanceTimersByTime(5000)
+      await vi.runOnlyPendingTimersAsync()
+
+      expect(SaveFileContent).not.toHaveBeenCalled()
     })
   })
 
