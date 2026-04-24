@@ -16,4 +16,6 @@ frontend/package.json.md5
 # test
 frontend/coverage
 .playwright-cli/
+tests/e2e/playwright-report/
+tests/e2e/test-results/
 *.out

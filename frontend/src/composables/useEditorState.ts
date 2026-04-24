@@ -1,4 +1,4 @@
-import { inject, provide, shallowRef, type ShallowRef } from 'vue'
+import { inject, provide, shallowRef, watch, type ShallowRef } from 'vue'
 import type { EditorView } from '@codemirror/view'
 
 const EDITOR_VIEW_KEY = Symbol('editorView')
@@ -6,6 +6,13 @@ const EDITOR_VIEW_KEY = Symbol('editorView')
 export function provideEditorState() {
   const editorView = shallowRef<EditorView | null>(null)
   provide(EDITOR_VIEW_KEY, editorView)
+
+  if (import.meta.env.DEV) {
+    watch(editorView, (v) => {
+      ;(window as any).__cmView = v
+    })
+  }
+
   return { editorView }
 }
 

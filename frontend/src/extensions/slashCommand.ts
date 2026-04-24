@@ -5,6 +5,8 @@ import { BLOCK_REGISTRY, type BlockConfig } from '../utils/blockRegistry'
 
 // StateEffect to track the currently selected index in the slash menu
 const setSelectedIndex = StateEffect.define<number>({})
+// StateEffect to force-close the slash menu
+const closeSlashMenu = StateEffect.define<null>({})
 
 /** Extract initials from each word in the label (e.g. "Code Block" -> "cb") */
 function getInitials(label: string): string {
@@ -93,10 +95,12 @@ export const slashCommand = ViewPlugin.fromClass(class {
   decorations: DecorationSet
   selectedIndex: number
   activeSlashFrom: number
+  dismissed: boolean
 
   constructor(view: EditorView) {
     this.selectedIndex = 0
     this.activeSlashFrom = -1
+    this.dismissed = false
     this.decorations = this.build(view)
   }
 
@@ -109,17 +113,23 @@ export const slashCommand = ViewPlugin.fromClass(class {
     }
 
     if (update.docChanged || update.selectionSet) {
+      this.dismissed = false
       // Reset selected index when filter text changes
       if (update.docChanged) {
         this.selectedIndex = 0
       }
       this.decorations = this.build(update.view)
-    } else if (update.transactions.some(t => t.effects.some(e => e.is(setSelectedIndex)))) {
+    } else if (update.transactions.some(t => t.effects.some(e => e.is(setSelectedIndex) || e.is(closeSlashMenu)))) {
       this.decorations = this.build(update.view)
     }
   }
 
   build(view: EditorView): DecorationSet {
+    if (this.dismissed) {
+      this.activeSlashFrom = -1
+      return Decoration.none
+    }
+
     const pos = view.state.selection.main.head
     const line = view.state.doc.lineAt(pos)
 
@@ -185,9 +195,9 @@ const slashDismissHandler = EditorView.domEventHandlers({
     if (!plugin || plugin.activeSlashFrom === -1) return false
 
     if (event.key === 'Escape') {
+      plugin.dismissed = true
       plugin.activeSlashFrom = -1
-      // Force decoration rebuild
-      view.dispatch({})
+      view.dispatch({ effects: [closeSlashMenu.of(null)] })
       return true
     }
 

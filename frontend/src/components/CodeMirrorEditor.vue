@@ -154,6 +154,20 @@ function handleDocMousedown(e: MouseEvent) {
   }
 }
 
+function handleDocKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    if (contextMenuState.value.visible) {
+      contextMenuState.value.visible = false
+      e.preventDefault()
+      e.stopPropagation()
+    } else if (toolbarState.value.visible) {
+      toolbarState.value.visible = false
+      e.preventDefault()
+      e.stopPropagation()
+    }
+  }
+}
+
 function handleContextMenu(e: MouseEvent) {
   e.preventDefault()
 
@@ -281,10 +295,12 @@ const tableContext = ref<{
 onMounted(() => {
   focus()
   document.addEventListener('mousedown', handleDocMousedown)
+  document.addEventListener('keydown', handleDocKeydown)
 })
 
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleDocMousedown)
+  document.removeEventListener('keydown', handleDocKeydown)
 })
 </script>
 
