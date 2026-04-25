@@ -6,6 +6,16 @@ export function AddRecentEntry(arg1:string,arg2:boolean):Promise<void>;
 
 export function ClearRecentEntries():Promise<void>;
 
+export function ClipboardGetText():Promise<string>;
+
+export function ClipboardSetText(arg1:string):Promise<void>;
+
+export function ConfirmDelete(arg1:string,arg2:boolean):Promise<boolean>;
+
+export function DeleteFile(arg1:string):Promise<void>;
+
+export function FileExists(arg1:string):Promise<boolean>;
+
 export function GetFileServerPort():Promise<number>;
 
 export function GetRootPath():Promise<string>;

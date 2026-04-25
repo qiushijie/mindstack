@@ -6,6 +6,12 @@ export async function waitForAppReady(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle')
 }
 
+export async function resetAppState(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    return (window as any).__resetFileTreeState?.()
+  })
+}
+
 export async function navigateTo(page: Page, name: 'editor' | 'settings'): Promise<void> {
   await page.evaluate((n) => {
     // Exposed in DEV mode by useNavigation.ts

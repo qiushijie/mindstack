@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { waitForAppReady } from '../helpers/app'
+import { waitForAppReady, resetAppState } from '../helpers/app'
 import { getContent, setContent, typeInEditor, selectAll, getStatusText, focusEditor } from '../helpers/editor'
 
 test.describe('Editor Input', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await waitForAppReady(page)
+    await resetAppState(page)
     // Clear any restored content
     await setContent(page, '')
   })

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { waitForAppReady } from '../helpers/app'
+import { waitForAppReady, resetAppState } from '../helpers/app'
 import { getContent, setContent, typeInEditor, selectAll, focusEditor, clearEditor } from '../helpers/editor'
 
 // Toolbar row 1: Bold(0), Italic(1), Strikethrough(2), Text(3)
@@ -21,6 +21,7 @@ test.describe('Editor Formatting', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await waitForAppReady(page)
+    await resetAppState(page)
     await clearEditor(page)
   })
 

@@ -1,6 +1,6 @@
 import path from 'path'
 import { test, expect } from '@playwright/test'
-import { waitForAppReady } from '../helpers/app'
+import { waitForAppReady, resetAppState } from '../helpers/app'
 import { getContent, clearEditor, focusEditor, setContent, moveCursorToEnd } from '../helpers/editor'
 
 const FIXTURE_IMAGES = path.resolve(__dirname, '../fixtures/workspace/images')
@@ -39,6 +39,7 @@ test.describe('Editor Image', () => {
 
     await page.goto('/')
     await waitForAppReady(page)
+    await resetAppState(page)
     await clearEditor(page)
   })
 

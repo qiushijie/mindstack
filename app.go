@@ -57,6 +57,15 @@ func (a *App) SetRootPath(p string) {
 	a.rootPath = p
 }
 
+func (a *App) ClipboardSetText(text string) {
+	runtime.ClipboardSetText(a.ctx, text)
+}
+
+func (a *App) ClipboardGetText() string {
+	text, _ := runtime.ClipboardGetText(a.ctx)
+	return text
+}
+
 func (a *App) GetRootPath() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -151,6 +160,29 @@ func (a *App) ReadDirEntries(dirPath string) []FileEntry {
 	})
 
 	return result
+}
+
+func (a *App) FileExists(filePath string) bool {
+	_, err := os.Stat(filePath)
+	return err == nil
+}
+
+func (a *App) ConfirmDelete(name string, isDir bool) bool {
+	label := "file"
+	if isDir {
+		label = "folder"
+	}
+	result, _ := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+		Type:    runtime.QuestionDialog,
+		Title:   "Confirm Delete",
+		Message: "Delete " + label + " \"" + name + "\"?",
+		Buttons: []string{"Delete", "Cancel"},
+	})
+	return result == "Delete"
+}
+
+func (a *App) DeleteFile(filePath string) error {
+	return MoveToTrash(filePath)
 }
 
 func (a *App) ReadFileContent(filePath string) string {

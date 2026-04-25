@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { waitForAppReady } from '../helpers/app'
+import { waitForAppReady, resetAppState } from '../helpers/app'
 import { getContent, setContent, clearEditor, focusEditor } from '../helpers/editor'
 
 async function hoverGutter(page: import('@playwright/test').Page) {
@@ -56,6 +56,7 @@ test.describe('Editor Drag Sort', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await waitForAppReady(page)
+    await resetAppState(page)
     await clearEditor(page)
   })
 

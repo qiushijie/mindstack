@@ -3,7 +3,7 @@ const waitOn = require('wait-on')
 const fs = require('fs')
 const path = require('path')
 
-const ROOT_DIR = path.join(__dirname, '..', '..')
+const ROOT_DIR = path.join(__dirname, '..', '..', '..')
 const LOG_FILE = path.join(__dirname, '..', 'wails-dev.log')
 const PID_FILE = path.join(__dirname, '..', 'wails-dev.pid')
 

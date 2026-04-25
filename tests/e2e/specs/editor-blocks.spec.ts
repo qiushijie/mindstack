@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { waitForAppReady } from '../helpers/app'
+import { waitForAppReady, resetAppState } from '../helpers/app'
 import { getContent, clearEditor, focusEditor } from '../helpers/editor'
 
 test.describe('Editor Block Types', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await waitForAppReady(page)
+    await resetAppState(page)
     await clearEditor(page)
   })
 

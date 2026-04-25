@@ -10,6 +10,26 @@ export function ClearRecentEntries() {
   return window['go']['main']['App']['ClearRecentEntries']();
 }
 
+export function ClipboardGetText() {
+  return window['go']['main']['App']['ClipboardGetText']();
+}
+
+export function ClipboardSetText(arg1) {
+  return window['go']['main']['App']['ClipboardSetText'](arg1);
+}
+
+export function ConfirmDelete(arg1, arg2) {
+  return window['go']['main']['App']['ConfirmDelete'](arg1, arg2);
+}
+
+export function DeleteFile(arg1) {
+  return window['go']['main']['App']['DeleteFile'](arg1);
+}
+
+export function FileExists(arg1) {
+  return window['go']['main']['App']['FileExists'](arg1);
+}
+
 export function GetFileServerPort() {
   return window['go']['main']['App']['GetFileServerPort']();
 }

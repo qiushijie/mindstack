@@ -560,6 +560,74 @@ describe('useFileTree', () => {
     })
   })
 
+  describe('refreshDir', () => {
+    it('refreshes expanded directory children', async () => {
+      const { treeData, toggleDir, openFolder, refreshDir } = useFileTree()
+
+      // Setup: open folder with a directory
+      vi.mocked(OpenFolderDialog).mockResolvedValue('/root')
+      vi.mocked(ReadDirEntries).mockResolvedValueOnce([
+        { name: 'src', path: '/root/src', isDir: true },
+      ])
+      await openFolder()
+
+      // Expand the directory
+      vi.mocked(ReadDirEntries).mockResolvedValueOnce([
+        { name: 'old.ts', path: '/root/src/old.ts', isDir: false },
+      ])
+      await toggleDir('/root/src')
+
+      // Refresh the directory
+      vi.mocked(ReadDirEntries).mockResolvedValueOnce([
+        { name: 'new.ts', path: '/root/src/new.ts', isDir: false },
+      ])
+      await refreshDir('/root/src')
+
+      const srcNode = treeData.value.find(n => n.path === '/root/src')
+      expect(srcNode?.children).toHaveLength(1)
+      expect(srcNode?.children[0].name).toBe('new.ts')
+    })
+
+    it('does nothing for collapsed directory', async () => {
+      const { treeData, openFolder, refreshDir } = useFileTree()
+
+      vi.mocked(OpenFolderDialog).mockResolvedValue('/root')
+      vi.mocked(ReadDirEntries).mockResolvedValueOnce([
+        { name: 'src', path: '/root/src', isDir: true },
+      ])
+      await openFolder()
+
+      await refreshDir('/root/src')
+
+      const srcNode = treeData.value.find(n => n.path === '/root/src')
+      expect(srcNode?.expanded).toBe(false)
+      expect(srcNode?.children).toEqual([])
+      expect(ReadDirEntries).toHaveBeenCalledTimes(1) // only from openFolder
+    })
+
+    it('does nothing for non-existent path', async () => {
+      const { refreshDir } = useFileTree()
+
+      await refreshDir('/nonexistent')
+
+      expect(ReadDirEntries).not.toHaveBeenCalled()
+    })
+
+    it('does nothing for file node', async () => {
+      const { treeData, openFolder, refreshDir } = useFileTree()
+
+      vi.mocked(OpenFolderDialog).mockResolvedValue('/root')
+      vi.mocked(ReadDirEntries).mockResolvedValueOnce([
+        { name: 'file.md', path: '/root/file.md', isDir: false },
+      ])
+      await openFolder()
+
+      await refreshDir('/root/file.md')
+
+      expect(ReadDirEntries).toHaveBeenCalledTimes(1) // only from openFolder
+    })
+  })
+
   describe('refreshTree', () => {
     it('refreshes tree data from rootPath', async () => {
       vi.mocked(ReadDirEntries).mockResolvedValue([
@@ -634,5 +702,71 @@ describe('useFileTree', () => {
       expect(selectedFileContent.value).toBe('content')
       expect(AddRecentEntry).toHaveBeenCalledWith('/recent/doc.md', false)
     })
+  })
+})
+
+import { resolveUniqueFilePath, resolvePasteFilePath } from '../useFileTree'
+
+describe('resolveUniqueFilePath', () => {
+  it('returns original path when no conflict', async () => {
+    const exists = vi.fn().mockResolvedValue(false)
+    const result = await resolveUniqueFilePath('/root', 'file.md', exists)
+    expect(result).toBe('/root/file.md')
+    expect(exists).toHaveBeenCalledWith('/root/file.md')
+  })
+
+  it('appends numeric suffix on conflict', async () => {
+    const exists = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+    const result = await resolveUniqueFilePath('/root', 'file.md', exists)
+    expect(result).toBe('/root/file-2.md')
+    expect(exists).toHaveBeenNthCalledWith(1, '/root/file.md')
+    expect(exists).toHaveBeenNthCalledWith(2, '/root/file-1.md')
+    expect(exists).toHaveBeenNthCalledWith(3, '/root/file-2.md')
+  })
+
+  it('handles file without extension', async () => {
+    const exists = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+    const result = await resolveUniqueFilePath('/root', 'README', exists)
+    expect(result).toBe('/root/README-1')
+  })
+
+  it('handles hidden files with extension', async () => {
+    const exists = vi.fn().mockResolvedValue(false)
+    const result = await resolveUniqueFilePath('/root', '.gitignore', exists)
+    expect(result).toBe('/root/.gitignore')
+  })
+})
+
+describe('resolvePasteFilePath', () => {
+  it('uses first line filename and returns unique path', async () => {
+    const exists = vi.fn().mockResolvedValue(false)
+    const result = await resolvePasteFilePath('/root', 'notes.md\n# Hello', exists)
+    expect(result.path).toBe('/root/notes.md')
+    expect(result.content).toBe('notes.md\n# Hello')
+  })
+
+  it('sanitizes illegal characters in filename', async () => {
+    const exists = vi.fn().mockResolvedValue(false)
+    const result = await resolvePasteFilePath('/root', 'my<file>.md\ncontent', exists)
+    expect(result.path).toBe('/root/my_file_.md')
+  })
+
+  it('resolves conflicts with suffix', async () => {
+    const exists = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+    const result = await resolvePasteFilePath('/root', 'data.txt', exists)
+    expect(result.path).toBe('/root/data-1.txt')
+  })
+
+  it('falls back to pasted.md when no valid filename', async () => {
+    const exists = vi.fn().mockResolvedValue(false)
+    const result = await resolvePasteFilePath('/root', '\n\n', exists)
+    expect(result.path).toBe('/root/pasted.md')
   })
 })

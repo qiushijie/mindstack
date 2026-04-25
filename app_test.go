@@ -133,6 +133,81 @@ func TestSaveFileContent(t *testing.T) {
 	})
 }
 
+func TestFileExists(t *testing.T) {
+	app := NewApp()
+
+	t.Run("existing file", func(t *testing.T) {
+		dir := t.TempDir()
+		fp := filepath.Join(dir, "exists.md")
+		createFile(t, dir, "exists.md", "content")
+
+		if !app.FileExists(fp) {
+			t.Fatal("expected FileExists to return true for existing file")
+		}
+	})
+
+	t.Run("existing directory", func(t *testing.T) {
+		dir := t.TempDir()
+		subDir := filepath.Join(dir, "subdir")
+		createDir(t, dir, "subdir")
+
+		if !app.FileExists(subDir) {
+			t.Fatal("expected FileExists to return true for existing directory")
+		}
+	})
+
+	t.Run("non-existent path", func(t *testing.T) {
+		if app.FileExists("/non/existent/file.md") {
+			t.Fatal("expected FileExists to return false for non-existent path")
+		}
+	})
+}
+
+func TestDeleteFile(t *testing.T) {
+	app := NewApp()
+	// Override HOME to avoid polluting the real trash.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	t.Run("delete existing file", func(t *testing.T) {
+		dir := t.TempDir()
+		fp := filepath.Join(dir, "delete-me.md")
+		createFile(t, dir, "delete-me.md", "bye")
+
+		err := app.DeleteFile(fp)
+		if err != nil {
+			t.Fatalf("DeleteFile failed: %v", err)
+		}
+
+		if _, err := os.Stat(fp); !os.IsNotExist(err) {
+			t.Fatal("file should not exist after deletion")
+		}
+	})
+
+	t.Run("delete existing directory", func(t *testing.T) {
+		dir := t.TempDir()
+		subDir := filepath.Join(dir, "delete-dir")
+		createDir(t, dir, "delete-dir")
+		createFile(t, subDir, "inner.md", "content")
+
+		err := app.DeleteFile(subDir)
+		if err != nil {
+			t.Fatalf("DeleteFile failed: %v", err)
+		}
+
+		if _, err := os.Stat(subDir); !os.IsNotExist(err) {
+			t.Fatal("directory should not exist after deletion")
+		}
+	})
+
+	t.Run("return error for non-existent path", func(t *testing.T) {
+		err := app.DeleteFile("/non/existent/path")
+		if err == nil {
+			t.Fatal("expected error when deleting non-existent path")
+		}
+	})
+}
+
 func assertEntry(t *testing.T, entry FileEntry, expectedName, expectedPath string, expectedIsDir bool) {
 	t.Helper()
 	if entry.Name != expectedName {
@@ -158,4 +233,32 @@ func createDir(t *testing.T, parent, name string) {
 	if err := os.Mkdir(filepath.Join(parent, name), 0755); err != nil {
 		t.Fatalf("failed to create directory %s: %v", name, err)
 	}
+}
+
+func TestConfirmDelete(t *testing.T) {
+	app := NewApp()
+
+	// ConfirmDelete calls runtime.MessageDialog which requires a valid Wails
+	// context. In unit tests the context is nil, so the call panics.
+	// We verify the method exists and has the expected signature by checking
+	// that it is a bound method on *App.
+	_ = app.ConfirmDelete
+}
+
+func TestClipboardSetText(t *testing.T) {
+	app := NewApp()
+
+	// ClipboardSetText calls runtime.ClipboardSetText which requires a valid
+	// Wails context. In unit tests the context is nil, so the call panics.
+	// We verify the method exists and has the expected signature.
+	_ = app.ClipboardSetText
+}
+
+func TestClipboardGetText(t *testing.T) {
+	app := NewApp()
+
+	// ClipboardGetText calls runtime.ClipboardGetText which requires a valid
+	// Wails context. In unit tests the context is nil, so the call panics.
+	// We verify the method exists and has the expected signature.
+	_ = app.ClipboardGetText
 }

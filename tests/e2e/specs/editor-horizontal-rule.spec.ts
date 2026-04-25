@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { waitForAppReady } from '../helpers/app'
+import { waitForAppReady, resetAppState } from '../helpers/app'
 import { getContent, clearEditor, focusEditor, setContent } from '../helpers/editor'
 
 test.describe('Editor Horizontal Rule', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await waitForAppReady(page)
+    await resetAppState(page)
     await clearEditor(page)
   })
 

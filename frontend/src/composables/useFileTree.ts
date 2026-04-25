@@ -10,12 +10,56 @@ import {
   SetWorkspaceRoot,
   GetFileServerPort,
   AddRecentEntry,
+  FileExists,
 } from '../../wailsjs/go/main/App'
 import { main } from '../../wailsjs/go/models'
 import type { TreeNode } from '../types/file'
 import { useSettings } from './useSettings'
 import { useEditorState } from './useEditorState'
 import { setCurrentFilePath, setFileServerPort } from '../extensions/currentFilePath'
+
+export async function resolveUniqueFilePath(
+  dirPath: string,
+  fileName: string,
+  fileExists: (path: string) => Promise<boolean>
+): Promise<string> {
+  const dotIndex = fileName.lastIndexOf('.')
+  const base = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
+  const ext = dotIndex > 0 ? fileName.slice(dotIndex) : ''
+  let targetName = fileName
+  let targetPath = dirPath + '/' + targetName
+  let counter = 1
+  while (await fileExists(targetPath)) {
+    targetName = base + '-' + counter + ext
+    targetPath = dirPath + '/' + targetName
+    counter++
+  }
+  return targetPath
+}
+
+export async function resolvePasteFilePath(
+  dirPath: string,
+  clipboardText: string,
+  fileExists: (path: string) => Promise<boolean>
+): Promise<{ path: string; content: string }> {
+  const fileName = clipboardText.trim().split('\n')[0].split('/').pop() || 'pasted.md'
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const [nameBase, nameExt] = (() => {
+    const idx = safeName.lastIndexOf('.')
+    return idx > 0 ? [safeName.slice(0, idx), safeName.slice(idx)] : [safeName, '']
+  })()
+
+  let filePath = dirPath + '/' + safeName
+  let counter = 1
+  while (await fileExists(filePath)) {
+    filePath = dirPath + '/' + nameBase + '-' + counter + nameExt
+    counter++
+  }
+
+  return { path: filePath, content: clipboardText }
+}
+
+export const copiedFilePath = ref('')
 
 export interface EditorAdapter {
   setContent(content: string): void
@@ -30,6 +74,53 @@ const isDirty = ref(false)
 let editorAdapter: EditorAdapter | null = null
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 
+function clearAutoSaveTimer() {
+  if (autoSaveTimer !== null) {
+    clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+  }
+}
+
+function entriesToNodes(entries: main.FileEntry[] | null | undefined): TreeNode[] {
+  if (!entries) return []
+  return entries.map(e => ({
+    name: e.name,
+    path: e.path,
+    isDir: e.isDir,
+    expanded: false,
+    children: [],
+  }))
+}
+
+function findNode(nodes: TreeNode[], path: string): TreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    if (node.isDir) {
+      const found = findNode(node.children, path)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+if (import.meta.env.DEV) {
+  ;(window as any).__setTestWorkspace = (path: string, nodes: TreeNode[]) => {
+    rootPath.value = path
+    treeData.value = nodes
+  }
+  ;(window as any).__resetFileTreeState = () => {
+    clearAutoSaveTimer()
+    rootPath.value = ''
+    treeData.value = []
+    selectedFilePath.value = ''
+    selectedFileContent.value = ''
+    isDirty.value = false
+    if (editorAdapter) {
+      editorAdapter.setContent('')
+    }
+  }
+}
+
 export function useFileTree() {
   const { autoSave, autoSaveDelay } = useSettings()
   const { editorView: sharedView } = useEditorState()
@@ -42,28 +133,6 @@ export function useFileTree() {
 
   function setEditorAdapter(adapter: EditorAdapter) {
     editorAdapter = adapter
-  }
-
-  function entriesToNodes(entries: main.FileEntry[] | null | undefined): TreeNode[] {
-    if (!entries) return []
-    return entries.map(e => ({
-      name: e.name,
-      path: e.path,
-      isDir: e.isDir,
-      expanded: false,
-      children: [],
-    }))
-  }
-
-  function findNode(nodes: TreeNode[], path: string): TreeNode | null {
-    for (const node of nodes) {
-      if (node.path === path) return node
-      if (node.isDir) {
-        const found = findNode(node.children, path)
-        if (found) return found
-      }
-    }
-    return null
   }
 
   async function saveAppConfig() {
@@ -139,13 +208,6 @@ export function useFileTree() {
     AddRecentEntry(path, false)
   }
 
-  function clearAutoSaveTimer() {
-    if (autoSaveTimer !== null) {
-      clearTimeout(autoSaveTimer)
-      autoSaveTimer = null
-    }
-  }
-
   async function selectFile(path: string) {
     if (path === selectedFilePath.value) return
 
@@ -214,6 +276,13 @@ export function useFileTree() {
     treeData.value = entriesToNodes(entries)
   }
 
+  async function refreshDir(path: string) {
+    const node = findNode(treeData.value, path)
+    if (!node || !node.isDir || !node.expanded) return
+    const entries = await ReadDirEntries(path)
+    node.children = entriesToNodes(entries)
+  }
+
   async function openRecentFolder(path: string) {
     clearAutoSaveTimer()
     rootPath.value = path
@@ -265,6 +334,7 @@ export function useFileTree() {
     newFile,
     markDirty,
     refreshTree,
+    refreshDir,
     restoreSession,
     openRecentFolder,
     openRecentFile,

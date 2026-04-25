@@ -1,19 +1,81 @@
 <script lang="ts" setup>
+import { ref } from 'vue'
 import {
   Plus,
   Search,
 } from 'lucide-vue-next'
-import { useFileTree } from '../composables/useFileTree'
+import { useFileTree, copiedFilePath, resolveUniqueFilePath, resolvePasteFilePath } from '../composables/useFileTree'
+import { ClipboardGetText, SaveFileContent, ReadFileContent, FileExists } from '../../wailsjs/go/main/App'
 import type { TreeNode } from '../types/file'
 import SidebarTreeNode from './SidebarTreeNode.vue'
 
-const { rootPath, treeData, selectedFilePath, folderName, selectFile, toggleDir, newFile, openFolder } = useFileTree()
+const { rootPath, treeData, selectedFilePath, folderName, selectFile, toggleDir, newFile, openFolder, refreshTree, refreshDir } = useFileTree()
 
 function handleItemClick(node: TreeNode) {
   if (node.isDir) {
     toggleDir(node.path)
   } else {
     selectFile(node.path)
+  }
+}
+
+const treeMenuVisible = ref(false)
+const treeMenuX = ref(0)
+const treeMenuY = ref(0)
+const canTreePaste = () => !!copiedFilePath.value || false
+
+function onTreeContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  treeMenuX.value = e.clientX
+  treeMenuY.value = e.clientY
+  treeMenuVisible.value = true
+
+  const closeMenu = () => {
+    treeMenuVisible.value = false
+    document.removeEventListener('click', closeMenu)
+    document.removeEventListener('scroll', closeMenu, true)
+  }
+  requestAnimationFrame(() => {
+    document.addEventListener('click', closeMenu)
+    document.addEventListener('scroll', closeMenu, true)
+  })
+}
+
+async function pasteToRoot() {
+  if (!rootPath.value) {
+    treeMenuVisible.value = false
+    return
+  }
+
+  // Priority: duplicate internally copied file
+  if (copiedFilePath.value) {
+    const content = await ReadFileContent(copiedFilePath.value)
+    const sourceName = copiedFilePath.value.split('/').pop() || 'file.md'
+    const targetPath = await resolveUniqueFilePath(rootPath.value, sourceName, FileExists)
+    await SaveFileContent(targetPath, content)
+    treeMenuVisible.value = false
+    await refreshTree()
+    return
+  }
+
+  // Fallback: create file from clipboard text
+  const text = await ClipboardGetText()
+  if (!text) {
+    treeMenuVisible.value = false
+    return
+  }
+
+  const { path: filePath, content } = await resolvePasteFilePath(rootPath.value, text, FileExists)
+  await SaveFileContent(filePath, content)
+  treeMenuVisible.value = false
+  await refreshTree()
+}
+
+async function handleRefresh(dirPath: string) {
+  if (dirPath === rootPath.value) {
+    await refreshTree()
+  } else {
+    await refreshDir(dirPath)
   }
 }
 </script>
@@ -40,7 +102,7 @@ function handleItemClick(node: TreeNode) {
       <span class="empty-text">Open a folder to get started</span>
     </div>
 
-    <div v-else class="sidebar-tree">
+    <div v-else class="sidebar-tree" @contextmenu.prevent="onTreeContextMenu">
       <span class="section-label">WORKSPACE</span>
       <SidebarTreeNode
         v-for="node in treeData"
@@ -48,10 +110,28 @@ function handleItemClick(node: TreeNode) {
         :node="node"
         :selected-path="selectedFilePath"
         :depth="0"
+        :root-path="rootPath"
         @select="handleItemClick"
+        @refresh="handleRefresh"
       />
     </div>
   </aside>
+
+  <Teleport to="body">
+    <div
+      v-if="treeMenuVisible"
+      class="tree-context-menu"
+      :style="{ left: treeMenuX + 'px', top: treeMenuY + 'px' }"
+    >
+      <div class="menu-item disabled">Copy</div>
+      <div class="menu-item" :class="{ disabled: !canTreePaste() }" @click="canTreePaste() && pasteToRoot()">Paste</div>
+      <div class="menu-divider" />
+      <div class="menu-item disabled">Copy Path</div>
+      <div class="menu-item disabled">Copy Relative Path</div>
+      <div class="menu-divider" />
+      <div class="menu-item disabled">Delete</div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>

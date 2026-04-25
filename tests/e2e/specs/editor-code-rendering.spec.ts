@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { waitForAppReady } from '../helpers/app'
+import { waitForAppReady, resetAppState } from '../helpers/app'
 import { setContent, clearEditor } from '../helpers/editor'
 
 const JS_CODE_BLOCK = `\
@@ -31,6 +31,7 @@ test.describe('Editor Code Rendering', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await waitForAppReady(page)
+    await resetAppState(page)
     await clearEditor(page)
   })
 

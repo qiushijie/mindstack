@@ -1,15 +1,20 @@
 <script lang="ts" setup>
+import { ref, computed } from 'vue'
 import { FileText, Folder, FolderOpen } from 'lucide-vue-next'
 import type { TreeNode } from '../types/file'
+import { ClipboardSetText, ClipboardGetText, SaveFileContent, ReadFileContent, FileExists, DeleteFile, ConfirmDelete } from '../../wailsjs/go/main/App'
+import { copiedFilePath, resolveUniqueFilePath, resolvePasteFilePath } from '../composables/useFileTree'
 
 const props = defineProps<{
   node: TreeNode
   selectedPath: string
   depth: number
+  rootPath: string
 }>()
 
 const emit = defineEmits<{
   select: [node: TreeNode]
+  refresh: [dirPath: string]
 }>()
 
 function getItemIcon(node: TreeNode) {
@@ -18,6 +23,91 @@ function getItemIcon(node: TreeNode) {
 }
 
 const indent = 8 + props.depth * 24
+
+const menuVisible = ref(false)
+const menuX = ref(0)
+const menuY = ref(0)
+
+const canPaste = computed(() => !!copiedFilePath.value)
+
+function onContextMenu(e: MouseEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+  menuX.value = e.clientX
+  menuY.value = e.clientY
+  menuVisible.value = true
+
+  const closeMenu = () => {
+    menuVisible.value = false
+    document.removeEventListener('click', closeMenu)
+    document.removeEventListener('scroll', closeMenu, true)
+  }
+  requestAnimationFrame(() => {
+    document.addEventListener('click', closeMenu)
+    document.addEventListener('scroll', closeMenu, true)
+  })
+}
+
+async function copyName() {
+  await ClipboardSetText(props.node.name)
+  copiedFilePath.value = props.node.path
+  menuVisible.value = false
+}
+
+async function copyPath() {
+  await ClipboardSetText(props.node.path)
+  menuVisible.value = false
+}
+
+async function copyRelativePath() {
+  const root = props.rootPath.replace(/\/$/, '')
+  let relative = props.node.path
+  if (relative.startsWith(root + '/')) {
+    relative = relative.slice(root.length + 1)
+  }
+  await ClipboardSetText(relative)
+  menuVisible.value = false
+}
+
+async function deleteItem() {
+  const confirmed = await ConfirmDelete(props.node.name, props.node.isDir)
+  if (!confirmed) {
+    menuVisible.value = false
+    return
+  }
+
+  const parentDir = props.node.path.substring(0, props.node.path.lastIndexOf('/'))
+  await DeleteFile(props.node.path)
+  menuVisible.value = false
+  emit('refresh', parentDir)
+}
+
+async function pasteHere() {
+  const targetDir = props.node.isDir ? props.node.path : props.node.path.substring(0, props.node.path.lastIndexOf('/'))
+
+  // Priority: if a file was copied internally, duplicate it
+  if (copiedFilePath.value) {
+    const content = await ReadFileContent(copiedFilePath.value)
+    const sourceName = copiedFilePath.value.split('/').pop() || 'file.md'
+    const targetPath = await resolveUniqueFilePath(targetDir, sourceName, FileExists)
+    await SaveFileContent(targetPath, content)
+    menuVisible.value = false
+    emit('refresh', targetDir)
+    return
+  }
+
+  // Fallback: create a new file from system clipboard text
+  const text = await ClipboardGetText()
+  if (!text) {
+    menuVisible.value = false
+    return
+  }
+
+  const { path: filePath, content } = await resolvePasteFilePath(targetDir, text, FileExists)
+  await SaveFileContent(filePath, content)
+  menuVisible.value = false
+  emit('refresh', targetDir)
+}
 </script>
 
 <template>
@@ -26,6 +116,7 @@ const indent = 8 + props.depth * 24
     :class="{ active: node.path === selectedPath }"
     :style="{ paddingLeft: indent + 'px' }"
     @click="emit('select', node)"
+    @contextmenu.prevent="onContextMenu"
   >
     <component
       :is="getItemIcon(node)"
@@ -34,6 +125,23 @@ const indent = 8 + props.depth * 24
     />
     <span class="tree-item-text">{{ node.name }}</span>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="menuVisible"
+      class="tree-context-menu"
+      :style="{ left: menuX + 'px', top: menuY + 'px' }"
+    >
+      <div class="menu-item" @click="copyName">Copy</div>
+      <div class="menu-item" :class="{ disabled: !canPaste }" @click="canPaste && pasteHere()">Paste</div>
+      <div class="menu-divider" />
+      <div class="menu-item" @click="copyPath">Copy Path</div>
+      <div class="menu-item" @click="copyRelativePath">Copy Relative Path</div>
+      <div class="menu-divider" />
+      <div class="menu-item" @click="deleteItem">Delete</div>
+    </div>
+  </Teleport>
+
   <template v-if="node.isDir && node.expanded">
     <SidebarTreeNode
       v-for="child in node.children"
@@ -41,7 +149,9 @@ const indent = 8 + props.depth * 24
       :node="child"
       :selected-path="selectedPath"
       :depth="depth + 1"
+      :root-path="rootPath"
       @select="emit('select', $event)"
+      @refresh="emit('refresh', $event)"
     />
   </template>
 </template>
@@ -85,5 +195,44 @@ const indent = 8 + props.depth * 24
 
 .tree-item.active .tree-item-text {
   color: var(--foreground-inverse);
+}
+</style>
+
+<style>
+.tree-context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 180px;
+  background-color: var(--surface-sidebar);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.menu-item {
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--foreground-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.menu-item:hover {
+  background-color: var(--surface-hover);
+  color: var(--foreground-primary);
+}
+
+.menu-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.menu-divider {
+  height: 1px;
+  background-color: var(--border-subtle);
+  margin: 4px 0;
 }
 </style>
