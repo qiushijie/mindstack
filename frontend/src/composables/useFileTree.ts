@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   OpenFolderDialog,
   OpenFileDialog,
@@ -7,10 +7,14 @@ import {
   SaveFileContent,
   LoadConfig,
   SaveConfig,
+  SetWorkspaceRoot,
+  GetFileServerPort,
 } from '../../wailsjs/go/main/App'
 import { main } from '../../wailsjs/go/models'
 import type { TreeNode } from '../types/file'
 import { useSettings } from './useSettings'
+import { useEditorState } from './useEditorState'
+import { setCurrentFilePath, setFileServerPort } from '../extensions/currentFilePath'
 
 export interface EditorAdapter {
   setContent(content: string): void
@@ -27,6 +31,7 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 
 export function useFileTree() {
   const { autoSave, autoSaveDelay } = useSettings()
+  const { editorView: sharedView } = useEditorState()
 
   const folderName = computed(() => {
     if (!rootPath.value) return 'MindStack'
@@ -70,10 +75,13 @@ export function useFileTree() {
 
   async function restoreSession() {
     try {
+      const port = await GetFileServerPort()
+      setFileServerPort(port)
       const raw = await LoadConfig()
       const config = JSON.parse(raw || '{}')
       if (config.lastFolderPath) {
         rootPath.value = config.lastFolderPath
+        await SetWorkspaceRoot(config.lastFolderPath)
         const entries = await ReadDirEntries(config.lastFolderPath)
         treeData.value = entriesToNodes(entries)
 
@@ -101,6 +109,7 @@ export function useFileTree() {
     selectedFileContent.value = ''
     isDirty.value = false
 
+    await SetWorkspaceRoot(path)
     const entries = await ReadDirEntries(path)
     treeData.value = entriesToNodes(entries)
     await saveAppConfig()
@@ -109,6 +118,12 @@ export function useFileTree() {
   async function openFile() {
     const path = await OpenFileDialog()
     if (!path) return
+
+    if (!rootPath.value) {
+      const dir = path.substring(0, path.lastIndexOf('/'))
+      rootPath.value = dir
+      await SetWorkspaceRoot(dir)
+    }
 
     const content = await ReadFileContent(path)
     selectedFilePath.value = path
@@ -194,6 +209,13 @@ export function useFileTree() {
     const entries = await ReadDirEntries(rootPath.value)
     treeData.value = entriesToNodes(entries)
   }
+
+  watch(selectedFilePath, (newPath) => {
+    const view = sharedView.value
+    if (view) {
+      view.dispatch({ effects: setCurrentFilePath.of(newPath) })
+    }
+  }, { flush: 'sync' })
 
   return {
     rootPath,

@@ -133,6 +133,54 @@ const editorTheme = EditorView.theme({
     margin: '16px 0',
   },
 
+  // Image-only lines: eliminate CSS strut so image aligns with line content top
+  '.cm-image-line': {
+    lineHeight: '0',
+    fontSize: '0',
+  },
+  '.cm-image-container': {
+    maxWidth: '100%',
+    margin: '0 0 8px 0',
+    borderRadius: '4px',
+    overflow: 'hidden',
+    cursor: 'text',
+    border: '1px solid var(--border-subtle)',
+    backgroundColor: 'var(--surface-secondary)',
+  },
+  '.cm-image': {
+    maxWidth: '100%',
+    display: 'block',
+  },
+  '.cm-image-caption': {
+    fontSize: 'var(--font-size-sm)',
+    color: 'var(--foreground-tertiary)',
+    textAlign: 'center' as unknown as string,
+    padding: '4px 8px 8px',
+  },
+  '.cm-image-error': {
+    padding: '16px',
+    textAlign: 'center' as unknown as string,
+    color: 'var(--foreground-tertiary)',
+    fontSize: 'var(--font-size-sm)',
+  },
+  '.cm-image-load-error .cm-image': {
+    minHeight: '48px',
+    opacity: '0.3',
+  },
+  '.cm-image-placeholder': {
+    padding: '16px',
+    textAlign: 'center' as unknown as string,
+    color: 'var(--foreground-tertiary)',
+    fontSize: 'var(--font-size-sm)',
+    border: '1px dashed var(--border-subtle)',
+    borderRadius: '4px',
+    margin: '4px',
+  },
+  '.cm-image-editing': {
+    backgroundColor: 'rgba(0, 102, 255, 0.05)',
+    borderRadius: '4px',
+  },
+
   // Block controls gutter — rendered outside .cm-content, no cursor interference
   '.cm-block-gutter': {
     width: '160px',
@@ -142,6 +190,10 @@ const editorTheme = EditorView.theme({
     alignItems: 'center',
     justifyContent: 'flex-end',
     padding: '0 4px 0 0',
+  },
+  '.cm-block-gutter .cm-block-type-image': {
+    alignItems: 'flex-start',
+    padding: '2px 4px 0 0',
   },
   '.cm-block-controls': {
     display: 'flex',

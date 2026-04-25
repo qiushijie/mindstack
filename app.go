@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -17,7 +20,10 @@ type FileEntry struct {
 }
 
 type App struct {
-	ctx context.Context
+	ctx            context.Context
+	mu             sync.RWMutex
+	rootPath       string
+	fileServerPort int
 }
 
 func NewApp() *App {
@@ -26,11 +32,57 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.startFileServer()
+}
+
+func (a *App) startFileServer() {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return
+	}
+	a.fileServerPort = listener.Addr().(*net.TCPAddr).Port
+	handler := NewLocalFileHandler(a)
+	server := &http.Server{Handler: handler}
+	go server.Serve(listener)
+}
+
+func (a *App) SetRootPath(p string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.rootPath = p
+}
+
+func (a *App) GetRootPath() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.rootPath
+}
+
+func (a *App) SetWorkspaceRoot(p string) {
+	a.SetRootPath(p)
+}
+
+func (a *App) GetFileServerPort() int {
+	return a.fileServerPort
 }
 
 func (a *App) OpenFolderDialog() string {
 	path, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Open Folder",
+	})
+	if err != nil || path == "" {
+		return ""
+	}
+	return path
+}
+
+func (a *App) OpenImageFileDialog() string {
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Image",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Image Files", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.svg;*.webp"},
+			{DisplayName: "All Files", Pattern: "*.*"},
+		},
 	})
 	if err != nil || path == "" {
 		return ""

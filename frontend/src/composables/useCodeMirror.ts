@@ -7,13 +7,15 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { keymap } from '@codemirror/view'
 import { createEditorTheme } from '../extensions/theme'
 import { createKeymapExtension } from '../extensions/keymap'
-import { markdownStyles, checkboxClickHandler } from '../extensions/markdownStyles'
+import { markdownStyles, checkboxClickHandler, imageClickHandler } from '../extensions/markdownStyles'
+import { currentFilePathExtension, setCurrentFilePath } from '../extensions/currentFilePath'
 import { tablePlugin, tableEditHandler } from '../extensions/tableWidget'
 import { createBlockGutter } from '../extensions/blockGutter'
 import { createDragSort } from '../extensions/dragSort'
 import { createInputHandler } from '../extensions/inputHandler'
 import { createSlashCommand } from '../extensions/slashCommand'
 import { useEditorState } from './useEditorState'
+import { useFileTree } from './useFileTree'
 
 interface UseCodeMirrorOptions {
   container: Ref<HTMLElement | null>
@@ -46,7 +48,9 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       keymap.of([...defaultKeymap, ...historyKeymap]),
       createKeymapExtension(),
       markdownStyles,
+      currentFilePathExtension(),
       checkboxClickHandler,
+      imageClickHandler,
       tablePlugin,
       tableEditHandler,
       ...createBlockGutter(),
@@ -79,6 +83,12 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       parent: options.container.value,
     })
     sharedView.value = view.value
+
+    // Sync current file path into editor state
+    const { selectedFilePath } = useFileTree()
+    if (selectedFilePath.value) {
+      view.value.dispatch({ effects: setCurrentFilePath.of(selectedFilePath.value) })
+    }
   })
 
   onUnmounted(() => {
@@ -101,6 +111,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
 
   function destroy() {
     view.value?.destroy()
+    sharedView.value = null
     view.value = null
   }
 

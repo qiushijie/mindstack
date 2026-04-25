@@ -1,25 +1,18 @@
-import { inject, provide, shallowRef, watch, type ShallowRef } from 'vue'
+import { shallowRef, watch } from 'vue'
 import type { EditorView } from '@codemirror/view'
 
-const EDITOR_VIEW_KEY = Symbol('editorView')
+const sharedEditorView = shallowRef<EditorView | null>(null)
 
 export function provideEditorState() {
-  const editorView = shallowRef<EditorView | null>(null)
-  provide(EDITOR_VIEW_KEY, editorView)
-
   if (import.meta.env.DEV) {
-    watch(editorView, (v) => {
+    watch(sharedEditorView, (v) => {
       ;(window as any).__cmView = v
     })
   }
 
-  return { editorView }
+  return { editorView: sharedEditorView }
 }
 
 export function useEditorState() {
-  const editorView = inject<ShallowRef<EditorView | null>>(EDITOR_VIEW_KEY)
-  if (!editorView) {
-    throw new Error('EditorView not provided. Call provideEditorState() in parent component.')
-  }
-  return { editorView }
+  return { editorView: sharedEditorView }
 }

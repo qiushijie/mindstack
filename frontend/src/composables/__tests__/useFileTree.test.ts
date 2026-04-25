@@ -9,6 +9,8 @@ vi.mock('../../../wailsjs/go/main/App', () => ({
   SaveFileContent: vi.fn(),
   LoadConfig: vi.fn(),
   SaveConfig: vi.fn(),
+  SetWorkspaceRoot: vi.fn(),
+  GetFileServerPort: vi.fn().mockResolvedValue(0),
 }))
 
 vi.mock('../../../wailsjs/go/models', () => ({
@@ -33,6 +35,18 @@ vi.mock('../useSettings', () => ({
     autoSaveDelay: { value: 1 },
     loadSettings: vi.fn(),
   }),
+}))
+
+// Mock useEditorState to avoid Vue provide/inject requirement
+vi.mock('../useEditorState', () => ({
+  useEditorState: () => ({
+    editorView: { value: null },
+  }),
+}))
+
+// Mock currentFilePath extension
+vi.mock('../../extensions/currentFilePath', () => ({
+  setCurrentFilePath: { is: () => false, of: vi.fn() },
 }))
 
 import {

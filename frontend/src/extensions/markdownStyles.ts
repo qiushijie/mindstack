@@ -2,6 +2,7 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 import { Range } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import { toggleCheckbox } from '../utils/markdownUtils'
+import { currentFilePathField, resolveImageUrl } from './currentFilePath'
 
 // --- Widgets ---
 
@@ -62,6 +63,52 @@ class HrWidget extends WidgetType {
   ignoreEvent() { return true }
 }
 
+class ImageWidget extends WidgetType {
+  constructor(readonly url: string, readonly alt: string, readonly nodeFrom: number) { super() }
+
+  toDOM() {
+    const container = document.createElement('div')
+    container.className = 'cm-image-container'
+    container.dataset.pos = String(this.nodeFrom)
+
+    if (this.url) {
+      const img = document.createElement('img')
+      img.className = 'cm-image'
+      img.src = this.url
+      img.alt = this.alt
+      img.loading = 'lazy'
+      img.onerror = () => {
+        container.classList.add('cm-image-load-error')
+      }
+      container.appendChild(img)
+    } else {
+      const placeholder = document.createElement('div')
+      placeholder.className = 'cm-image-placeholder'
+      placeholder.textContent = this.alt || 'Image'
+      container.appendChild(placeholder)
+    }
+
+    if (this.alt && this.url) {
+      const caption = document.createElement('div')
+      caption.className = 'cm-image-caption'
+      caption.textContent = this.alt
+      container.appendChild(caption)
+    }
+
+    return container
+  }
+
+  eq(other: ImageWidget) { return other.url === this.url && other.alt === this.alt }
+  ignoreEvent() { return false }
+}
+
+// --- Helpers ---
+
+function extractAlt(text: string): string {
+  const m = text.match(/^!\[([\s\S]*?)\]/)
+  return m ? m[1] : ''
+}
+
 // --- Shared decorations ---
 
 const lineDecs: Record<string, Decoration> = {}
@@ -87,7 +134,7 @@ export const markdownStyles = ViewPlugin.fromClass(class {
   }
 
   update(u: ViewUpdate) {
-    if (u.docChanged || u.viewportChanged) {
+    if (u.docChanged || u.viewportChanged || u.selectionSet) {
       const { deco, atomic } = build(u.view)
       this.decorations = deco
       this.atomics = atomic
@@ -144,6 +191,27 @@ function build(view: EditorView) {
   // (block decorations apply from the node's start position)
   const vpStartLine = doc.lineAt(vpFrom)
   const vpEndLine = doc.lineAt(Math.min(vpTo, doc.length))
+
+  // Pre-scan: find Image nodes containing the cursor (editing state)
+  // Only strictly inside the node — cursor at boundaries shows the widget
+  const cursorPos = view.state.selection.main.head
+  const editingImageRanges: Array<{ from: number; to: number }> = []
+
+  for (const { from, to } of view.visibleRanges) {
+    tree.iterate({
+      enter(node) {
+        if (node.name === 'Image' && cursorPos > node.from && cursorPos < node.to) {
+          editingImageRanges.push({ from: node.from, to: node.to })
+        }
+      },
+      from,
+      to,
+    })
+  }
+
+  function isInEditingImage(from: number, to: number): boolean {
+    return editingImageRanges.some(r => from >= r.from && to <= r.to)
+  }
 
   for (const { from, to } of view.visibleRanges) {
     tree.iterate({
@@ -221,32 +289,30 @@ function build(view: EditorView) {
           }
         }
 
-        if (t === 'EmphasisMark') {
+        if (t === 'EmphasisMark' || t === 'StrikethroughMark' || t === 'CodeMark') {
           addRange(node.from, node.to, hide)
           addAtomic(node.from, node.to)
         }
 
-        if (t === 'StrikethroughMark') {
-          addRange(node.from, node.to, hide)
-          addAtomic(node.from, node.to)
+        // -- Image handling --
+        if (t === 'Image') {
+          if (!isInEditingImage(node.from, node.to)) {
+            const urlNode = node.node.getChild('URL')
+            const rawUrl = urlNode ? doc.sliceString(urlNode.from, urlNode.to) : ''
+            const alt = extractAlt(doc.sliceString(node.from, node.to))
+            const filePath = view.state.field(currentFilePathField, false) ?? ''
+            const resolvedUrl = resolveImageUrl(rawUrl, filePath)
+            const lineFrom = doc.lineAt(node.from).from
+            if (node.from === lineFrom) addLine(node.from, 'cm-image-line')
+            addRange(node.from, node.to, Decoration.replace({ widget: new ImageWidget(resolvedUrl, alt, node.from) }))
+            addAtomic(node.from, node.to)
+          } else {
+            addLine(node.from, 'cm-image-editing')
+          }
+          return
         }
 
-        if (t === 'CodeMark') {
-          addRange(node.from, node.to, hide)
-          addAtomic(node.from, node.to)
-        }
-
-        if (t === 'LinkMark') {
-          addRange(node.from, node.to, hide)
-          addAtomic(node.from, node.to)
-        }
-
-        if (t === 'URL') {
-          addRange(node.from, node.to, hide)
-          addAtomic(node.from, node.to)
-        }
-
-        if (t === 'LinkTitle') {
+        if ((t === 'LinkMark' || t === 'URL' || t === 'LinkTitle') && !isInEditingImage(node.from, node.to)) {
           addRange(node.from, node.to, hide)
           addAtomic(node.from, node.to)
         }
@@ -299,6 +365,44 @@ export const checkboxClickHandler = EditorView.domEventHandlers({
     if (target.closest('.cm-todo-check')) {
       toggleCheckbox(view)
       return true
+    }
+    return false
+  },
+})
+
+export const imageClickHandler = EditorView.domEventHandlers({
+  click(e, view) {
+    const target = e.target as Element
+    const imgContainer = target.closest('.cm-image-container') as HTMLElement | null
+    if (imgContainer) {
+      const pos = parseInt(imgContainer.dataset.pos!)
+      if (!isNaN(pos)) {
+        const tree = syntaxTree(view.state)
+        const doc = view.state.doc
+        let url = ''
+        let alt = ''
+        let imgFrom = pos
+        let imgTo = pos
+
+        tree.iterate({
+          enter(node) {
+            if (node.name === 'Image' && node.from <= pos && node.to >= pos) {
+              imgFrom = node.from
+              imgTo = node.to
+              const urlNode = node.node.getChild('URL')
+              url = urlNode ? doc.sliceString(urlNode.from, urlNode.to) : ''
+              const text = doc.sliceString(node.from, node.to)
+              alt = extractAlt(text)
+            }
+          },
+        })
+
+        view.dom.dispatchEvent(new CustomEvent('editor:edit-image', {
+          detail: { url, alt, from: imgFrom, to: imgTo },
+          bubbles: true,
+        }))
+        return true
+      }
     }
     return false
   },

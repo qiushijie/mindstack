@@ -78,7 +78,7 @@ const PLUS_MENU_GROUPS: PlusMenuGroup[] = [
       { id: 'code', icon: 'code', label: 'Code Block', action: (v, lf) => insertBlock(v, lf, '```text\n', 'code here\n```') },
       { id: 'quote', icon: 'quote', label: 'Blockquote', action: (v, lf) => insertBlock(v, lf, '> ', 'Quote') },
       { id: 'link', icon: 'link', label: 'Link', action: (v, lf) => insertBlock(v, lf, '[', 'link text](url)') },
-      { id: 'image', icon: 'image', label: 'Image', action: (v, lf) => insertBlock(v, lf, '![', 'alt](url)') },
+      { id: 'image', icon: 'image', label: 'Image', action: (v, lf) => { hideBlockMenu(); v.dom.dispatchEvent(new CustomEvent('editor:insert-image', { detail: { lineFrom: lf }, bubbles: true })) } },
       { id: 'table', icon: 'table', label: 'Table', action: (v, lf) => insertBlock(v, lf, '', '| Column 1 | Column 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |') },
     ],
   },
@@ -108,6 +108,28 @@ class BlockControlsMarker extends GutterMarker {
 }
 
 const blockControlsMarker = new BlockControlsMarker()
+
+class ImageBlockControlsMarker extends GutterMarker {
+  elementClass = 'cm-block-type-image'
+  toDOM() {
+    return new BlockControlsMarker().toDOM()
+  }
+  eq(_other: GutterMarker) { return true }
+}
+
+const imageBlockMarker = new ImageBlockControlsMarker()
+
+function containsImage(nodeRef: { node: { firstChild: { name: string; firstChild: unknown; nextSibling: unknown } | null } }): boolean {
+  const stack: { firstChild: unknown; nextSibling: unknown; name: string }[] = []
+  let child = nodeRef.node.firstChild as { name: string; firstChild: unknown; nextSibling: unknown } | null
+  while (child || stack.length) {
+    if (!child) { child = stack.pop()!.nextSibling as typeof child; continue }
+    if (child.name === 'Image') return true
+    if (child.firstChild) { stack.push(child); child = child.firstChild as typeof child }
+    else { child = child.nextSibling as typeof child }
+  }
+  return false
+}
 
 const activeBlockMarker = new (class extends GutterMarker {
   elementClass = 'cm-active-block'
@@ -141,7 +163,8 @@ function buildMarkers(view: EditorView): RangeSet<GutterMarker> {
       if (seenLines.has(lineNum)) return
       seenLines.add(lineNum)
       const lineFrom = doc.line(lineNum).from
-      ranges.push(blockControlsMarker.range(lineFrom))
+      const marker = containsImage(node) ? imageBlockMarker : blockControlsMarker
+      ranges.push(marker.range(lineFrom))
       if (hoveredLine === lineNum) {
         ranges.push(activeBlockMarker.range(lineFrom))
       }

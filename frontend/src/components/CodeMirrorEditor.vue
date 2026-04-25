@@ -3,14 +3,22 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { syntaxTree } from '@codemirror/language'
 import { useCodeMirror } from '../composables/useCodeMirror'
 import SelectionToolbar from './SelectionToolbar.vue'
+import ImageDialog from './ImageDialog.vue'
 import { wrapInline, toggleBlockType, insertLink } from '../utils/markdownUtils'
 import { BlockType, getBlockTypeAtLine, isFullBlockSelection, blockTypeToLabel } from '../utils/syntaxUtils'
 import { getBlockConfigByToolbarLabel } from '../utils/blockRegistry'
 import { useFileTree } from '../composables/useFileTree'
+import { currentFilePathField } from '../extensions/currentFilePath'
 import { getTableCellFromEvent } from '../extensions/tableWidget'
 import { parseTable, addRowBelow, addRowAbove, deleteRow, addColumnLeft, addColumnRight, deleteColumn, type TableData } from '../utils/tableUtils'
 
 const containerRef = ref<HTMLElement | null>(null)
+const imageDialogVisible = ref(false)
+let imageInsertLineFrom = -1
+const imageEditUrl = ref('')
+const imageEditAlt = ref('')
+const imageEditFrom = ref<number | undefined>(undefined)
+const imageEditTo = ref<number | undefined>(undefined)
 const toolbarState = ref({
   visible: false,
   left: 0,
@@ -292,15 +300,69 @@ const tableContext = ref<{
   colIdx: number
 } | null>(null)
 
+function handleInsertImage(e: Event) {
+  const ce = e as CustomEvent<{ lineFrom: number }>
+  imageInsertLineFrom = ce.detail.lineFrom
+  imageEditUrl.value = ''
+  imageEditAlt.value = ''
+  imageEditFrom.value = undefined
+  imageEditTo.value = undefined
+  imageDialogVisible.value = true
+}
+
+function handleEditImage(e: Event) {
+  const ce = e as CustomEvent<{ url: string; alt: string; from: number; to: number }>
+  imageEditUrl.value = ce.detail.url
+  imageEditAlt.value = ce.detail.alt
+  imageEditFrom.value = ce.detail.from
+  imageEditTo.value = ce.detail.to
+  imageDialogVisible.value = true
+}
+
+function handleImageConfirm(payload: { url: string; alt: string; editingFrom?: number; editingTo?: number }) {
+  imageDialogVisible.value = false
+  const v = view.value
+  if (!v) return
+
+  const alt = payload.alt || 'image'
+
+  if (payload.editingFrom != null && payload.editingTo != null) {
+    // Edit mode: replace existing image markdown
+    const newText = `![${alt}](${payload.url})`
+    v.dispatch({
+      changes: { from: payload.editingFrom, to: payload.editingTo, insert: newText },
+      selection: { anchor: payload.editingFrom + newText.length },
+    })
+  } else {
+    // Insert mode: add new image after the line
+    const doc = v.state.doc
+    const line = doc.lineAt(imageInsertLineFrom)
+    const insertText = `\n\n![${alt}](${payload.url})`
+    v.dispatch({
+      changes: { from: line.to, to: line.to, insert: insertText },
+      selection: { anchor: line.to + insertText.length },
+    })
+  }
+  v.focus()
+}
+
+function handleImageDialogClose() {
+  imageDialogVisible.value = false
+}
+
 onMounted(() => {
   focus()
   document.addEventListener('mousedown', handleDocMousedown)
   document.addEventListener('keydown', handleDocKeydown)
+  containerRef.value?.addEventListener('editor:insert-image', handleInsertImage)
+  containerRef.value?.addEventListener('editor:edit-image', handleEditImage)
 })
 
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleDocMousedown)
   document.removeEventListener('keydown', handleDocKeydown)
+  containerRef.value?.removeEventListener('editor:insert-image', handleInsertImage)
+  containerRef.value?.removeEventListener('editor:edit-image', handleEditImage)
 })
 </script>
 
@@ -345,6 +407,16 @@ onUnmounted(() => {
         <button class="ctx-item" @click="handleContextAction('refresh')">Refresh</button>
       </template>
     </div>
+    <ImageDialog
+      :visible="imageDialogVisible"
+      :initial-url="imageEditUrl"
+      :initial-alt="imageEditAlt"
+      :editing-from="imageEditFrom"
+      :editing-to="imageEditTo"
+      :current-file-path="view?.state.field(currentFilePathField, false) ?? ''"
+      @close="handleImageDialogClose"
+      @confirm="handleImageConfirm"
+    />
   </div>
 </template>
 

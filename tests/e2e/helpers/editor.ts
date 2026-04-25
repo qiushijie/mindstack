@@ -23,6 +23,15 @@ export async function clearEditor(page: Page): Promise<void> {
   await setContent(page, '')
 }
 
+export async function moveCursorToEnd(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const view = (window as any).__cmView
+    if (view) {
+      view.dispatch({ selection: { anchor: view.state.doc.length } })
+    }
+  })
+}
+
 export async function focusEditor(page: Page): Promise<void> {
   await page.locator('.cm-content').click()
   await page.waitForTimeout(200)
