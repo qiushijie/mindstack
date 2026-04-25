@@ -11,6 +11,7 @@ vi.mock('../../../wailsjs/go/main/App', () => ({
   SaveConfig: vi.fn(),
   SetWorkspaceRoot: vi.fn(),
   GetFileServerPort: vi.fn().mockResolvedValue(0),
+  AddRecentEntry: vi.fn(),
 }))
 
 vi.mock('../../../wailsjs/go/models', () => ({
@@ -55,6 +56,7 @@ import {
   ReadDirEntries,
   ReadFileContent,
   SaveFileContent,
+  AddRecentEntry,
 } from '../../../wailsjs/go/main/App'
 import { useFileTree } from '../useFileTree'
 
@@ -580,6 +582,57 @@ describe('useFileTree', () => {
       await refreshTree()
 
       expect(ReadDirEntries).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('openRecentFolder', () => {
+    it('sets rootPath, loads tree, and records recent', async () => {
+      vi.mocked(ReadDirEntries).mockResolvedValue([
+        { name: 'notes.md', path: '/recent/notes.md', isDir: false },
+      ])
+
+      const { rootPath, treeData, selectedFilePath, isDirty, openRecentFolder, markDirty } = useFileTree()
+      markDirty()
+
+      await openRecentFolder('/recent')
+
+      expect(rootPath.value).toBe('/recent')
+      expect(selectedFilePath.value).toBe('')
+      expect(isDirty.value).toBe(false)
+      expect(treeData.value).toHaveLength(1)
+      expect(treeData.value[0].name).toBe('notes.md')
+      expect(AddRecentEntry).toHaveBeenCalledWith('/recent', true)
+    })
+  })
+
+  describe('openRecentFile', () => {
+    it('loads file content, updates editor, and records recent', async () => {
+      vi.mocked(ReadFileContent).mockResolvedValue('# Recent File')
+
+      const { selectedFilePath, selectedFileContent, isDirty, openRecentFile, setEditorAdapter, markDirty } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      setEditorAdapter(mockAdapter)
+      markDirty()
+
+      await openRecentFile('/recent/notes.md')
+
+      expect(selectedFilePath.value).toBe('/recent/notes.md')
+      expect(selectedFileContent.value).toBe('# Recent File')
+      expect(isDirty.value).toBe(false)
+      expect(mockAdapter.setContent).toHaveBeenCalledWith('# Recent File')
+      expect(AddRecentEntry).toHaveBeenCalledWith('/recent/notes.md', false)
+    })
+
+    it('works without editorAdapter', async () => {
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+
+      const { selectedFilePath, selectedFileContent, openRecentFile } = useFileTree()
+
+      await openRecentFile('/recent/doc.md')
+
+      expect(selectedFilePath.value).toBe('/recent/doc.md')
+      expect(selectedFileContent.value).toBe('content')
+      expect(AddRecentEntry).toHaveBeenCalledWith('/recent/doc.md', false)
     })
   })
 })

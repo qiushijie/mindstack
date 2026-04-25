@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -24,6 +26,8 @@ type App struct {
 	mu             sync.RWMutex
 	rootPath       string
 	fileServerPort int
+	recentEntries  []RecentEntry
+	dialogOpen     int32
 }
 
 func NewApp() *App {
@@ -33,6 +37,7 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.startFileServer()
+	a.rebuildMenu()
 }
 
 func (a *App) startFileServer() {
@@ -67,6 +72,11 @@ func (a *App) GetFileServerPort() int {
 }
 
 func (a *App) OpenFolderDialog() string {
+	if !atomic.CompareAndSwapInt32(&a.dialogOpen, 0, 1) {
+		return ""
+	}
+	defer atomic.StoreInt32(&a.dialogOpen, 0)
+
 	path, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Open Folder",
 	})
@@ -91,6 +101,11 @@ func (a *App) OpenImageFileDialog() string {
 }
 
 func (a *App) OpenFileDialog() string {
+	if !atomic.CompareAndSwapInt32(&a.dialogOpen, 0, 1) {
+		return ""
+	}
+	defer atomic.StoreInt32(&a.dialogOpen, 0)
+
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Open File",
 		Filters: []runtime.FileFilter{
@@ -157,9 +172,15 @@ func (a *App) SaveFileContent(filePath string, content string) string {
 	return ""
 }
 
+type RecentEntry struct {
+	Path  string `json:"path"`
+	IsDir bool   `json:"isDir"`
+}
+
 type AppConfig struct {
-	LastFolderPath string `json:"lastFolderPath"`
-	LastFilePath   string `json:"lastFilePath"`
+	LastFolderPath string        `json:"lastFolderPath"`
+	LastFilePath   string        `json:"lastFilePath"`
+	RecentEntries  []RecentEntry `json:"recentEntries"`
 }
 
 func configPath() string {
@@ -175,6 +196,16 @@ func (a *App) LoadConfig() string {
 	if err != nil {
 		return "{}"
 	}
+	// Cache recent entries for menu building
+	var cfg AppConfig
+	if json.Unmarshal(data, &cfg) == nil {
+		a.mu.Lock()
+		a.recentEntries = cfg.RecentEntries
+		if a.recentEntries == nil {
+			a.recentEntries = []RecentEntry{}
+		}
+		a.mu.Unlock()
+	}
 	return string(data)
 }
 
@@ -188,4 +219,83 @@ func (a *App) SaveConfig(jsonStr string) string {
 		return err.Error()
 	}
 	return ""
+}
+
+func (a *App) AddRecentEntry(path string, isDir bool) {
+	a.mu.Lock()
+	// Deduplicate: remove existing entry with same path
+	filtered := make([]RecentEntry, 0, len(a.recentEntries))
+	for _, e := range a.recentEntries {
+		if e.Path != path {
+			filtered = append(filtered, e)
+		}
+	}
+	// Prepend new entry
+	a.recentEntries = append([]RecentEntry{{Path: path, IsDir: isDir}}, filtered...)
+	// Cap at 10
+	if len(a.recentEntries) > 10 {
+		a.recentEntries = a.recentEntries[:10]
+	}
+	a.saveRecentEntriesLocked()
+	a.mu.Unlock()
+
+	a.rebuildMenu()
+}
+
+func (a *App) ClearRecentEntries() {
+	a.mu.Lock()
+	a.recentEntries = []RecentEntry{}
+	a.saveRecentEntriesLocked()
+	a.mu.Unlock()
+
+	a.rebuildMenu()
+}
+
+// removeRecentEntry removes an entry by path and rebuilds the menu.
+func (a *App) removeRecentEntry(path string) {
+	a.mu.Lock()
+	filtered := make([]RecentEntry, 0, len(a.recentEntries))
+	for _, e := range a.recentEntries {
+		if e.Path != path {
+			filtered = append(filtered, e)
+		}
+	}
+	a.recentEntries = filtered
+	a.saveRecentEntriesLocked()
+	a.mu.Unlock()
+
+	a.rebuildMenu()
+}
+
+// saveRecentEntriesLocked reads the current config JSON, merges recentEntries, and writes back.
+// Must be called with a.mu held.
+func (a *App) saveRecentEntriesLocked() {
+	cp := configPath()
+	data, err := os.ReadFile(cp)
+	if err != nil {
+		data = []byte("{}")
+	}
+
+	var raw map[string]interface{}
+	if json.Unmarshal(data, &raw) != nil {
+		raw = make(map[string]interface{})
+	}
+
+	entries := make([]interface{}, len(a.recentEntries))
+	for i, e := range a.recentEntries {
+		entries[i] = map[string]interface{}{
+			"path":  e.Path,
+			"isDir": e.IsDir,
+		}
+	}
+	raw["recentEntries"] = entries
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return
+	}
+
+	dir := filepath.Dir(cp)
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(cp, out, 0644)
 }

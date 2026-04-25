@@ -9,6 +9,7 @@ import {
   SaveConfig,
   SetWorkspaceRoot,
   GetFileServerPort,
+  AddRecentEntry,
 } from '../../wailsjs/go/main/App'
 import { main } from '../../wailsjs/go/models'
 import type { TreeNode } from '../types/file'
@@ -113,6 +114,7 @@ export function useFileTree() {
     const entries = await ReadDirEntries(path)
     treeData.value = entriesToNodes(entries)
     await saveAppConfig()
+    AddRecentEntry(path, true)
   }
 
   async function openFile() {
@@ -134,6 +136,7 @@ export function useFileTree() {
       editorAdapter.setContent(content)
     }
     await saveAppConfig()
+    AddRecentEntry(path, false)
   }
 
   function clearAutoSaveTimer() {
@@ -156,6 +159,7 @@ export function useFileTree() {
       editorAdapter.setContent(content)
     }
     await saveAppConfig()
+    AddRecentEntry(path, false)
   }
 
   async function toggleDir(path: string) {
@@ -210,6 +214,34 @@ export function useFileTree() {
     treeData.value = entriesToNodes(entries)
   }
 
+  async function openRecentFolder(path: string) {
+    clearAutoSaveTimer()
+    rootPath.value = path
+    selectedFilePath.value = ''
+    selectedFileContent.value = ''
+    isDirty.value = false
+
+    await SetWorkspaceRoot(path)
+    const entries = await ReadDirEntries(path)
+    treeData.value = entriesToNodes(entries)
+    await saveAppConfig()
+    AddRecentEntry(path, true)
+  }
+
+  async function openRecentFile(path: string) {
+    clearAutoSaveTimer()
+    const content = await ReadFileContent(path)
+    selectedFilePath.value = path
+    selectedFileContent.value = content
+    isDirty.value = false
+
+    if (editorAdapter) {
+      editorAdapter.setContent(content)
+    }
+    await saveAppConfig()
+    AddRecentEntry(path, false)
+  }
+
   watch(selectedFilePath, (newPath) => {
     const view = sharedView.value
     if (view) {
@@ -234,5 +266,7 @@ export function useFileTree() {
     markDirty,
     refreshTree,
     restoreSession,
+    openRecentFolder,
+    openRecentFile,
   }
 }

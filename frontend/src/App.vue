@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { onMounted } from 'vue'
-import { EventsOn, ClipboardGetText } from '../wailsjs/runtime/runtime'
+import { EventsOn, EventsOff, ClipboardGetText } from '../wailsjs/runtime/runtime'
 import AppSidebar from './components/AppSidebar.vue'
 import AppEditor from './components/AppEditor.vue'
 import AppStatusBar from './components/AppStatusBar.vue'
@@ -12,43 +12,60 @@ import { useSettings } from './composables/useSettings'
 
 const { currentPage, navigateTo } = useNavigation()
 provideEditorState()
-const { openFolder, openFile, saveCurrentFile, newFile, restoreSession } = useFileTree()
+const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile } = useFileTree()
 const { loadSettings } = useSettings()
 
 onMounted(async () => {
   await loadSettings()
   restoreSession()
 
+  EventsOff('menu:navigate')
   EventsOn('menu:navigate', (page: string) => {
     if (page === 'settings' || page === 'editor') {
       navigateTo(page)
     }
   })
 
+  EventsOff('menu:file:open')
   EventsOn('menu:file:open', () => {
     openFolder()
   })
 
+  EventsOff('menu:file:open-file')
   EventsOn('menu:file:open-file', () => {
     openFile()
   })
 
+  EventsOff('menu:file:open-recent')
+  EventsOn('menu:file:open-recent', (path: string, isDir: boolean) => {
+    if (isDir) {
+      openRecentFolder(path)
+    } else {
+      openRecentFile(path)
+    }
+  })
+
+  EventsOff('menu:file:save')
   EventsOn('menu:file:save', () => {
     saveCurrentFile()
   })
 
+  EventsOff('menu:file:new')
   EventsOn('menu:file:new', () => {
     newFile()
   })
 
+  EventsOff('menu:edit:cut')
   EventsOn('menu:edit:cut', () => {
     document.execCommand('cut')
   })
 
+  EventsOff('menu:edit:copy')
   EventsOn('menu:edit:copy', () => {
     document.execCommand('copy')
   })
 
+  EventsOff('menu:edit:paste')
   EventsOn('menu:edit:paste', async () => {
     const el = document.activeElement
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
