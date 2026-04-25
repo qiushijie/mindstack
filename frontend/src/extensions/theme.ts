@@ -80,7 +80,7 @@ const editorTheme = EditorView.theme({
     borderTop: '1px solid var(--border-subtle)',
     borderTopLeftRadius: '8px',
     borderTopRightRadius: '8px',
-    marginTop: '2px',
+    paddingTop: '2px',
     lineHeight: '0',
   },
   '.cm-code-first .cm-widgetBuffer': {
@@ -91,7 +91,7 @@ const editorTheme = EditorView.theme({
     borderBottom: '1px solid var(--border-subtle)',
     borderBottomLeftRadius: '8px',
     borderBottomRightRadius: '8px',
-    marginBottom: '2px',
+    paddingBottom: '2px',
     lineHeight: '0',
     fontSize: '0',
     minHeight: '4px',
@@ -151,17 +151,17 @@ const editorTheme = EditorView.theme({
   '.cm-hr': {
     border: 'none',
     borderTop: '1px solid var(--border-subtle)',
-    margin: '16px 0',
+    padding: '16px 0',
   },
 
   // Image-only lines: eliminate CSS strut so image aligns with line content top
   '.cm-image-line': {
     lineHeight: '0',
     fontSize: '0',
+    paddingBottom: '8px',
   },
   '.cm-image-container': {
     maxWidth: '100%',
-    margin: '0 0 8px 0',
     borderRadius: '4px',
     overflow: 'hidden',
     cursor: 'text',
@@ -195,7 +195,6 @@ const editorTheme = EditorView.theme({
     fontSize: 'var(--font-size-sm)',
     border: '1px dashed var(--border-subtle)',
     borderRadius: '4px',
-    margin: '4px',
   },
   '.cm-image-editing': {
     backgroundColor: 'rgba(0, 102, 255, 0.05)',

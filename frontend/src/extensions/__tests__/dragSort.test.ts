@@ -69,10 +69,21 @@ describe('findBlockAtPos', () => {
     expect(findBlockAtPos(blocks, 12)).toBe(para)
   })
 
-  it('finds block at boundary (b.to + 1)', () => {
+  it('returns null for position at b.to + 1', () => {
     const view = createView('# Title')
     const blocks = getBlockRanges(view)
-    expect(findBlockAtPos(blocks, blocks[0].to + 1)).toBe(blocks[0])
+    expect(findBlockAtPos(blocks, blocks[0].to + 1)).toBeNull()
+  })
+
+  it('finds correct block when blocks are adjacent without blank line', () => {
+    const view = createView('### h3\n```\ncode\n```')
+    const blocks = getBlockRanges(view)
+    const h3 = blocks.find(b => view.state.doc.sliceString(b.from, b.to).startsWith('###'))
+    const code = blocks.find(b => view.state.doc.sliceString(b.from, b.to).includes('```'))
+    expect(h3).toBeDefined()
+    expect(code).toBeDefined()
+    expect(findBlockAtPos(blocks, code!.from)).toBe(code)
+    expect(findBlockAtPos(blocks, h3!.from)).toBe(h3)
   })
 })
 

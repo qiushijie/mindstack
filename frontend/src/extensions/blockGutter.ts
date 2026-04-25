@@ -181,9 +181,11 @@ const blockGutter = gutter({
   domEventHandlers: {
     mousedown(view, line, event) {
       const target = (event as MouseEvent).target as Element
-
       // Drag button
       if (target.closest('.cm-block-drag')) {
+        const ev = event as MouseEvent
+        ev.stopPropagation()
+        ev.preventDefault()
         const blocks = getBlockRanges(view)
         const block = findBlockAtPos(blocks, line.from)
         if (!block) return false

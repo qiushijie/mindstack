@@ -53,7 +53,7 @@ export function getBlockRanges(view: EditorView): BlockRange[] {
 
 export function findBlockAtPos(blocks: BlockRange[], pos: number): BlockRange | null {
   for (const b of blocks) {
-    if (pos >= b.from && pos <= b.to + 1) return b
+    if (pos >= b.from && pos <= b.to) return b
   }
   return null
 }
@@ -65,6 +65,7 @@ export function isInDragCooldown() { return Date.now() - dragEndTime < 300 }
 let dragSourceBlock: BlockRange | null = null
 let dragTargetLine = -1
 let dragView: EditorView | null = null
+
 
 export function startDrag(view: EditorView, block: BlockRange) {
   dragging = true
@@ -88,8 +89,15 @@ export function simulateMouseMove(x: number, y: number) {
     const target = findBlockAtPos(blocks, pos)
     if (target && target !== dragSourceBlock) {
       const doc = dragView.state.doc
-      const lineMid = doc.line(target.lineFrom).from + doc.line(target.lineFrom).length / 2
-      newTarget = pos < lineMid ? target.lineFrom : target.lineTo + 1
+      const lineStartRect = dragView.coordsAtPos(doc.line(target.lineFrom).from)
+      const lineEndRect = dragView.coordsAtPos(doc.line(target.lineTo).to)
+      if (lineStartRect && lineEndRect) {
+        const lineMidY = (lineStartRect.top + lineEndRect.bottom) / 2
+        newTarget = y < lineMidY ? target.lineFrom : target.lineTo + 1
+      } else {
+        const lineMid = doc.line(target.lineFrom).from + doc.line(target.lineFrom).length / 2
+        newTarget = pos < lineMid ? target.lineFrom : target.lineTo + 1
+      }
     }
   }
 
@@ -234,6 +242,8 @@ const dragSortPlugin = ViewPlugin.fromClass(class {
 
 const dragEventHandler = EditorView.domEventHandlers({
   mousedown(e, view) {
+    // blockGutter already handles gutter drag; avoid double-trigger
+    if (e.defaultPrevented) return false
     const target = e.target as Element
     const dragBtn = target.closest('.cm-block-drag')
     if (!dragBtn) return false
