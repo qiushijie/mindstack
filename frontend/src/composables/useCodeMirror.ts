@@ -3,6 +3,7 @@ import { EditorView, ViewUpdate } from '@codemirror/view'
 import { EditorState, Extension, Compartment } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
+import { languages } from '@codemirror/language-data'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { keymap } from '@codemirror/view'
 import { createEditorTheme } from '../extensions/theme'
@@ -43,7 +44,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
   function getBaseExtensions(): Extension[] {
     return [
       ...createEditorTheme(),
-      markdown({ extensions: GFM }),
+      markdown({ extensions: GFM, codeLanguages: languages }),
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       createKeymapExtension(),

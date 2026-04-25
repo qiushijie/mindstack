@@ -77,6 +77,24 @@
 - [x] should close menu with Escape
 - [x] should show empty message when no match
 
+## Code Rendering (`specs/editor-code-rendering.spec.ts`)
+
+- [x] should apply cm-code-block class to all code block lines
+- [x] should apply cm-code-first to opening fence line
+- [x] should apply cm-code-last to closing fence line
+- [x] should apply cm-code-line to code content lines only
+- [x] should display language label for JavaScript
+- [x] should display language label for Python
+- [x] should display language label for Go
+- [x] should show "text" for code block without language
+- [x] should highlight JavaScript with token spans
+- [x] should produce multiple token classes for JavaScript
+- [x] should highlight Python with token spans
+- [x] should produce multiple token classes for Python
+- [x] should only use base monospace class for plain text block
+- [x] should use monospace font on code lines
+- [x] should not have 0px border radius on first and last lines
+
 ## Block Type Input (`specs/editor-blocks.spec.ts`)
 
 - [x] should create H1 when typing #
@@ -135,5 +153,5 @@
 
 ## 统计
 
-- 总测试数: 92
-- Spec 文件数: 12
+- 总测试数: 107
+- Spec 文件数: 13

@@ -243,13 +243,19 @@ function build(view: EditorView) {
         }
 
         if (nodeVisible && t === 'FencedCode') {
-          addLine(node.from, 'cm-code-block')
           const s = doc.lineAt(node.from).number
           const e = doc.lineAt(Math.min(node.to, doc.length)).number
-          for (let ln = s + 1; ln < e; ln++) {
+          for (let ln = s; ln <= e; ln++) {
             const lineFrom = doc.line(ln).from
             if (lineFrom >= vpStartLine.from && lineFrom <= vpEndLine.to) {
-              addLine(lineFrom, 'cm-code-line')
+              addLine(lineFrom, 'cm-code-block')
+              if (ln === s) {
+                addLine(lineFrom, 'cm-code-first')
+              } else if (ln === e) {
+                addLine(lineFrom, 'cm-code-last')
+              } else {
+                addLine(lineFrom, 'cm-code-line')
+              }
             }
           }
         }
@@ -329,18 +335,12 @@ function build(view: EditorView) {
           addAtomic(node.from, node.to)
         }
 
-        // FencedCode: code header widget + closing fence
+        // FencedCode: code header widget
         if (nodeVisible && t === 'FencedCode') {
           const startLine = doc.lineAt(node.from)
           const langNode = node.node.getChild('CodeInfo')
           const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
           ranges.push(Decoration.widget({ widget: new CodeHeaderWidget(lang), side: 1 }).range(startLine.from))
-
-          const endLine = doc.lineAt(Math.min(node.to, doc.length))
-          if (endLine.number > startLine.number && endLine.text.match(/^[`~]{3,}\s*$/)) {
-            addRange(endLine.from, endLine.to, hide)
-            addAtomic(endLine.from, endLine.to)
-          }
         }
 
         if (t === 'HorizontalRule') {

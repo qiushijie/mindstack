@@ -51,6 +51,9 @@ const editorTheme = EditorView.theme({
     fontStyle: 'italic',
     color: 'var(--foreground-secondary)',
   },
+  '.cm-blockquote-line.cm-code-line': {
+    fontStyle: 'normal',
+  },
 
   // List
   '.cm-list-item': {
@@ -67,23 +70,41 @@ const editorTheme = EditorView.theme({
     userSelect: 'none',
   },
 
-  // Code block
+  // Code block container — base styling shared by all code block lines
   '.cm-code-block': {
     backgroundColor: 'var(--code-bg)',
-    borderRadius: '8px',
-    border: '1px solid var(--border-subtle)',
-    marginTop: '4px',
-    marginBottom: '4px',
+    borderLeft: '1px solid var(--border-subtle)',
+    borderRight: '1px solid var(--border-subtle)',
+  },
+  '.cm-code-first': {
+    borderTop: '1px solid var(--border-subtle)',
+    borderTopLeftRadius: '8px',
+    borderTopRightRadius: '8px',
+    marginTop: '2px',
+    lineHeight: '0',
+  },
+  '.cm-code-first .cm-widgetBuffer': {
+    height: '0 !important',
+    verticalAlign: 'top',
+  },
+  '.cm-code-last': {
+    borderBottom: '1px solid var(--border-subtle)',
+    borderBottomLeftRadius: '8px',
+    borderBottomRightRadius: '8px',
+    marginBottom: '2px',
+    lineHeight: '0',
+    fontSize: '0',
+    minHeight: '4px',
   },
   '.cm-code-header': {
-    display: 'flex',
+    display: 'inline-flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    height: '20px',
-    padding: '12px 20px 8px',
+    padding: '2px 20px',
     fontFamily: 'var(--font-mono)',
     fontSize: 'var(--font-size-sm)',
     color: 'var(--foreground-tertiary)',
+    lineHeight: 'var(--line-height-base, 1.4)',
   },
   '.cm-code-lang': {
     fontFamily: 'var(--font-mono)',
