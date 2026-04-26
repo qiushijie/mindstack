@@ -130,6 +130,7 @@ export default {
       tableCol2: '열 2',
       tableCell1: '셀 1',
       tableCell2: '셀 2',
+      emptyLinePlaceholder: '/ 를 입력하여 메뉴 열기',
     },
     contextMenu: {
       cut: '잘라내기',

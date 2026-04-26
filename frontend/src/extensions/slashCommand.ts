@@ -135,9 +135,14 @@ export const slashCommand = ViewPlugin.fromClass(class {
     }
   }
 
+  private setMenuActive(view: EditorView, active: boolean) {
+    view.dom.classList.toggle('cm-slash-menu-active', active)
+  }
+
   build(view: EditorView): DecorationSet {
     if (this.dismissed) {
       this.activeSlashFrom = -1
+      this.setMenuActive(view, false)
       return Decoration.none
     }
 
@@ -150,6 +155,7 @@ export const slashCommand = ViewPlugin.fromClass(class {
 
     if (slashIndex === -1) {
       this.activeSlashFrom = -1
+      this.setMenuActive(view, false)
       return Decoration.none
     }
 
@@ -157,6 +163,7 @@ export const slashCommand = ViewPlugin.fromClass(class {
     const beforeSlash = textBefore.slice(0, slashIndex)
     if (beforeSlash.trim() !== '') {
       this.activeSlashFrom = -1
+      this.setMenuActive(view, false)
       return Decoration.none
     }
 
@@ -167,6 +174,7 @@ export const slashCommand = ViewPlugin.fromClass(class {
       side: 1,
     })
 
+    this.setMenuActive(view, true)
     return Decoration.set([widget.range(pos)])
   }
 }, {
@@ -190,11 +198,10 @@ function applyItem(view: EditorView, item: SlashMenuItem, slashFrom: number) {
   const prefixLen = item.prefix.length
   const translated = getTranslatedItem(item)
   const insertText = before + item.prefix + translated.example
-  const anchor = line.from + before.length + prefixLen
-  const head = line.from + insertText.length
+  const cursorPos = line.from + before.length + prefixLen
   view.dispatch({
     changes: { from: line.from, to: line.from + line.text.length, insert: insertText },
-    selection: { anchor, head },
+    selection: { anchor: cursorPos, head: cursorPos },
   })
   view.focus()
   const plugin = view.plugin(slashCommand)

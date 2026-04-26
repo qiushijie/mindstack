@@ -130,6 +130,7 @@ export default {
       tableCol2: '列 2',
       tableCell1: '单元格 1',
       tableCell2: '单元格 2',
+      emptyLinePlaceholder: '输入 / 唤出菜单',
     },
     contextMenu: {
       cut: '剪切',

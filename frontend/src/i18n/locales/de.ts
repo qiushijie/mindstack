@@ -130,6 +130,7 @@ export default {
       tableCol2: 'Spalte 2',
       tableCell1: 'Zelle 1',
       tableCell2: 'Zelle 2',
+      emptyLinePlaceholder: 'Gib / für Befehle ein',
     },
     contextMenu: {
       cut: 'Ausschneiden',

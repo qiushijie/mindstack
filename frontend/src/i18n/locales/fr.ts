@@ -130,6 +130,7 @@ export default {
       tableCol2: 'Colonne 2',
       tableCell1: 'Cellule 1',
       tableCell2: 'Cellule 2',
+      emptyLinePlaceholder: 'Tapez / pour les commandes',
     },
     contextMenu: {
       cut: 'Couper',

@@ -359,14 +359,15 @@ describe('Enter key selection', () => {
     expect(view.state.doc.toString()).toBe(docBefore)
   })
 
-  it('selection is placed after prefix and before example text', () => {
+  it('cursor is placed after prefix with no selection', () => {
     const view = createView('', [createSlashCommand()])
     typeText(view, '/')
     dispatchKey(view, 'Enter')
-    // Heading 1: "# Heading 1" — anchor after prefix, head at end
+    // Heading 1: "# Heading 1" — cursor after prefix, no selection
     const sel = view.state.selection.main
     expect(sel.anchor).toBe('# '.length)
-    expect(sel.head).toBe('# Heading 1'.length)
+    expect(sel.head).toBe('# '.length)
+    expect(sel.empty).toBe(true)
   })
 
   it('menu is dismissed after Enter selection', () => {

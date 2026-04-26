@@ -1,5 +1,5 @@
 import { ref, shallowRef, onMounted, onUnmounted, watch, type Ref } from 'vue'
-import { EditorView, ViewUpdate } from '@codemirror/view'
+import { EditorView, ViewUpdate, drawSelection } from '@codemirror/view'
 import { EditorState, Extension, Compartment } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
@@ -17,6 +17,7 @@ import { createBlockGutter } from '../extensions/blockGutter'
 import { createDragSort } from '../extensions/dragSort'
 import { createInputHandler } from '../extensions/inputHandler'
 import { createSlashCommand } from '../extensions/slashCommand'
+import { emptyLinePlaceholder } from '../extensions/emptyLinePlaceholder'
 import { useEditorState } from './useEditorState'
 import { useFileTree } from './useFileTree'
 
@@ -69,6 +70,8 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       ...createDragSort(),
       createInputHandler(),
       createSlashCommand(),
+      emptyLinePlaceholder,
+      drawSelection(),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (update.docChanged) {

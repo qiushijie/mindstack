@@ -130,6 +130,7 @@ export default {
       tableCol2: 'Столбец 2',
       tableCell1: 'Ячейка 1',
       tableCell2: 'Ячейка 2',
+      emptyLinePlaceholder: 'Введите / для команд',
     },
     contextMenu: {
       cut: 'Вырезать',

@@ -40,6 +40,7 @@ function buildEditorTheme(dark: boolean) {
     },
     '.cm-line': {
       padding: '2px 0',
+      position: 'relative' as unknown as string,
     },
     '&.cm-focused': {
       outline: 'none',
@@ -285,6 +286,9 @@ function buildEditorTheme(dark: boolean) {
     },
 
     // Slash command menu
+    '&.cm-slash-menu-active .cm-cursor, &.cm-slash-menu-active .cm-cursor-primary, &.cm-slash-menu-active .cm-cursor-secondary': {
+      display: 'none !important',
+    },
     '.cm-slash-menu': {
       position: 'absolute',
       top: '100%',
@@ -323,6 +327,13 @@ function buildEditorTheme(dark: boolean) {
       padding: '8px 12px',
       fontSize: 'var(--font-size-sm)',
       color: 'var(--foreground-tertiary)',
+    },
+    '.cm-empty-line-placeholder': {
+      color: 'var(--foreground-tertiary)',
+      fontSize: 'var(--font-size-md)',
+      opacity: '0.5',
+      pointerEvents: 'none',
+      userSelect: 'none',
     },
 
     // Table widget

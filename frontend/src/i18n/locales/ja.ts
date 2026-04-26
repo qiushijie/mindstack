@@ -130,6 +130,7 @@ export default {
       tableCol2: '列 2',
       tableCell1: 'セル 1',
       tableCell2: 'セル 2',
+      emptyLinePlaceholder: '/ を入力してメニューを表示',
     },
     contextMenu: {
       cut: '切り取り',
