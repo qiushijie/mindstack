@@ -54,6 +54,61 @@ class CodeHeaderWidget extends WidgetType {
   ignoreEvent() { return false }
 }
 
+class MermaidEditHeaderWidget extends WidgetType {
+  constructor(readonly pos: number) { super() }
+
+  toDOM(view: EditorView) {
+    const div = document.createElement('div')
+    div.className = 'cm-mermaid-edit-header'
+    div.dataset.pos = String(this.pos)
+
+    const badge = document.createElement('span')
+    badge.className = 'cm-mermaid-badge'
+    badge.textContent = 'mermaid'
+
+    const previewBtn = document.createElement('button')
+    previewBtn.className = 'cm-mermaid-preview-btn'
+    previewBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg><span>Preview</span>'
+    previewBtn.title = 'Preview'
+
+    div.appendChild(badge)
+    div.appendChild(previewBtn)
+
+    // Click handler - move cursor out of block
+    const handlePreviewClick = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      const tree = syntaxTree(view.state)
+      const pos = this.pos
+      let blockEnd = pos
+      tree.iterate({
+        enter(node) {
+          if (node.name === 'FencedCode' && node.from === pos) {
+            blockEnd = node.to
+          }
+        },
+      })
+      view.dispatch({
+        selection: { anchor: Math.min(blockEnd + 1, view.state.doc.length) },
+      })
+      view.focus()
+    }
+
+    const handleMousedown = (e: MouseEvent) => {
+      e.stopPropagation()
+    }
+
+    previewBtn.addEventListener('mousedown', handleMousedown)
+    previewBtn.addEventListener('click', handlePreviewClick)
+
+    return div
+  }
+
+  eq(other: MermaidEditHeaderWidget) { return other.pos === this.pos }
+  ignoreEvent() { return false }
+}
+
 class HrWidget extends WidgetType {
   toDOM() {
     const hr = document.createElement('hr')
@@ -243,18 +298,38 @@ function build(view: EditorView) {
         }
 
         if (nodeVisible && t === 'FencedCode') {
-          const s = doc.lineAt(node.from).number
-          const e = doc.lineAt(Math.min(node.to, doc.length)).number
-          for (let ln = s; ln <= e; ln++) {
-            const lineFrom = doc.line(ln).from
-            if (lineFrom >= vpStartLine.from && lineFrom <= vpEndLine.to) {
-              addLine(lineFrom, 'cm-code-block')
-              if (ln === s) {
-                addLine(lineFrom, 'cm-code-first')
-              } else if (ln === e) {
-                addLine(lineFrom, 'cm-code-last')
-              } else {
-                addLine(lineFrom, 'cm-code-line')
+          const langNode = node.node.getChild('CodeInfo')
+          const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
+          const isMermaid = lang === 'mermaid'
+          const isEditing = isMermaid && cursorPos >= node.from && cursorPos <= node.to
+
+          if (isMermaid && !isEditing) {
+            // Preview mode: skip code block styling, mermaidWidget will render preview
+          } else {
+            const s = doc.lineAt(node.from).number
+            const e = doc.lineAt(Math.min(node.to, doc.length)).number
+            for (let ln = s; ln <= e; ln++) {
+              const lineFrom = doc.line(ln).from
+              if (lineFrom >= vpStartLine.from && lineFrom <= vpEndLine.to) {
+                if (isEditing) {
+                  addLine(lineFrom, 'cm-mermaid-block')
+                  if (ln === s) {
+                    addLine(lineFrom, 'cm-mermaid-first')
+                  } else if (ln === e) {
+                    addLine(lineFrom, 'cm-mermaid-last')
+                  } else {
+                    addLine(lineFrom, 'cm-mermaid-line')
+                  }
+                } else {
+                  addLine(lineFrom, 'cm-code-block')
+                  if (ln === s) {
+                    addLine(lineFrom, 'cm-code-first')
+                  } else if (ln === e) {
+                    addLine(lineFrom, 'cm-code-last')
+                  } else {
+                    addLine(lineFrom, 'cm-code-line')
+                  }
+                }
               }
             }
           }
@@ -340,7 +415,15 @@ function build(view: EditorView) {
           const startLine = doc.lineAt(node.from)
           const langNode = node.node.getChild('CodeInfo')
           const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
-          ranges.push(Decoration.widget({ widget: new CodeHeaderWidget(lang), side: 1 }).range(startLine.from))
+          const isMermaid = lang === 'mermaid'
+          const isEditing = isMermaid && cursorPos >= node.from && cursorPos <= node.to
+
+          if (isEditing) {
+            ranges.push(Decoration.widget({ widget: new MermaidEditHeaderWidget(node.from), side: 1 }).range(startLine.from))
+          } else if (!isMermaid) {
+            ranges.push(Decoration.widget({ widget: new CodeHeaderWidget(lang), side: 1 }).range(startLine.from))
+          }
+          // If mermaid preview mode, skip header widget (mermaidWidget handles it)
         }
 
         if (t === 'HorizontalRule') {

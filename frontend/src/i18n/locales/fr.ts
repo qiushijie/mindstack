@@ -122,6 +122,7 @@ export default {
       listItem: 'Élément de liste',
       todo: 'Tâche',
       code: 'code ici\n```',
+      mermaid: 'graph TD\n  A[Début] --> B[Fin]\n```',
       quote: 'Citation',
       link: 'texte du lien',
       linkUrl: 'URL',
@@ -171,6 +172,7 @@ export default {
     todo: { label: 'Tâche', desc: 'Liste de tâches', example: 'Tâche' },
     blockquote: { label: 'Bloc de citation', desc: 'Bloc de citation', example: 'Citation' },
     codeBlock: { label: 'Bloc de code', desc: 'Extrait de code', example: 'code ici\n```' },
+    mermaid: { label: 'Mermaid', desc: 'Diagramme de flux', example: 'graph TD\n  A[Début] --> B[Fin]\n```' },
   },
   slash: {
     noResults: 'Aucun résultat',

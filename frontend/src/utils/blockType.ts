@@ -14,5 +14,6 @@ export enum BlockType {
   HorizontalRule = 'HorizontalRule',
   Table = 'Table',
   MathBlock = 'MathBlock',
+  Mermaid = 'Mermaid',
   Unknown = 'Unknown',
 }

@@ -403,6 +403,120 @@ function buildEditorTheme(dark: boolean) {
       borderRadius: '4px',
       backgroundColor: dark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)',
     },
+
+    // Mermaid
+    '.cm-mermaid-preview': {
+      border: '1px solid var(--border-subtle)',
+      borderRadius: '8px',
+      overflow: 'hidden',
+      backgroundColor: 'var(--surface-primary)',
+      cursor: 'text',
+    },
+    '.cm-mermaid-preview-header': {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0 12px',
+      height: '36px',
+      backgroundColor: 'var(--surface-secondary)',
+      gap: '8px',
+    },
+    '.cm-mermaid-sep': {
+      height: '1px',
+      backgroundColor: 'var(--border-subtle)',
+    },
+    '.cm-mermaid-preview-area': {
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: '24px',
+      minHeight: '120px',
+      backgroundColor: 'var(--surface-secondary)',
+    },
+    '.cm-mermaid-preview-area svg': {
+      maxWidth: '100%',
+    },
+    '.cm-mermaid-badge': {
+      fontFamily: 'var(--font-mono)',
+      fontSize: 'var(--font-size-xs)',
+      fontWeight: '600',
+      color: 'var(--foreground-tertiary)',
+    },
+    '.cm-mermaid-edit-btn, .cm-mermaid-preview-btn': {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+      padding: '0 8px',
+      height: '24px',
+      border: 'none',
+      borderRadius: '4px',
+      backgroundColor: 'var(--surface-hover)',
+      color: 'var(--foreground-secondary)',
+      fontFamily: 'var(--font-sans)',
+      fontSize: 'var(--font-size-xs)',
+      fontWeight: 'normal',
+      cursor: 'pointer',
+      lineHeight: '1',
+    },
+    '.cm-mermaid-edit-btn:hover, .cm-mermaid-preview-btn:hover': {
+      backgroundColor: 'var(--surface-active)',
+    },
+    '.cm-mermaid-error': {
+      color: 'var(--accent-error, #ef4444)',
+      fontFamily: 'var(--font-mono)',
+      fontSize: 'var(--font-size-sm)',
+      padding: '8px 12px',
+      borderRadius: '4px',
+      backgroundColor: dark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)',
+    },
+
+    // Mermaid editing mode
+    '.cm-mermaid-edit-header': {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0 12px',
+      height: '36px',
+      backgroundColor: 'var(--surface-secondary)',
+      gap: '8px',
+    },
+    '.cm-mermaid-edit-header-left': {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+    },
+    '.cm-mermaid-block': {
+      backgroundColor: 'var(--code-bg)',
+      borderLeft: '2px solid var(--accent-primary)',
+      borderRight: '2px solid var(--accent-primary)',
+    },
+    '.cm-mermaid-first': {
+      borderTop: '2px solid var(--accent-primary)',
+      borderTopLeftRadius: '8px',
+      borderTopRightRadius: '8px',
+      paddingTop: '2px',
+      lineHeight: '0',
+    },
+    '.cm-mermaid-first .cm-widgetBuffer': {
+      height: '0 !important',
+      verticalAlign: 'top',
+    },
+    '.cm-mermaid-last': {
+      borderBottom: '2px solid var(--accent-primary)',
+      borderBottomLeftRadius: '8px',
+      borderBottomRightRadius: '8px',
+      paddingBottom: '2px',
+      lineHeight: '0',
+      fontSize: '0',
+      minHeight: '4px',
+    },
+    '.cm-mermaid-line': {
+      fontFamily: 'var(--font-mono)',
+      fontSize: '13px',
+      lineHeight: '1.6',
+      color: 'var(--foreground-secondary)',
+      padding: '0 20px',
+    },
   }, { dark })
 }
 

@@ -122,6 +122,7 @@ export default {
       listItem: '목록 항목',
       todo: '할 일',
       code: '코드 입력\n```',
+      mermaid: 'graph TD\n  A[시작] --> B[끝]\n```',
       quote: '인용문',
       link: '링크 텍스트',
       linkUrl: 'URL',
@@ -171,6 +172,7 @@ export default {
     todo: { label: '할 일', desc: '작업 목록', example: '할 일' },
     blockquote: { label: '인용 블록', desc: '인용 블록', example: '인용문' },
     codeBlock: { label: '코드 블록', desc: '코드 스니펫', example: '코드 입력\n```' },
+    mermaid: { label: 'Mermaid', desc: '순서도', example: 'graph TD\n  A[시작] --> B[끝]\n```' },
   },
   slash: {
     noResults: '결과 없음',

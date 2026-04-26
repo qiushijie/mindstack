@@ -122,6 +122,7 @@ export default {
       listItem: 'Элемент списка',
       todo: 'Задача',
       code: 'Код здесь\n```',
+      mermaid: 'graph TD\n  A[Начало] --> B[Конец]\n```',
       quote: 'Цитата',
       link: 'текст ссылки',
       linkUrl: 'URL',
@@ -171,6 +172,7 @@ export default {
     todo: { label: 'Задача', desc: 'Список задач', example: 'Задача' },
     blockquote: { label: 'Блок цитаты', desc: 'Блок цитаты', example: 'Цитата' },
     codeBlock: { label: 'Блок кода', desc: 'Фрагмент кода', example: 'код здесь\n```' },
+    mermaid: { label: 'Mermaid', desc: 'Блок-схема', example: 'graph TD\n  A[Начало] --> B[Конец]\n```' },
   },
   slash: {
     noResults: 'Нет результатов',

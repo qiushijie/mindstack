@@ -122,6 +122,7 @@ export default {
       listItem: 'リスト項目',
       todo: 'ToDo',
       code: 'ここにコードを入力\n```',
+      mermaid: 'graph TD\n  A[開始] --> B[終了]\n```',
       quote: '引用',
       link: 'リンクテキスト',
       linkUrl: 'URL',
@@ -171,6 +172,7 @@ export default {
     todo: { label: 'ToDo', desc: 'タスクリスト', example: 'ToDo' },
     blockquote: { label: '引用ブロック', desc: '引用ブロック', example: '引用' },
     codeBlock: { label: 'コードブロック', desc: 'コードスニペット', example: 'ここにコードを入力\n```' },
+    mermaid: { label: 'Mermaid', desc: 'フローチャート', example: 'graph TD\n  A[開始] --> B[終了]\n```' },
   },
   slash: {
     noResults: '結果なし',

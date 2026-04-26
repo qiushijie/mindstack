@@ -73,3 +73,15 @@ a_{21} & a_{22} & a_{23} \\
 a_{31} & a_{32} & a_{33}
 \end{pmatrix}
 $$
+
+## Mermaid Flowchart
+
+```mermaid
+graph TD
+  A[Start] --> B{Is it working?}
+  B -->|Yes| C[Great!]
+  B -->|No| D[Debug]
+  D --> E[Fix Issues]
+  E --> B
+  C --> F[End]
+```

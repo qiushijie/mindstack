@@ -16,10 +16,11 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.41.1",
     "@lezer/highlight": "^1.2.3",
-    "lucide-vue-next": "^1.0.0",
     "katex": "^0.16.21",
+    "lucide-vue-next": "^1.0.0",
     "markdown-it": "^14.1.1",
     "markdown-it-task-lists": "^2.1.1",
+    "mermaid": "^11.14.0",
     "vue": "^3.2.37",
     "vue-i18n": "^9.14.4"
   },

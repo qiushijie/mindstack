@@ -31,6 +31,20 @@ format: markdown
 
 Use inline code like \`config.yaml\` to reference files. Connect notes with [[bi-directional links]] for a powerful knowledge graph experience.
 
+## Development Workflow
+
+The following Mermaid diagram describes the development process:
+
+\`\`\`mermaid
+graph TD
+  A[Start] --> B{Is it working?}
+  B -->|Yes| C[Great!]
+  B -->|No| D[Debug]
+  D --> E[Fix Issues]
+  E --> B
+  C --> F[End]
+\`\`\`
+
 ## Data Overview
 
 A summary of key metrics for Q1 2026.

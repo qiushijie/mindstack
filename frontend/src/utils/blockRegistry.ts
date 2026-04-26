@@ -22,6 +22,7 @@ export const BLOCK_REGISTRY: BlockConfig[] = [
   { key: 'blockquote', type: BlockType.Blockquote, label: 'Blockquote', description: 'Quote block', prefix: '> ', example: 'Quote', toolbarLabel: 'Quote', keymap: 'Mod-Shift-.' },
   { key: 'codeBlock', type: BlockType.FencedCode, label: 'Code Block', description: 'Code snippet', prefix: '```text\n', example: 'code here\n```', toolbarLabel: 'Code', keymap: 'Mod-Alt-C' },
   { key: 'mathBlock', type: BlockType.MathBlock, label: 'Math Block', description: 'Math formula', prefix: '$$\n', example: 'E = mc^2\n$$', toolbarLabel: 'Math', keymap: 'Mod-Alt-M' },
+  { key: 'mermaid', type: BlockType.Mermaid, label: 'Mermaid', description: 'Flowchart diagram', prefix: '```mermaid\n', example: 'graph TD\n  A[Start] --> B[End]\n```', toolbarLabel: 'Mermaid' },
 ]
 
 const byType = new Map<BlockTypeT, BlockConfig>(BLOCK_REGISTRY.map(c => [c.type, c]))

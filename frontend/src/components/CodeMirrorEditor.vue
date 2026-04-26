@@ -179,6 +179,10 @@ function handleDocKeydown(e: KeyboardEvent) {
 }
 
 function handleContextMenu(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (target.closest('.cm-mermaid-preview') || target.closest('.cm-mermaid-edit-header')) {
+    return
+  }
   e.preventDefault()
 
   // Check if right-clicking on a table

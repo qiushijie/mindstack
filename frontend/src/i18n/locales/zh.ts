@@ -122,6 +122,7 @@ export default {
       listItem: '列表项',
       todo: '待办事项',
       code: '在此输入代码\n```',
+      mermaid: 'graph TD\n  A[开始] --> B[结束]\n```',
       quote: '引用',
       link: '链接文本',
       linkUrl: '网址',
@@ -171,6 +172,7 @@ export default {
     todo: { label: '待办事项', desc: '任务列表', example: '待办事项' },
     blockquote: { label: '引用块', desc: '引用块', example: '引用' },
     codeBlock: { label: '代码块', desc: '代码片段', example: '在此输入代码\n```' },
+    mermaid: { label: '流程图', desc: '流程图', example: 'graph TD\n  A[开始] --> B[结束]\n```' },
   },
   slash: {
     noResults: '无结果',

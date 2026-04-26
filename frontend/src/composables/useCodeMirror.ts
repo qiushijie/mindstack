@@ -12,6 +12,7 @@ import { markdownStyles, checkboxClickHandler, imageClickHandler } from '../exte
 import { currentFilePathExtension, setCurrentFilePath } from '../extensions/currentFilePath'
 import { tablePlugin, tableEditHandler } from '../extensions/tableWidget'
 import { mathPlugin, mathEditHandler } from '../extensions/mathWidget'
+import { mermaidPlugin } from '../extensions/mermaidWidget'
 import { createBlockGutter } from '../extensions/blockGutter'
 import { createDragSort } from '../extensions/dragSort'
 import { createInputHandler } from '../extensions/inputHandler'
@@ -63,6 +64,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       tableEditHandler,
       mathPlugin,
       mathEditHandler,
+      mermaidPlugin,
       ...createBlockGutter(),
       ...createDragSort(),
       createInputHandler(),
