@@ -13,5 +13,6 @@ export enum BlockType {
   FencedCode = 'FencedCode',
   HorizontalRule = 'HorizontalRule',
   Table = 'Table',
+  MathBlock = 'MathBlock',
   Unknown = 'Unknown',
 }

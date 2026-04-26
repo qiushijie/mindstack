@@ -72,6 +72,21 @@ describe('getBlockType', () => {
     expect(getBlockType(view, 2)).toBe(BlockType.Table)
   })
 
+  it('detects MathBlock', () => {
+    const view = createView('$$\nE=mc^2\n$$')
+    expect(getBlockType(view, 0)).toBe(BlockType.MathBlock)
+  })
+
+  it('detects MathBlock with leading spaces', () => {
+    const view = createView('  $$\nE=mc^2\n$$')
+    expect(getBlockType(view, 2)).toBe(BlockType.MathBlock)
+  })
+
+  it('does not detect MathBlock for plain text starting with $', () => {
+    const view = createView('$100 price')
+    expect(getBlockType(view, 0)).toBe(BlockType.Paragraph)
+  })
+
   it('detects type at line end', () => {
     const view = createView('# Title')
     expect(getBlockType(view, 7)).toBe(BlockType.H1)

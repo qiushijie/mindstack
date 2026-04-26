@@ -11,6 +11,7 @@ import { createKeymapExtension } from '../extensions/keymap'
 import { markdownStyles, checkboxClickHandler, imageClickHandler } from '../extensions/markdownStyles'
 import { currentFilePathExtension, setCurrentFilePath } from '../extensions/currentFilePath'
 import { tablePlugin, tableEditHandler } from '../extensions/tableWidget'
+import { mathPlugin, mathEditHandler } from '../extensions/mathWidget'
 import { createBlockGutter } from '../extensions/blockGutter'
 import { createDragSort } from '../extensions/dragSort'
 import { createInputHandler } from '../extensions/inputHandler'
@@ -60,6 +61,8 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       imageClickHandler,
       tablePlugin,
       tableEditHandler,
+      mathPlugin,
+      mathEditHandler,
       ...createBlockGutter(),
       ...createDragSort(),
       createInputHandler(),

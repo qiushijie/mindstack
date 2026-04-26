@@ -34,6 +34,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "View",
 		"settings":         "Settings",
 		"toggleFullScreen": "Toggle Full Screen",
+		"openDevTools":     "Open Developer Tools",
 		"help":             "Help",
 		"about":            "About MindStack",
 	},
@@ -55,6 +56,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "表示",
 		"settings":         "設定",
 		"toggleFullScreen": "全画面表示の切り替え",
+		"openDevTools":     "開発者ツールを開く",
 		"help":             "ヘルプ",
 		"about":            "MindStack について",
 	},
@@ -76,6 +78,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "Affichage",
 		"settings":         "Paramètres",
 		"toggleFullScreen": "Basculer plein écran",
+		"openDevTools":     "Ouvrir les outils de développement",
 		"help":             "Aide",
 		"about":            "À propos de MindStack",
 	},
@@ -97,6 +100,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "Ansicht",
 		"settings":         "Einstellungen",
 		"toggleFullScreen": "Vollbild umschalten",
+		"openDevTools":     "Entwicklertools öffnen",
 		"help":             "Hilfe",
 		"about":            "Über MindStack",
 	},
@@ -118,6 +122,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "Ver",
 		"settings":         "Configuración",
 		"toggleFullScreen": "Alternar pantalla completa",
+		"openDevTools":     "Abrir herramientas de desarrollo",
 		"help":             "Ayuda",
 		"about":            "Acerca de MindStack",
 	},
@@ -139,6 +144,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "Вид",
 		"settings":         "Настройки",
 		"toggleFullScreen": "Переключить полный экран",
+		"openDevTools":     "Открыть инструменты разработчика",
 		"help":             "Справка",
 		"about":            "О MindStack",
 	},
@@ -160,6 +166,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "보기",
 		"settings":         "설정",
 		"toggleFullScreen": "전체 화면 전환",
+		"openDevTools":     "개발자 도구 열기",
 		"help":             "도움말",
 		"about":            "MindStack 정보",
 	},
@@ -181,6 +188,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "视图",
 		"settings":         "设置",
 		"toggleFullScreen": "切换全屏",
+		"openDevTools":     "打开开发者工具",
 		"help":             "帮助",
 		"about":            "关于 MindStack",
 	},
@@ -281,6 +289,10 @@ func (a *App) buildMenu() *menu.Menu {
 	viewMenu := appMenu.AddSubmenu(a.menuText("view"))
 	viewMenu.AddText(a.menuText("settings"), keys.CmdOrCtrl(","), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:navigate", "settings")
+	})
+	viewMenu.AddSeparator()
+	viewMenu.AddText(a.menuText("openDevTools"), keys.CmdOrCtrl("shift+i"), func(_ *menu.CallbackData) {
+		runtime.EventsEmit(a.ctx, "menu:open-devtools")
 	})
 	viewMenu.AddSeparator()
 	viewMenu.AddText(a.menuText("toggleFullScreen"), keys.Key("f11"), func(_ *menu.CallbackData) {

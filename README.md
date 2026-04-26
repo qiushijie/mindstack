@@ -23,6 +23,8 @@ cd frontend && pnpm install
 wails dev
 ```
 
+See [example.md](docs/example.md) for a document demonstrating all supported node types.
+
 ## License
 
 MIT

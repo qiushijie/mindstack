@@ -6,5 +6,14 @@ export default defineConfig({
   plugins: [vue()],
   test: {
     environment: 'happy-dom',
+    coverage: {
+      exclude: [
+        'wailsjs/**',
+        'node_modules/**',
+        '**/node_modules/**',
+        '**/*.test.ts',
+        '**/test-utils/**',
+      ],
+    },
   },
 })

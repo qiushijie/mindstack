@@ -11,6 +11,15 @@ describe('getBlockConfig', () => {
     expect(config!.prefix).toBe('# ')
   })
 
+  it('returns correct config for MathBlock', () => {
+    const config = getBlockConfig(BlockType.MathBlock)
+    expect(config).toBeDefined()
+    expect(config!.type).toBe(BlockType.MathBlock)
+    expect(config!.label).toBe('Math Block')
+    expect(config!.prefix).toBe('$$\n')
+    expect(config!.keymap).toBe('Mod-Alt-M')
+  })
+
   it('returns undefined for non-existent type', () => {
     const config = getBlockConfig('NonExistent' as BlockType)
     expect(config).toBeUndefined()
@@ -24,6 +33,12 @@ describe('getBlockConfigByToolbarLabel', () => {
     expect(config!.type).toBe(BlockType.H1)
   })
 
+  it('returns correct config for Math label', () => {
+    const config = getBlockConfigByToolbarLabel('Math')
+    expect(config).toBeDefined()
+    expect(config!.type).toBe(BlockType.MathBlock)
+  })
+
   it('returns undefined for non-existent label', () => {
     const config = getBlockConfigByToolbarLabel('NonExistent')
     expect(config).toBeUndefined()
@@ -35,6 +50,12 @@ describe('getBlockConfigByPrefix', () => {
     const config = getBlockConfigByPrefix('# ')
     expect(config).toBeDefined()
     expect(config!.type).toBe(BlockType.H1)
+  })
+
+  it('returns MathBlock config for "$$\n" prefix', () => {
+    const config = getBlockConfigByPrefix('$$\n')
+    expect(config).toBeDefined()
+    expect(config!.type).toBe(BlockType.MathBlock)
   })
 
   it('returns undefined for non-existent prefix', () => {

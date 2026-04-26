@@ -51,6 +51,14 @@ onMounted(async () => {
     saveCurrentFile()
   })
 
+  EventsOff('menu:open-devtools')
+  EventsOn('menu:open-devtools', () => {
+    const w = window as any
+    if (w.webkit && w.webkit.messageHandlers && w.webkit.messageHandlers.external) {
+      w.webkit.messageHandlers.external.postMessage('wails:openInspector')
+    }
+  })
+
   EventsOff('menu:file:new')
   EventsOn('menu:file:new', () => {
     newFile()

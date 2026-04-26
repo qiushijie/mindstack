@@ -38,6 +38,7 @@ const blockTypeToToolbarLabel: Record<string, string> = {
   [BlockType.Paragraph]: 'Text',
   [BlockType.HorizontalRule]: 'Text',
   [BlockType.Table]: 'Text',
+  [BlockType.MathBlock]: 'Math',
   [BlockType.Unknown]: 'Text',
 }
 
@@ -100,7 +101,17 @@ export function getBlockType(view: EditorView, pos: number): BlockType {
     }
   }
 
-  return result ?? BlockType.Paragraph
+  const type = result ?? BlockType.Paragraph
+
+  // Detect math block by text pattern (Lezer does not parse $$ syntax)
+  if (type === BlockType.Paragraph) {
+    const line = doc.lineAt(pos)
+    if (line.text.trimStart().startsWith('$$')) {
+      return BlockType.MathBlock
+    }
+  }
+
+  return type
 }
 
 export function getBlockTypeAtLine(view: EditorView, line: { from: number; to: number }): BlockType {

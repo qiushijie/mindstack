@@ -23,6 +23,8 @@ cd frontend && pnpm install
 wails dev
 ```
 
+查看 [example.md](example.md) 了解所有支持的节点类型。
+
 ## 许可证
 
 MIT

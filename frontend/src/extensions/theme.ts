@@ -370,6 +370,39 @@ function buildEditorTheme(dark: boolean) {
     '.cm-table-widget tbody tr:hover': {
       backgroundColor: 'var(--surface-hover)',
     },
+
+    // Math
+    '.cm-math-inline': {
+      display: 'inline-block',
+      cursor: 'pointer',
+      verticalAlign: 'middle',
+    },
+    '.cm-math-inline .katex': {
+      color: dark ? 'var(--foreground-primary)' : 'inherit',
+      fontSize: '1.05em',
+    },
+    '.cm-math-block': {
+      display: 'block',
+      cursor: 'pointer',
+      padding: '12px 0',
+      textAlign: 'center' as unknown as string,
+      overflowX: 'auto' as unknown as string,
+    },
+    '.cm-math-block .katex': {
+      color: dark ? 'var(--foreground-primary)' : 'inherit',
+      fontSize: '1.15em',
+    },
+    '.cm-math-block .katex-display': {
+      margin: '0',
+    },
+    '.cm-math-error': {
+      color: 'var(--accent-error, #ef4444)',
+      fontFamily: 'var(--font-mono)',
+      fontSize: 'var(--font-size-sm)',
+      padding: '4px 8px',
+      borderRadius: '4px',
+      backgroundColor: dark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)',
+    },
   }, { dark })
 }
 
