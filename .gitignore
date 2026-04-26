@@ -5,7 +5,9 @@ CLAUDE.md
 .claude
 
 # wails
-build
+build/*
+!build/appicon.png
+!build/mdFileIcon.png
 node_modules
 frontend/dist
 frontend/package.json.md5
