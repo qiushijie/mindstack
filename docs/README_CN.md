@@ -10,6 +10,8 @@
 - Git 仓库同步
 - AI 友好的 CLI
 
+![示例](images/example.png)
+
 ## 快速开始
 
 ```bash

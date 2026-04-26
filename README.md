@@ -10,6 +10,8 @@ A developer-focused markdown editor with git repository sync, designed for devel
 - Git repository sync
 - AI-friendly CLI
 
+![Example](docs/images/example.png)
+
 ## Getting Started
 
 ```bash
