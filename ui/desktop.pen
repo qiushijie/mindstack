@@ -57,7 +57,7 @@
                   "name": "newBtn",
                   "width": 20,
                   "height": 20,
-                  "iconFontName": "plus",
+                  "iconFontName": "panel-left-close",
                   "iconFontFamily": "lucide",
                   "fill": "$foreground-tertiary"
                 }
@@ -1350,7 +1350,7 @@
                   "name": "newBtn",
                   "width": 20,
                   "height": 20,
-                  "iconFontName": "plus",
+                  "iconFontName": "panel-left-close",
                   "iconFontFamily": "lucide",
                   "fill": "$foreground-tertiary"
                 }

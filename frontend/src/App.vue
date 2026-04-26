@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { EventsOn, EventsOff, ClipboardGetText } from '../wailsjs/runtime/runtime'
 import AppSidebar from './components/AppSidebar.vue'
 import AppEditor from './components/AppEditor.vue'
@@ -9,6 +9,8 @@ import { useNavigation } from './composables/useNavigation'
 import { provideEditorState } from './composables/useEditorState'
 import { useFileTree } from './composables/useFileTree'
 import { useSettings, applyTheme } from './composables/useSettings'
+
+const sidebarCollapsed = ref(false)
 
 const { currentPage, navigateTo } = useNavigation()
 provideEditorState()
@@ -93,7 +95,7 @@ onMounted(async () => {
 
 <template>
   <div class="app-layout">
-    <AppSidebar v-if="currentPage === 'editor'" />
+    <AppSidebar v-if="currentPage === 'editor'" v-model:collapsed="sidebarCollapsed" />
     <div class="app-content">
       <template v-if="currentPage === 'editor'">
         <AppEditor />

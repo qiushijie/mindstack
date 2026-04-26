@@ -2,7 +2,8 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  Plus,
+  PanelLeftClose,
+  PanelLeftOpen,
   Search,
 } from 'lucide-vue-next'
 import { useFileTree, copiedFilePath, resolveUniqueFilePath, resolvePasteFilePath } from '../composables/useFileTree'
@@ -10,8 +11,20 @@ import { ClipboardGetText, SaveFileContent, ReadFileContent, FileExists } from '
 import type { TreeNode } from '../types/file'
 import SidebarTreeNode from './SidebarTreeNode.vue'
 
+const props = defineProps<{
+  collapsed?: boolean
+}>()
+
+const emit = defineEmits<{
+  'update:collapsed': [value: boolean]
+}>()
+
 const { t } = useI18n()
-const { rootPath, treeData, selectedFilePath, folderName, selectFile, toggleDir, newFile, openFolder, refreshTree, refreshDir } = useFileTree()
+const { rootPath, treeData, selectedFilePath, folderName, selectFile, toggleDir, openFolder, refreshTree, refreshDir } = useFileTree()
+
+function toggleCollapse() {
+  emit('update:collapsed', !props.collapsed)
+}
 
 function handleItemClick(node: TreeNode) {
   if (node.isDir) {
@@ -83,40 +96,43 @@ async function handleRefresh(dirPath: string) {
 </script>
 
 <template>
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ collapsed: props.collapsed }">
     <div class="sidebar-header">
-      <span class="sidebar-logo">{{ folderName }}</span>
-      <button class="sidebar-new-btn" @click="newFile">
-        <Plus :size="20" />
+      <span v-if="!props.collapsed" class="sidebar-logo">{{ folderName }}</span>
+      <button class="sidebar-new-btn" @click="toggleCollapse">
+        <PanelLeftClose v-if="!props.collapsed" :size="18" />
+        <PanelLeftOpen v-else :size="18" />
       </button>
     </div>
 
-    <div class="sidebar-search">
-      <div class="search-box">
-        <Search :size="14" class="search-icon" />
-        <span class="search-placeholder">{{ t('sidebar.searchPlaceholder') }}</span>
+    <template v-if="!props.collapsed">
+      <div class="sidebar-search">
+        <div class="search-box">
+          <Search :size="14" class="search-icon" />
+          <span class="search-placeholder">{{ t('sidebar.searchPlaceholder') }}</span>
+        </div>
       </div>
-    </div>
 
-    <div class="sidebar-divider" />
+      <div class="sidebar-divider" />
 
-    <div v-if="!rootPath" class="sidebar-empty">
-      <span class="empty-text">{{ t('sidebar.emptyHint') }}</span>
-    </div>
+      <div v-if="!rootPath" class="sidebar-empty">
+        <span class="empty-text">{{ t('sidebar.emptyHint') }}</span>
+      </div>
 
-    <div v-else class="sidebar-tree" @contextmenu.prevent="onTreeContextMenu">
-      <span class="section-label">{{ t('sidebar.workspace') }}</span>
-      <SidebarTreeNode
-        v-for="node in treeData"
-        :key="node.path"
-        :node="node"
-        :selected-path="selectedFilePath"
-        :depth="0"
-        :root-path="rootPath"
-        @select="handleItemClick"
-        @refresh="handleRefresh"
-      />
-    </div>
+      <div v-else class="sidebar-tree" @contextmenu.prevent="onTreeContextMenu">
+        <span class="section-label">{{ t('sidebar.workspace') }}</span>
+        <SidebarTreeNode
+          v-for="node in treeData"
+          :key="node.path"
+          :node="node"
+          :selected-path="selectedFilePath"
+          :depth="0"
+          :root-path="rootPath"
+          @select="handleItemClick"
+          @refresh="handleRefresh"
+        />
+      </div>
+    </template>
   </aside>
 
   <Teleport to="body">
@@ -145,6 +161,17 @@ async function handleRefresh(dirPath: string) {
   display: flex;
   flex-direction: column;
   user-select: none;
+  transition: width 0.25s ease;
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 44px;
+}
+
+.sidebar.collapsed .sidebar-header {
+  padding: 0;
+  justify-content: center;
 }
 
 .sidebar-header {
