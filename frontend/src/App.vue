@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue'
 import { EventsOn, EventsOff, ClipboardGetText } from '../wailsjs/runtime/runtime'
+import { GetPendingOpenFile } from '../wailsjs/go/main/App'
 import AppSidebar from './components/AppSidebar.vue'
 import AppEditor from './components/AppEditor.vue'
 import AppStatusBar from './components/AppStatusBar.vue'
@@ -20,7 +21,12 @@ const { loadSettings, theme } = useSettings()
 onMounted(async () => {
   await loadSettings()
   applyTheme(theme.value)
-  restoreSession()
+  await restoreSession()
+
+  const pendingPath = await GetPendingOpenFile()
+  if (pendingPath) {
+    await openRecentFile(pendingPath)
+  }
 
   EventsOff('menu:navigate')
   EventsOn('menu:navigate', (page: string) => {
@@ -37,6 +43,13 @@ onMounted(async () => {
   EventsOff('menu:file:open-file')
   EventsOn('menu:file:open-file', () => {
     openFile()
+  })
+
+  EventsOff('menu:file:open-path')
+  EventsOn('menu:file:open-path', (path: string) => {
+    if (path) {
+      openRecentFile(path)
+    }
   })
 
   EventsOff('menu:file:open-recent')

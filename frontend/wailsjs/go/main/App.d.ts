@@ -18,7 +18,11 @@ export function FileExists(arg1:string):Promise<boolean>;
 
 export function GetFileServerPort():Promise<number>;
 
+export function GetPendingOpenFile():Promise<string>;
+
 export function GetRootPath():Promise<string>;
+
+export function HandleOpenFile(arg1:string):Promise<void>;
 
 export function LoadConfig():Promise<string>;
 

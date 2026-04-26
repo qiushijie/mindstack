@@ -22,13 +22,15 @@ type FileEntry struct {
 }
 
 type App struct {
-	ctx            context.Context
-	mu             sync.RWMutex
-	rootPath       string
-	fileServerPort int
-	recentEntries  []RecentEntry
-	dialogOpen     int32
-	locale         string
+	ctx              context.Context
+	mu               sync.RWMutex
+	rootPath         string
+	fileServerPort   int
+	recentEntries    []RecentEntry
+	dialogOpen       int32
+	locale           string
+	pendingOpenPath  string
+	frontendReady    bool
 }
 
 func NewApp() *App {
@@ -309,6 +311,52 @@ func (a *App) ReadDirEntries(dirPath string) []FileEntry {
 func (a *App) FileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
 	return err == nil
+}
+
+// isMarkdownFilePath reports whether the given path looks like a markdown document
+// based on its extension. Used to filter file-association open events so unrelated
+// files cannot drive the editor through the system "Open With" mechanism.
+func isMarkdownFilePath(p string) bool {
+	ext := strings.ToLower(filepath.Ext(p))
+	return ext == ".md" || ext == ".markdown"
+}
+
+// HandleOpenFile is invoked by the wails Mac.OnFileOpen callback when the user
+// opens a markdown file via Finder/file association. If the frontend has already
+// announced itself ready, the path is forwarded immediately; otherwise it is
+// buffered until the frontend pulls it via GetPendingOpenFile during mount.
+func (a *App) HandleOpenFile(filePath string) {
+	if filePath == "" || !isMarkdownFilePath(filePath) {
+		return
+	}
+	if _, err := os.Stat(filePath); err != nil {
+		return
+	}
+
+	a.mu.Lock()
+	ready := a.frontendReady
+	ctx := a.ctx
+	if !ready {
+		a.pendingOpenPath = filePath
+	}
+	a.mu.Unlock()
+
+	if ready && ctx != nil {
+		runtime.EventsEmit(ctx, "menu:file:open-path", filePath)
+	}
+}
+
+// GetPendingOpenFile returns any markdown file path that was opened via the
+// system file association before the frontend was ready. The frontend is expected
+// to call this once on mount; subsequent open events are delivered through the
+// "menu:file:open-path" runtime event.
+func (a *App) GetPendingOpenFile() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.frontendReady = true
+	path := a.pendingOpenPath
+	a.pendingOpenPath = ""
+	return path
 }
 
 func (a *App) ConfirmDelete(name string, isDir bool) bool {

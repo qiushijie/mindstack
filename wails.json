@@ -9,5 +9,23 @@
   "author": {
     "name": "qiushijie",
     "email": "qiushijie@outlook.com"
+  },
+  "info": {
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "Markdown File",
+        "description": "Markdown document",
+        "iconName": "mdFileIcon",
+        "role": "Editor"
+      },
+      {
+        "ext": "markdown",
+        "name": "Markdown File",
+        "description": "Markdown document",
+        "iconName": "mdFileIcon",
+        "role": "Editor"
+      }
+    ]
   }
 }

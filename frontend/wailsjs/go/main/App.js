@@ -34,8 +34,16 @@ export function GetFileServerPort() {
   return window['go']['main']['App']['GetFileServerPort']();
 }
 
+export function GetPendingOpenFile() {
+  return window['go']['main']['App']['GetPendingOpenFile']();
+}
+
 export function GetRootPath() {
   return window['go']['main']['App']['GetRootPath']();
+}
+
+export function HandleOpenFile(arg1) {
+  return window['go']['main']['App']['HandleOpenFile'](arg1);
 }
 
 export function LoadConfig() {
