@@ -3,8 +3,8 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FileText, Folder, FolderOpen } from 'lucide-vue-next'
 import type { TreeNode } from '../types/file'
-import { ClipboardSetText, ClipboardGetText, SaveFileContent, ReadFileContent, FileExists, DeleteFile, ConfirmDelete } from '../../wailsjs/go/main/App'
-import { copiedFilePath, resolveUniqueFilePath, resolvePasteFilePath } from '../composables/useFileTree'
+import { ClipboardSetText, DeleteFile, ConfirmDelete } from '../../wailsjs/go/main/App'
+import { copiedFilePath, pasteToDirectory } from '../composables/useFileTree'
 
 const { t } = useI18n()
 
@@ -87,29 +87,11 @@ async function deleteItem() {
 
 async function pasteHere() {
   const targetDir = props.node.isDir ? props.node.path : props.node.path.substring(0, props.node.path.lastIndexOf('/'))
-
-  // Priority: if a file was copied internally, duplicate it
-  if (copiedFilePath.value) {
-    const content = await ReadFileContent(copiedFilePath.value)
-    const sourceName = copiedFilePath.value.split('/').pop() || 'file.md'
-    const targetPath = await resolveUniqueFilePath(targetDir, sourceName, FileExists)
-    await SaveFileContent(targetPath, content)
-    menuVisible.value = false
-    emit('refresh', targetDir)
-    return
-  }
-
-  // Fallback: create a new file from system clipboard text
-  const text = await ClipboardGetText()
-  if (!text) {
-    menuVisible.value = false
-    return
-  }
-
-  const { path: filePath, content } = await resolvePasteFilePath(targetDir, text, FileExists)
-  await SaveFileContent(filePath, content)
+  const success = await pasteToDirectory(targetDir)
   menuVisible.value = false
-  emit('refresh', targetDir)
+  if (success) {
+    emit('refresh', targetDir)
+  }
 }
 </script>
 

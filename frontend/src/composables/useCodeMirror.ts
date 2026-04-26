@@ -26,6 +26,8 @@ interface UseCodeMirrorOptions {
   initialDoc?: string
   extensions?: Extension[]
   onChange?: (doc: string) => void
+  onSelectionChange?: (state: EditorState) => void
+  onScroll?: (topLine: number) => void
 }
 
 interface UseCodeMirrorReturn {
@@ -49,6 +51,8 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
   const doc = ref(options.initialDoc ?? '')
   const { editorView: sharedView } = useEditorState()
   let themeObserver: MutationObserver | null = null
+
+  let scrollDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   function getBaseExtensions(): Extension[] {
     return [
@@ -78,6 +82,19 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
           doc.value = update.state.doc.toString()
           options.onChange?.(doc.value)
         }
+        if (update.selectionSet || update.docChanged) {
+          options.onSelectionChange?.(update.state)
+        }
+      }),
+      EditorView.domEventHandlers({
+        scroll: (_e, v) => {
+          if (scrollDebounceTimer) clearTimeout(scrollDebounceTimer)
+          scrollDebounceTimer = setTimeout(() => {
+            const block = v.lineBlockAtHeight(v.scrollDOM.scrollTop)
+            const line = v.state.doc.lineAt(block.from).number
+            options.onScroll?.(line)
+          }, 50)
+        },
       }),
     ]
   }
@@ -119,6 +136,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
   })
 
   onUnmounted(() => {
+    if (scrollDebounceTimer) clearTimeout(scrollDebounceTimer)
     themeObserver?.disconnect()
     view.value?.destroy()
     view.value = null

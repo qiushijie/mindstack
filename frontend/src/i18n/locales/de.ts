@@ -74,6 +74,9 @@ export default {
     searchPlaceholder: 'Suchen...',
     emptyHint: 'Öffnen Sie einen Ordner, um zu beginnen',
     workspace: 'Arbeitsbereich',
+    noHeadings: 'Keine Überschriften',
+    switchToHeadings: 'Zu Überschriftenansicht wechseln',
+    switchToFiles: 'Zu Dateiansicht wechseln',
     contextMenu: {
       copy: 'Kopieren',
       paste: 'Einfügen',

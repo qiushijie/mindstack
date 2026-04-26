@@ -74,6 +74,9 @@ export default {
     searchPlaceholder: 'Поиск...',
     emptyHint: 'Откройте папку, чтобы начать',
     workspace: 'Рабочее пространство',
+    noHeadings: 'Нет заголовков',
+    switchToHeadings: 'Переключить на заголовки',
+    switchToFiles: 'Переключить на файлы',
     contextMenu: {
       copy: 'Копировать',
       paste: 'Вставить',

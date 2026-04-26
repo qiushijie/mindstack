@@ -74,6 +74,9 @@ export default {
     searchPlaceholder: '搜索...',
     emptyHint: '打开一个文件夹开始编辑',
     workspace: '工作区',
+    noHeadings: '无标题',
+    switchToHeadings: '切换到标题视图',
+    switchToFiles: '切换到文件视图',
     contextMenu: {
       copy: '复制',
       paste: '粘贴',

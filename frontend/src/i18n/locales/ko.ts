@@ -74,6 +74,9 @@ export default {
     searchPlaceholder: '검색...',
     emptyHint: '시작하려면 폴더를 열어보세요',
     workspace: '작업 공간',
+    noHeadings: '제목 없음',
+    switchToHeadings: '제목 보기로 전환',
+    switchToFiles: '파일 보기로 전환',
     contextMenu: {
       copy: '복사',
       paste: '붙여넣기',

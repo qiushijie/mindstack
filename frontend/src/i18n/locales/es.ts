@@ -74,6 +74,9 @@ export default {
     searchPlaceholder: 'Buscar...',
     emptyHint: 'Abre una carpeta para comenzar',
     workspace: 'Espacio de trabajo',
+    noHeadings: 'Sin encabezados',
+    switchToHeadings: 'Cambiar a vista de encabezados',
+    switchToFiles: 'Cambiar a vista de archivos',
     contextMenu: {
       copy: 'Copiar',
       paste: 'Pegar',

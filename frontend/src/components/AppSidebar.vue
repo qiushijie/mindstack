@@ -1,15 +1,19 @@
 <script lang="ts" setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  List,
+  Heading,
 } from 'lucide-vue-next'
-import { useFileTree, copiedFilePath, resolveUniqueFilePath, resolvePasteFilePath } from '../composables/useFileTree'
-import { ClipboardGetText, SaveFileContent, ReadFileContent, FileExists } from '../../wailsjs/go/main/App'
+import { useFileTree, copiedFilePath, pasteToDirectory } from '../composables/useFileTree'
+import { useHeadingTree, setCurrentHeadings } from '../composables/useHeadingTree'
+import { scrollToLine } from '../composables/useEditorState'
 import type { TreeNode } from '../types/file'
 import SidebarTreeNode from './SidebarTreeNode.vue'
+import HeadingOutline from './HeadingOutline.vue'
 
 const props = defineProps<{
   collapsed?: boolean
@@ -20,7 +24,32 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { rootPath, treeData, selectedFilePath, folderName, selectFile, toggleDir, openFolder, refreshTree, refreshDir } = useFileTree()
+const { rootPath, treeData, selectedFilePath, selectedFileContent, folderName, selectFile, toggleDir, openFolder, refreshTree, refreshDir } = useFileTree()
+const { headings, selectedHeadingLine } = useHeadingTree()
+
+type ViewMode = 'file' | 'heading'
+const VIEW_MODE_KEY = 'mindstack:sidebarViewMode'
+const viewMode = ref<ViewMode>((localStorage.getItem(VIEW_MODE_KEY) as ViewMode) || 'file')
+
+let headingDebounceTimer: ReturnType<typeof setTimeout> | null = null
+watch(selectedFileContent, (content) => {
+  if (headingDebounceTimer) clearTimeout(headingDebounceTimer)
+  headingDebounceTimer = setTimeout(() => {
+    setCurrentHeadings(content)
+  }, 150)
+}, { immediate: true })
+
+watch(viewMode, (mode) => {
+  localStorage.setItem(VIEW_MODE_KEY, mode)
+})
+
+function toggleViewMode() {
+  viewMode.value = viewMode.value === 'file' ? 'heading' : 'file'
+}
+
+function handleHeadingSelect(line: number) {
+  scrollToLine(line)
+}
 
 function toggleCollapse() {
   emit('update:collapsed', !props.collapsed)
@@ -62,28 +91,11 @@ async function pasteToRoot() {
     return
   }
 
-  // Priority: duplicate internally copied file
-  if (copiedFilePath.value) {
-    const content = await ReadFileContent(copiedFilePath.value)
-    const sourceName = copiedFilePath.value.split('/').pop() || 'file.md'
-    const targetPath = await resolveUniqueFilePath(rootPath.value, sourceName, FileExists)
-    await SaveFileContent(targetPath, content)
-    treeMenuVisible.value = false
-    await refreshTree()
-    return
-  }
-
-  // Fallback: create file from clipboard text
-  const text = await ClipboardGetText()
-  if (!text) {
-    treeMenuVisible.value = false
-    return
-  }
-
-  const { path: filePath, content } = await resolvePasteFilePath(rootPath.value, text, FileExists)
-  await SaveFileContent(filePath, content)
+  const success = await pasteToDirectory(rootPath.value)
   treeMenuVisible.value = false
-  await refreshTree()
+  if (success) {
+    await refreshTree()
+  }
 }
 
 async function handleRefresh(dirPath: string) {
@@ -119,18 +131,40 @@ async function handleRefresh(dirPath: string) {
         <span class="empty-text">{{ t('sidebar.emptyHint') }}</span>
       </div>
 
-      <div v-else class="sidebar-tree" @contextmenu.prevent="onTreeContextMenu">
-        <span class="section-label">{{ t('sidebar.workspace') }}</span>
-        <SidebarTreeNode
-          v-for="node in treeData"
-          :key="node.path"
-          :node="node"
-          :selected-path="selectedFilePath"
-          :depth="0"
-          :root-path="rootPath"
-          @select="handleItemClick"
-          @refresh="handleRefresh"
-        />
+      <div v-else class="sidebar-tree">
+        <template v-if="viewMode === 'file'">
+          <div class="file-tree-content" @contextmenu.prevent="onTreeContextMenu">
+            <span class="section-label">{{ t('sidebar.workspace') }}</span>
+            <SidebarTreeNode
+              v-for="node in treeData"
+              :key="node.path"
+              :node="node"
+              :selected-path="selectedFilePath"
+              :depth="0"
+              :root-path="rootPath"
+              @select="handleItemClick"
+              @refresh="handleRefresh"
+            />
+          </div>
+        </template>
+        <template v-else>
+          <HeadingOutline
+            :headings="headings"
+            :selected-line="selectedHeadingLine"
+            @select="handleHeadingSelect"
+          />
+        </template>
+      </div>
+
+      <div v-if="rootPath" class="sidebar-view-toggle">
+        <button
+          class="view-toggle-btn"
+          :title="viewMode === 'file' ? t('sidebar.switchToHeadings') : t('sidebar.switchToFiles')"
+          @click="toggleViewMode"
+        >
+          <List v-if="viewMode === 'heading'" :size="16" />
+          <Heading v-else :size="16" />
+        </button>
       </div>
     </template>
   </aside>
@@ -250,6 +284,12 @@ async function handleRefresh(dirPath: string) {
 .sidebar-tree {
   flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-tree-content {
+  flex: 1;
   padding: var(--spacing-sm);
   display: flex;
   flex-direction: column;
@@ -262,5 +302,30 @@ async function handleRefresh(dirPath: string) {
   color: var(--foreground-tertiary);
   letter-spacing: 0.5px;
   padding: 4px var(--spacing-sm);
+}
+
+.sidebar-view-toggle {
+  height: 32px;
+  padding: 0 var(--spacing-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.view-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--foreground-tertiary);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.view-toggle-btn:hover {
+  background-color: var(--surface-hover);
+  color: var(--foreground-secondary);
 }
 </style>

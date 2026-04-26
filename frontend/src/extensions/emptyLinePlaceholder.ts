@@ -42,7 +42,7 @@ export const emptyLinePlaceholder = ViewPlugin.fromClass(class {
     if (!view.hasFocus) return Decoration.none
 
     const ranges = view.state.selection.ranges
-    const decorations: ReturnType<typeof Decoration.widget>[] = []
+    const decorations: ReturnType<ReturnType<typeof Decoration.widget>['range']>[] = []
 
     for (const range of ranges) {
       const pos = range.head

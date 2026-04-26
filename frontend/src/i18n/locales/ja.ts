@@ -74,6 +74,9 @@ export default {
     searchPlaceholder: '検索...',
     emptyHint: 'フォルダを開いて始めましょう',
     workspace: 'ワークスペース',
+    noHeadings: '見出しなし',
+    switchToHeadings: '見出し表示に切り替え',
+    switchToFiles: 'ファイル表示に切り替え',
     contextMenu: {
       copy: 'コピー',
       paste: '貼り付け',

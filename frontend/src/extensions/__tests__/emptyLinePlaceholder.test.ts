@@ -60,8 +60,8 @@ describe('emptyLinePlaceholder', () => {
     const emptyLinePos = 'a\n'.length
     view.dispatch({
       selection: EditorSelection.create([
-        { anchor: emptyLinePos, head: emptyLinePos },
-        { anchor: emptyLinePos, head: emptyLinePos },
+        EditorSelection.cursor(emptyLinePos),
+        EditorSelection.cursor(emptyLinePos),
       ]),
     })
     expect(getPlaceholders().length).toBe(1)

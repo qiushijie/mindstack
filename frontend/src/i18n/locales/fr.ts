@@ -74,6 +74,9 @@ export default {
     searchPlaceholder: 'Rechercher...',
     emptyHint: 'Ouvrez un dossier pour commencer',
     workspace: 'Espace de travail',
+    noHeadings: 'Aucun titre',
+    switchToHeadings: 'Passer à la vue titres',
+    switchToFiles: 'Passer à la vue fichiers',
     contextMenu: {
       copy: 'Copier',
       paste: 'Coller',

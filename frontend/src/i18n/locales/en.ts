@@ -74,6 +74,9 @@ export default {
     searchPlaceholder: 'Search...',
     emptyHint: 'Open a folder to get started',
     workspace: 'Workspace',
+    noHeadings: 'No headings',
+    switchToHeadings: 'Switch to heading view',
+    switchToFiles: 'Switch to file view',
     contextMenu: {
       copy: 'Copy',
       paste: 'Paste',

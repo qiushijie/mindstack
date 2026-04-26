@@ -2,6 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick, h, ref, computed } from 'vue'
 
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {}
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => { store[key] = value },
+    removeItem: (key: string) => { delete store[key] },
+    clear: () => { store = {} },
+  }
+})()
+Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock, writable: true })
+
 // Global mutable state for sharing between mock factory and tests
 const g = globalThis as unknown as { __testCopiedFilePath: string | null }
 g.__testCopiedFilePath = null
@@ -28,6 +40,7 @@ const mockTreeData = ref([
   { name: 'README.md', path: '/test/project/README.md', isDir: false, expanded: false, children: [] },
 ])
 const mockSelectedFilePath = ref('')
+const mockSelectedFileContent = ref('')
 const mockFolderName = computed(() => mockRootPath.value.split('/').pop() || 'MindStack')
 
 const mockSelectFile = vi.fn()
@@ -41,6 +54,7 @@ vi.mock('../../composables/useFileTree', () => ({
     rootPath: mockRootPath,
     treeData: mockTreeData,
     selectedFilePath: mockSelectedFilePath,
+    selectedFileContent: mockSelectedFileContent,
     folderName: mockFolderName,
     selectFile: mockSelectFile,
     toggleDir: mockToggleDir,
@@ -54,6 +68,25 @@ vi.mock('../../composables/useFileTree', () => ({
   },
   resolveUniqueFilePath: vi.fn().mockResolvedValue('/test/project/file.md'),
   resolvePasteFilePath: vi.fn().mockResolvedValue({ path: '/test/project/pasted.md', content: 'content' }),
+  pasteToDirectory: vi.fn().mockImplementation(async (_targetDir: string) => {
+    return !!g.__testCopiedFilePath
+  }),
+}))
+
+// Mock useHeadingTree
+vi.mock('../../composables/useHeadingTree', () => ({
+  useHeadingTree: () => ({
+    headings: computed(() => []),
+    selectedHeadingLine: computed(() => 1),
+  }),
+  setCurrentHeadings: vi.fn(),
+  setSelectedHeadingLine: vi.fn(),
+  currentHeadings: { value: [] },
+}))
+
+// Mock useEditorState
+vi.mock('../../composables/useEditorState', () => ({
+  scrollToLine: vi.fn(),
 }))
 
 // Mock SidebarTreeNode as a simple functional stub
@@ -62,13 +95,21 @@ const SidebarTreeNodeStub = {
   props: ['node', 'selectedPath', 'depth', 'rootPath'],
   emits: ['select', 'refresh'],
   render() {
-    return h('div', { class: 'sidebar-tree-node-stub', 'data-path': this.node?.path })
+    return h('div', { class: 'sidebar-tree-node-stub', 'data-path': (this as any).node?.path })
+  },
+}
+
+const HeadingOutlineStub = {
+  name: 'HeadingOutline',
+  props: ['headings', 'selectedLine'],
+  emits: ['select'],
+  render() {
+    return h('div', { class: 'heading-outline-stub' })
   },
 }
 
 import AppSidebar from '../AppSidebar.vue'
-import { ClipboardGetText, SaveFileContent, ReadFileContent } from '../../../wailsjs/go/main/App'
-import { resolveUniqueFilePath, resolvePasteFilePath } from '../../composables/useFileTree'
+import { pasteToDirectory } from '../../composables/useFileTree'
 
 // Helper to flush all pending promises
 async function flushPromises() {
@@ -78,12 +119,14 @@ async function flushPromises() {
 describe('AppSidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorageMock.clear()
     mockRootPath.value = '/test/project'
     mockTreeData.value = [
       { name: 'src', path: '/test/project/src', isDir: true, expanded: false, children: [] },
       { name: 'README.md', path: '/test/project/README.md', isDir: false, expanded: false, children: [] },
     ]
     mockSelectedFilePath.value = ''
+    mockSelectedFileContent.value = ''
     g.__testCopiedFilePath = null
     // Clean up any leftover menu elements from previous tests
     document.querySelectorAll('.tree-context-menu').forEach(el => el.remove())
@@ -96,6 +139,7 @@ describe('AppSidebar', () => {
       global: {
         stubs: {
           SidebarTreeNode: SidebarTreeNodeStub,
+          HeadingOutline: HeadingOutlineStub,
         },
       },
     })
@@ -189,7 +233,7 @@ describe('AppSidebar', () => {
   describe('context menu', () => {
     it('shows context menu on right click', async () => {
       const wrapper = mountComponent()
-      const tree = wrapper.find('.sidebar-tree')
+      const tree = wrapper.find('.file-tree-content')
 
       await tree.trigger('contextmenu', { clientX: 100, clientY: 200 })
       await nextTick()
@@ -201,7 +245,7 @@ describe('AppSidebar', () => {
 
     it('closes context menu on document click', async () => {
       const wrapper = mountComponent()
-      const tree = wrapper.find('.sidebar-tree')
+      const tree = wrapper.find('.file-tree-content')
 
       await tree.trigger('contextmenu', { clientX: 100, clientY: 200 })
       await nextTick()
@@ -220,7 +264,7 @@ describe('AppSidebar', () => {
     it('paste menu item is disabled when nothing is copied', async () => {
       g.__testCopiedFilePath = null
       const wrapper = mountComponent()
-      const tree = wrapper.find('.sidebar-tree')
+      const tree = wrapper.find('.file-tree-content')
 
       await tree.trigger('contextmenu', { clientX: 100, clientY: 200 })
       await nextTick()
@@ -233,7 +277,7 @@ describe('AppSidebar', () => {
     it('paste menu item is enabled when file is copied', async () => {
       g.__testCopiedFilePath = '/test/project/copied.md'
       const wrapper = mountComponent()
-      const tree = wrapper.find('.sidebar-tree')
+      const tree = wrapper.find('.file-tree-content')
 
       await tree.trigger('contextmenu', { clientX: 100, clientY: 200 })
       await nextTick()
@@ -247,11 +291,10 @@ describe('AppSidebar', () => {
   describe('pasteToRoot', () => {
     it('pastes copied file to root', async () => {
       g.__testCopiedFilePath = '/test/project/copied.md'
-      vi.mocked(ReadFileContent).mockResolvedValue('file content')
-      vi.mocked(resolveUniqueFilePath).mockResolvedValue('/test/project/copied.md')
+      vi.mocked(pasteToDirectory).mockResolvedValue(true)
 
       const wrapper = mountComponent()
-      const tree = wrapper.find('.sidebar-tree')
+      const tree = wrapper.find('.file-tree-content')
 
       await tree.trigger('contextmenu', { clientX: 100, clientY: 200 })
       await nextTick()
@@ -262,19 +305,17 @@ describe('AppSidebar', () => {
       items[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await flushPromises()
 
-      expect(ReadFileContent).toHaveBeenCalledWith('/test/project/copied.md')
-      expect(SaveFileContent).toHaveBeenCalled()
+      expect(pasteToDirectory).toHaveBeenCalledWith('/test/project')
       expect(mockRefreshTree).toHaveBeenCalled()
       wrapper.unmount()
     })
 
     it('pastes clipboard text when no copied file', async () => {
       g.__testCopiedFilePath = null
-      vi.mocked(ClipboardGetText).mockResolvedValue('clipboard content')
-      vi.mocked(resolvePasteFilePath).mockResolvedValue({ path: '/test/project/pasted.md', content: 'clipboard content' })
+      vi.mocked(pasteToDirectory).mockResolvedValue(true)
 
       const wrapper = mountComponent()
-      const tree = wrapper.find('.sidebar-tree')
+      const tree = wrapper.find('.file-tree-content')
 
       await tree.trigger('contextmenu', { clientX: 100, clientY: 200 })
       await nextTick()

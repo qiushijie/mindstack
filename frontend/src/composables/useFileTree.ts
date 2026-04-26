@@ -11,6 +11,7 @@ import {
   GetFileServerPort,
   AddRecentEntry,
   FileExists,
+  ClipboardGetText,
 } from '../../wailsjs/go/main/App'
 import { main } from '../../wailsjs/go/models'
 import type { TreeNode } from '../types/file'
@@ -58,6 +59,25 @@ export async function resolvePasteFilePath(
   }
 
   return { path: filePath, content: clipboardText }
+}
+
+export async function pasteToDirectory(targetDir: string): Promise<boolean> {
+  // Priority: duplicate internally copied file
+  if (copiedFilePath.value) {
+    const content = await ReadFileContent(copiedFilePath.value)
+    const sourceName = copiedFilePath.value.split('/').pop() || 'file.md'
+    const targetPath = await resolveUniqueFilePath(targetDir, sourceName, FileExists)
+    await SaveFileContent(targetPath, content)
+    return true
+  }
+
+  // Fallback: create a new file from system clipboard text
+  const text = await ClipboardGetText()
+  if (!text) return false
+
+  const { path: filePath, content } = await resolvePasteFilePath(targetDir, text, FileExists)
+  await SaveFileContent(filePath, content)
+  return true
 }
 
 export const copiedFilePath = ref('')

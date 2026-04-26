@@ -6,6 +6,7 @@ import { useCodeMirror } from '../composables/useCodeMirror'
 import SelectionToolbar from './SelectionToolbar.vue'
 import ImageDialog from './ImageDialog.vue'
 import { wrapInline, toggleBlockType, insertLink } from '../utils/markdownUtils'
+import { setSelectedHeadingLine, currentHeadings } from '../composables/useHeadingTree'
 import { BlockType, getBlockTypeAtLine, isFullBlockSelection, blockTypeToLabel } from '../utils/syntaxUtils'
 import { getBlockConfigByToolbarLabel } from '../utils/blockRegistry'
 import { useFileTree } from '../composables/useFileTree'
@@ -28,12 +29,38 @@ const toolbarState = ref({
 })
 const activeLabels = ref<Set<string>>(new Set())
 
-const { markDirty } = useFileTree()
+const { markDirty, selectedFileContent } = useFileTree()
+
+function findNearestHeadingLine(cursorLine: number): number {
+  const headings = currentHeadings.value
+  let nearest = 1
+  for (const h of headings) {
+    if (h.line <= cursorLine) {
+      nearest = h.line
+    } else {
+      break
+    }
+  }
+  return nearest
+}
 
 const { view, focus, setContent } = useCodeMirror({
   container: containerRef,
   initialDoc: '',
-  onChange: () => markDirty(),
+  onChange: (doc) => {
+    selectedFileContent.value = doc
+    markDirty()
+  },
+  onSelectionChange: (state) => {
+    const pos = state.selection.main.head
+    const line = state.doc.lineAt(pos)
+    const nearest = findNearestHeadingLine(line.number)
+    setSelectedHeadingLine(nearest)
+  },
+  onScroll: (topLine) => {
+    const nearest = findNearestHeadingLine(topLine)
+    setSelectedHeadingLine(nearest)
+  },
 })
 
 const { setEditorAdapter } = useFileTree()
