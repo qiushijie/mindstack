@@ -262,3 +262,92 @@ func TestClipboardGetText(t *testing.T) {
 	// We verify the method exists and has the expected signature.
 	_ = app.ClipboardGetText
 }
+
+func TestIsMarkdownFilePath(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		expected bool
+	}{
+		{"lowercase md", "/tmp/notes.md", true},
+		{"uppercase MD", "/tmp/notes.MD", true},
+		{"markdown extension", "/tmp/notes.markdown", true},
+		{"mixed case Markdown", "/tmp/notes.Markdown", true},
+		{"nested path", "/Users/J/docs/sub/note.md", true},
+		{"txt file", "/tmp/notes.txt", false},
+		{"no extension", "/tmp/README", false},
+		{"empty path", "", false},
+		{"directory-like", "/tmp/foo.md/", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := isMarkdownFilePath(c.path)
+			if got != c.expected {
+				t.Fatalf("isMarkdownFilePath(%q) = %v, want %v", c.path, got, c.expected)
+			}
+		})
+	}
+}
+
+func TestGetPendingOpenFile(t *testing.T) {
+	t.Run("returns empty when nothing pending and marks frontend ready", func(t *testing.T) {
+		app := NewApp()
+
+		if got := app.GetPendingOpenFile(); got != "" {
+			t.Fatalf("expected empty pending path, got %q", got)
+		}
+
+		app.mu.RLock()
+		ready := app.frontendReady
+		app.mu.RUnlock()
+		if !ready {
+			t.Fatalf("expected frontendReady=true after GetPendingOpenFile call")
+		}
+	})
+
+	t.Run("buffers markdown path arrived before frontend ready", func(t *testing.T) {
+		dir := t.TempDir()
+		fp := filepath.Join(dir, "doc.md")
+		if err := os.WriteFile(fp, []byte("# hi"), 0o644); err != nil {
+			t.Fatalf("write temp file: %v", err)
+		}
+
+		app := NewApp()
+		app.HandleOpenFile(fp)
+
+		got := app.GetPendingOpenFile()
+		if got != fp {
+			t.Fatalf("expected pending path %q, got %q", fp, got)
+		}
+
+		// Subsequent reads should be empty since the buffer is consumed.
+		if got := app.GetPendingOpenFile(); got != "" {
+			t.Fatalf("expected empty after consume, got %q", got)
+		}
+	})
+
+	t.Run("ignores non-markdown extensions", func(t *testing.T) {
+		dir := t.TempDir()
+		fp := filepath.Join(dir, "doc.txt")
+		if err := os.WriteFile(fp, []byte("plain"), 0o644); err != nil {
+			t.Fatalf("write temp file: %v", err)
+		}
+
+		app := NewApp()
+		app.HandleOpenFile(fp)
+
+		if got := app.GetPendingOpenFile(); got != "" {
+			t.Fatalf("expected non-markdown path to be ignored, got %q", got)
+		}
+	})
+
+	t.Run("ignores missing files", func(t *testing.T) {
+		app := NewApp()
+		app.HandleOpenFile("/non/existent/file.md")
+
+		if got := app.GetPendingOpenFile(); got != "" {
+			t.Fatalf("expected missing path to be ignored, got %q", got)
+		}
+	})
+}
