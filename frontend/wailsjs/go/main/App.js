@@ -70,6 +70,10 @@ export function SaveFileContent(arg1, arg2) {
   return window['go']['main']['App']['SaveFileContent'](arg1, arg2);
 }
 
+export function SetLocale(arg1) {
+  return window['go']['main']['App']['SetLocale'](arg1);
+}
+
 export function SetRootPath(arg1) {
   return window['go']['main']['App']['SetRootPath'](arg1);
 }

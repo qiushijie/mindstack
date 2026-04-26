@@ -1,9 +1,12 @@
 <script lang="ts" setup>
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { FileText, Folder, FolderOpen } from 'lucide-vue-next'
 import type { TreeNode } from '../types/file'
 import { ClipboardSetText, ClipboardGetText, SaveFileContent, ReadFileContent, FileExists, DeleteFile, ConfirmDelete } from '../../wailsjs/go/main/App'
 import { copiedFilePath, resolveUniqueFilePath, resolvePasteFilePath } from '../composables/useFileTree'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   node: TreeNode
@@ -132,13 +135,13 @@ async function pasteHere() {
       class="tree-context-menu"
       :style="{ left: menuX + 'px', top: menuY + 'px' }"
     >
-      <div class="menu-item" @click="copyName">Copy</div>
-      <div class="menu-item" :class="{ disabled: !canPaste }" @click="canPaste && pasteHere()">Paste</div>
+      <div class="menu-item" @click="copyName">{{ t('sidebar.contextMenu.copy') }}</div>
+      <div class="menu-item" :class="{ disabled: !canPaste }" @click="canPaste && pasteHere()">{{ t('sidebar.contextMenu.paste') }}</div>
       <div class="menu-divider" />
-      <div class="menu-item" @click="copyPath">Copy Path</div>
-      <div class="menu-item" @click="copyRelativePath">Copy Relative Path</div>
+      <div class="menu-item" @click="copyPath">{{ t('sidebar.contextMenu.copyPath') }}</div>
+      <div class="menu-item" @click="copyRelativePath">{{ t('sidebar.contextMenu.copyRelativePath') }}</div>
       <div class="menu-divider" />
-      <div class="menu-item" @click="deleteItem">Delete</div>
+      <div class="menu-item" @click="deleteItem">{{ t('sidebar.contextMenu.delete') }}</div>
     </div>
   </Teleport>
 

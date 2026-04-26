@@ -2,6 +2,7 @@ import { gutter, GutterMarker, EditorView, ViewPlugin, type BlockInfo } from '@c
 import { RangeSet, StateField, StateEffect, type Range, type RangeValue, type Extension } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import { BLOCK_NODE_NAMES } from '../utils/syntaxUtils'
+import { t } from '../i18n'
 import { getBlockRanges, findBlockAtPos, startDrag, isDragging, isInDragCooldown } from './dragSort'
 
 // --- Plus button menu items (matches design in ui/desktop.pen, node zHLIh) ---
@@ -9,7 +10,7 @@ import { getBlockRanges, findBlockAtPos, startDrag, isDragging, isInDragCooldown
 interface PlusMenuItem {
   id: string
   icon: string
-  label: string
+  labelKey: string
   shortcut?: string
   shortcutFont?: 'mono' | 'sans'
   labelWeight?: number
@@ -53,33 +54,33 @@ function insertBlock(view: EditorView, lineFrom: number, prefix: string, example
 const PLUS_MENU_GROUPS: PlusMenuGroup[] = [
   {
     items: [
-      { id: 'bold', icon: 'bold', label: 'Bold', shortcut: '⌘B', action: (v, lf) => insertBlock(v, lf, '**', 'Bold text') },
-      { id: 'italic', icon: 'italic', label: 'Italic', shortcut: '⌘I', action: (v, lf) => insertBlock(v, lf, '*', 'Italic text') },
-      { id: 'strikethrough', icon: 'strikethrough', label: 'Strikethrough', action: (v, lf) => insertBlock(v, lf, '~~', 'Strikethrough text') },
+      { id: 'bold', icon: 'bold', labelKey: 'editor.toolbar.Bold', shortcut: '⌘B', action: (v, lf) => insertBlock(v, lf, '**', t('editor.placeholder.bold')) },
+      { id: 'italic', icon: 'italic', labelKey: 'editor.toolbar.Italic', shortcut: '⌘I', action: (v, lf) => insertBlock(v, lf, '*', t('editor.placeholder.italic')) },
+      { id: 'strikethrough', icon: 'strikethrough', labelKey: 'editor.toolbar.Strikethrough', action: (v, lf) => insertBlock(v, lf, '~~', t('editor.placeholder.strikethrough')) },
     ],
   },
   {
     items: [
-      { id: 'h1', icon: '', label: 'Heading 1', shortcut: '# ', shortcutFont: 'mono', labelWeight: 600, action: (v, lf) => insertBlock(v, lf, '# ', 'Heading 1') },
-      { id: 'h2', icon: '', label: 'Heading 2', shortcut: '## ', shortcutFont: 'mono', labelWeight: 600, action: (v, lf) => insertBlock(v, lf, '## ', 'Heading 2') },
-      { id: 'h3', icon: '', label: 'Heading 3', shortcut: '### ', shortcutFont: 'mono', labelWeight: 600, action: (v, lf) => insertBlock(v, lf, '### ', 'Heading 3') },
-      { id: 'h4', icon: '', label: 'Heading 4', shortcut: '#### ', shortcutFont: 'mono', labelWeight: 600, action: (v, lf) => insertBlock(v, lf, '#### ', 'Heading 4') },
+      { id: 'h1', icon: '', labelKey: 'blocks.h1.label', shortcut: '# ', shortcutFont: 'mono', labelWeight: 600, action: (v, lf) => insertBlock(v, lf, '# ', t('editor.placeholder.heading1')) },
+      { id: 'h2', icon: '', labelKey: 'blocks.h2.label', shortcut: '## ', shortcutFont: 'mono', labelWeight: 600, action: (v, lf) => insertBlock(v, lf, '## ', t('editor.placeholder.heading2')) },
+      { id: 'h3', icon: '', labelKey: 'blocks.h3.label', shortcut: '### ', shortcutFont: 'mono', labelWeight: 600, action: (v, lf) => insertBlock(v, lf, '### ', t('editor.placeholder.heading3')) },
+      { id: 'h4', icon: '', labelKey: 'blocks.h4.label', shortcut: '#### ', shortcutFont: 'mono', labelWeight: 600, action: (v, lf) => insertBlock(v, lf, '#### ', t('editor.placeholder.heading4')) },
     ],
   },
   {
     items: [
-      { id: 'ul', icon: 'list', label: 'Bullet List', action: (v, lf) => insertBlock(v, lf, '- ', 'List item') },
-      { id: 'ol', icon: 'list-ordered', label: 'Numbered List', action: (v, lf) => insertBlock(v, lf, '1. ', 'List item') },
-      { id: 'todo', icon: 'square-check', label: 'To-do List', action: (v, lf) => insertBlock(v, lf, '- [ ] ', 'To-do') },
+      { id: 'ul', icon: 'list', labelKey: 'blocks.bulletList.label', action: (v, lf) => insertBlock(v, lf, '- ', t('editor.placeholder.listItem')) },
+      { id: 'ol', icon: 'list-ordered', labelKey: 'blocks.orderedList.label', action: (v, lf) => insertBlock(v, lf, '1. ', t('editor.placeholder.listItem')) },
+      { id: 'todo', icon: 'square-check', labelKey: 'blocks.todo.label', action: (v, lf) => insertBlock(v, lf, '- [ ] ', t('editor.placeholder.todo')) },
     ],
   },
   {
     items: [
-      { id: 'code', icon: 'code', label: 'Code Block', action: (v, lf) => insertBlock(v, lf, '```text\n', 'code here\n```') },
-      { id: 'quote', icon: 'quote', label: 'Blockquote', action: (v, lf) => insertBlock(v, lf, '> ', 'Quote') },
-      { id: 'link', icon: 'link', label: 'Link', action: (v, lf) => insertBlock(v, lf, '[', 'link text](url)') },
-      { id: 'image', icon: 'image', label: 'Image', action: (v, lf) => { hideBlockMenu(); v.dom.dispatchEvent(new CustomEvent('editor:insert-image', { detail: { lineFrom: lf }, bubbles: true })) } },
-      { id: 'table', icon: 'table', label: 'Table', action: (v, lf) => insertBlock(v, lf, '', '| Column 1 | Column 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |') },
+      { id: 'code', icon: 'code', labelKey: 'blocks.codeBlock.label', action: (v, lf) => insertBlock(v, lf, '```text\n', t('editor.placeholder.code')) },
+      { id: 'quote', icon: 'quote', labelKey: 'blocks.blockquote.label', action: (v, lf) => insertBlock(v, lf, '> ', t('editor.placeholder.quote')) },
+      { id: 'link', icon: 'link', labelKey: 'editor.toolbar.Link', action: (v, lf) => insertBlock(v, lf, '[', `${t('editor.placeholder.link')}](${t('editor.placeholder.linkUrl')})`) },
+      { id: 'image', icon: 'image', labelKey: 'editor.toolbar.Image', action: (v, lf) => { hideBlockMenu(); v.dom.dispatchEvent(new CustomEvent('editor:insert-image', { detail: { lineFrom: lf }, bubbles: true })) } },
+      { id: 'table', icon: 'table', labelKey: 'editor.toolbar.Table', action: (v, lf) => insertBlock(v, lf, '', `| ${t('editor.placeholder.tableCol1')} | ${t('editor.placeholder.tableCol2')} |\n| --- | --- |\n| ${t('editor.placeholder.tableCell1')} | ${t('editor.placeholder.tableCell2')} |`) },
     ],
   },
 ]
@@ -92,12 +93,12 @@ class BlockControlsMarker extends GutterMarker {
     const plusBtn = document.createElement('button')
     plusBtn.className = 'cm-block-btn cm-block-plus'
     plusBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'
-    plusBtn.title = 'Add block'
+    plusBtn.title = t('editor.tooltip.addBlock')
 
     const dragBtn = document.createElement('button')
     dragBtn.className = 'cm-block-btn cm-block-drag'
     dragBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg>'
-    dragBtn.title = 'Drag to reorder'
+    dragBtn.title = t('editor.tooltip.dragToReorder')
 
     wrap.appendChild(plusBtn)
     wrap.appendChild(dragBtn)
@@ -292,7 +293,7 @@ function showBlockMenu(view: EditorView, lineFrom: number, anchorRect: DOMRect) 
 
       // Label
       const label = document.createElement('span')
-      label.textContent = item.label
+      label.textContent = t(item.labelKey)
       Object.assign(label.style, {
         fontSize: '13px',
         fontFamily: 'var(--font-sans)',

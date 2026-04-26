@@ -1,7 +1,9 @@
 <script lang="ts" setup>
 import { ref, watch, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useEditorState } from '../composables/useEditorState'
 
+const { t } = useI18n()
 const { editorView } = useEditorState()
 
 const line = ref(1)
@@ -78,15 +80,15 @@ onUnmounted(() => {
 
 <template>
   <div class="status-bar">
-    <span class="status-item">Markdown</span>
+    <span class="status-item">{{ t('statusBar.markdown') }}</span>
     <span class="status-sep">|</span>
-    <span class="status-item">Ln {{ line }}, Col {{ col }}</span>
+    <span class="status-item">{{ t('statusBar.line') }} {{ line }}, {{ t('statusBar.column') }} {{ col }}</span>
     <span class="status-sep">|</span>
-    <span class="status-item">{{ words }} words</span>
+    <span class="status-item">{{ words }} {{ t('statusBar.words') }}</span>
     <span class="status-sep">|</span>
-    <span class="status-item">{{ chars.toLocaleString() }} chars</span>
+    <span class="status-item">{{ chars.toLocaleString() }} {{ t('statusBar.chars') }}</span>
     <span class="status-spacer" />
-    <span class="status-item">UTF-8</span>
+    <span class="status-item">{{ t('statusBar.encoding') }}</span>
   </div>
 </template>
 

@@ -9398,7 +9398,7 @@
                       "id": "YDa9K",
                       "name": "urlInputWrap",
                       "width": "fill_container",
-                      "fill": "$surface-secondary",
+                      "fill": "$surface-primary",
                       "cornerRadius": 6,
                       "stroke": {
                         "align": "inside",
@@ -9563,7 +9563,7 @@
                       "id": "M7bXH",
                       "name": "altInputWrap",
                       "width": "fill_container",
-                      "fill": "$surface-secondary",
+                      "fill": "$surface-primary",
                       "cornerRadius": 6,
                       "stroke": {
                         "align": "inside",

@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   Plus,
   Search,
@@ -9,6 +10,7 @@ import { ClipboardGetText, SaveFileContent, ReadFileContent, FileExists } from '
 import type { TreeNode } from '../types/file'
 import SidebarTreeNode from './SidebarTreeNode.vue'
 
+const { t } = useI18n()
 const { rootPath, treeData, selectedFilePath, folderName, selectFile, toggleDir, newFile, openFolder, refreshTree, refreshDir } = useFileTree()
 
 function handleItemClick(node: TreeNode) {
@@ -92,18 +94,18 @@ async function handleRefresh(dirPath: string) {
     <div class="sidebar-search">
       <div class="search-box">
         <Search :size="14" class="search-icon" />
-        <span class="search-placeholder">Search...</span>
+        <span class="search-placeholder">{{ t('sidebar.searchPlaceholder') }}</span>
       </div>
     </div>
 
     <div class="sidebar-divider" />
 
     <div v-if="!rootPath" class="sidebar-empty">
-      <span class="empty-text">Open a folder to get started</span>
+      <span class="empty-text">{{ t('sidebar.emptyHint') }}</span>
     </div>
 
     <div v-else class="sidebar-tree" @contextmenu.prevent="onTreeContextMenu">
-      <span class="section-label">WORKSPACE</span>
+      <span class="section-label">{{ t('sidebar.workspace') }}</span>
       <SidebarTreeNode
         v-for="node in treeData"
         :key="node.path"
@@ -123,13 +125,13 @@ async function handleRefresh(dirPath: string) {
       class="tree-context-menu"
       :style="{ left: treeMenuX + 'px', top: treeMenuY + 'px' }"
     >
-      <div class="menu-item disabled">Copy</div>
-      <div class="menu-item" :class="{ disabled: !canTreePaste() }" @click="canTreePaste() && pasteToRoot()">Paste</div>
+      <div class="menu-item disabled">{{ t('sidebar.contextMenu.copy') }}</div>
+      <div class="menu-item" :class="{ disabled: !canTreePaste() }" @click="canTreePaste() && pasteToRoot()">{{ t('sidebar.contextMenu.paste') }}</div>
       <div class="menu-divider" />
-      <div class="menu-item disabled">Copy Path</div>
-      <div class="menu-item disabled">Copy Relative Path</div>
+      <div class="menu-item disabled">{{ t('sidebar.contextMenu.copyPath') }}</div>
+      <div class="menu-item disabled">{{ t('sidebar.contextMenu.copyRelativePath') }}</div>
       <div class="menu-divider" />
-      <div class="menu-item disabled">Delete</div>
+      <div class="menu-item disabled">{{ t('sidebar.contextMenu.delete') }}</div>
     </div>
   </Teleport>
 </template>

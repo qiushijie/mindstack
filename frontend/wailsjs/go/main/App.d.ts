@@ -36,6 +36,8 @@ export function SaveConfig(arg1:string):Promise<string>;
 
 export function SaveFileContent(arg1:string,arg2:string):Promise<string>;
 
+export function SetLocale(arg1:string):Promise<void>;
+
 export function SetRootPath(arg1:string):Promise<void>;
 
 export function SetWorkspaceRoot(arg1:string):Promise<void>;

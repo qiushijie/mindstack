@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   Settings,
   Type,
@@ -11,6 +12,7 @@ import {
 import { useNavigation } from '../composables/useNavigation'
 import { useSettings } from '../composables/useSettings'
 
+const { t } = useI18n()
 const { navigateTo } = useNavigation()
 
 type SettingsSection = 'general' | 'editor' | 'git' | 'about'
@@ -19,20 +21,18 @@ const activeSection = ref<SettingsSection>('general')
 
 interface NavItem {
   key: SettingsSection
-  label: string
   icon: typeof Settings
 }
 
 const navItems: NavItem[] = [
-  { key: 'general', label: 'General', icon: Settings },
-  { key: 'editor', label: 'Editor', icon: Type },
-  { key: 'git', label: 'Git', icon: GitBranch },
-  { key: 'about', label: 'About', icon: Info },
+  { key: 'general', icon: Settings },
+  { key: 'editor', icon: Type },
+  { key: 'git', icon: GitBranch },
+  { key: 'about', icon: Info },
 ]
 
 const theme = ref<'light' | 'dark'>('light')
-const language = ref('en')
-const { autoSave, autoSaveDelay } = useSettings()
+const { autoSave, autoSaveDelay, locale, saveSettings } = useSettings()
 const fontFamily = ref('Inter')
 const fontSize = ref(16)
 const tabSize = ref(2)
@@ -41,13 +41,33 @@ const wordWrap = ref(true)
 const defaultBranch = ref('main')
 const autoCommit = ref(false)
 const autoPull = ref(false)
+
+const langOpen = ref(false)
+import type { Locale } from '../i18n'
+
+const locales: { key: Locale; labelKey: string }[] = [
+  { key: 'en', labelKey: 'settings.langName.en' },
+  { key: 'zh', labelKey: 'settings.langName.zh' },
+  { key: 'ja', labelKey: 'settings.langName.ja' },
+  { key: 'fr', labelKey: 'settings.langName.fr' },
+  { key: 'de', labelKey: 'settings.langName.de' },
+  { key: 'es', labelKey: 'settings.langName.es' },
+  { key: 'ru', labelKey: 'settings.langName.ru' },
+  { key: 'ko', labelKey: 'settings.langName.ko' },
+]
+
+async function selectLocale(key: Locale) {
+  locale.value = key
+  langOpen.value = false
+  await saveSettings()
+}
 </script>
 
 <template>
   <div class="settings">
     <aside class="settings-nav">
       <div class="nav-header">
-        <span class="nav-title">Settings</span>
+        <span class="nav-title">{{ t('settings.title') }}</span>
       </div>
       <div class="nav-divider" />
       <div class="nav-list">
@@ -59,7 +79,7 @@ const autoPull = ref(false)
           @click="activeSection = item.key"
         >
           <component :is="item.icon" :size="16" class="nav-item-icon" />
-          <span class="nav-item-text">{{ item.label }}</span>
+          <span class="nav-item-text">{{ t(`settings.nav.${item.key}`) }}</span>
         </button>
       </div>
       <div class="nav-spacer" />
@@ -75,14 +95,14 @@ const autoPull = ref(false)
       <div class="content-scroll">
         <!-- General -->
         <template v-if="activeSection === 'general'">
-          <h1 class="section-title">General</h1>
+          <h1 class="section-title">{{ t('settings.section.general') }}</h1>
 
           <div class="settings-group">
-            <span class="group-label">Appearance</span>
+            <span class="group-label">{{ t('settings.group.appearance') }}</span>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Theme</span>
-                <span class="setting-desc">Choose between light and dark mode</span>
+                <span class="setting-label">{{ t('settings.label.theme') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.theme') }}</span>
               </div>
               <div class="theme-selector">
                 <button
@@ -90,35 +110,48 @@ const autoPull = ref(false)
                   :class="{ active: theme === 'light' }"
                   @click="theme = 'light'"
                 >
-                  Light
+                  {{ t('settings.theme.light') }}
                 </button>
                 <button
                   class="theme-btn"
                   :class="{ active: theme === 'dark' }"
                   @click="theme = 'dark'"
                 >
-                  Dark
+                  {{ t('settings.theme.dark') }}
                 </button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Language</span>
-                <span class="setting-desc">Choose the display language</span>
+                <span class="setting-label">{{ t('settings.label.language') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.language') }}</span>
               </div>
-              <div class="select-value">
-                <span>{{ language === 'en' ? 'English' : '中文' }}</span>
-                <ChevronDown :size="12" />
+              <div class="select-dropdown" :class="{ open: langOpen }">
+                <button class="select-value" @click="langOpen = !langOpen">
+                  <span>{{ t(`settings.langName.${locale}`) }}</span>
+                  <ChevronDown :size="12" />
+                </button>
+                <div v-if="langOpen" class="dropdown-menu">
+                  <button
+                    v-for="item in locales"
+                    :key="item.key"
+                    class="dropdown-item"
+                    :class="{ active: locale === item.key }"
+                    @click="selectLocale(item.key)"
+                  >
+                    {{ t(item.labelKey) }}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
           <div class="settings-group">
-            <span class="group-label">SAVING</span>
+            <span class="group-label">{{ t('settings.group.saving') }}</span>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Auto Save</span>
-                <span class="setting-desc">Automatically save changes to files</span>
+                <span class="setting-label">{{ t('settings.label.autoSave') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.autoSave') }}</span>
               </div>
               <button
                 class="toggle"
@@ -130,8 +163,8 @@ const autoPull = ref(false)
             </div>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Auto Save Delay</span>
-                <span class="setting-desc">Time in seconds before auto save triggers</span>
+                <span class="setting-label">{{ t('settings.label.autoSaveDelay') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.autoSaveDelay') }}</span>
               </div>
               <div class="input-value wide">
                 {{ autoSaveDelay }}s
@@ -142,14 +175,14 @@ const autoPull = ref(false)
 
         <!-- Editor -->
         <template v-if="activeSection === 'editor'">
-          <h1 class="section-title">Editor</h1>
+          <h1 class="section-title">{{ t('settings.section.editor') }}</h1>
 
           <div class="settings-group">
-            <span class="group-label">FONT</span>
+            <span class="group-label">{{ t('settings.group.font') }}</span>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Font Family</span>
-                <span class="setting-desc">Set the editor font family</span>
+                <span class="setting-label">{{ t('settings.label.fontFamily') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.fontFamily') }}</span>
               </div>
               <div class="select-value">
                 <span>{{ fontFamily }}</span>
@@ -158,26 +191,26 @@ const autoPull = ref(false)
             </div>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Font Size</span>
-                <span class="setting-desc">Set the editor font size in pixels</span>
+                <span class="setting-label">{{ t('settings.label.fontSize') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.fontSize') }}</span>
               </div>
               <div class="input-value">{{ fontSize }}</div>
             </div>
           </div>
 
           <div class="settings-group">
-            <span class="group-label">DISPLAY</span>
+            <span class="group-label">{{ t('settings.group.display') }}</span>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Tab Size</span>
-                <span class="setting-desc">Number of spaces per tab</span>
+                <span class="setting-label">{{ t('settings.label.tabSize') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.tabSize') }}</span>
               </div>
               <div class="input-value">{{ tabSize }}</div>
             </div>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Line Numbers</span>
-                <span class="setting-desc">Show line numbers in the editor gutter</span>
+                <span class="setting-label">{{ t('settings.label.lineNumbers') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.lineNumbers') }}</span>
               </div>
               <button
                 class="toggle"
@@ -189,8 +222,8 @@ const autoPull = ref(false)
             </div>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Word Wrap</span>
-                <span class="setting-desc">Wrap long lines to fit the editor width</span>
+                <span class="setting-label">{{ t('settings.label.wordWrap') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.wordWrap') }}</span>
               </div>
               <button
                 class="toggle"
@@ -205,14 +238,14 @@ const autoPull = ref(false)
 
         <!-- Git -->
         <template v-if="activeSection === 'git'">
-          <h1 class="section-title">Git</h1>
+          <h1 class="section-title">{{ t('settings.section.git') }}</h1>
 
           <div class="settings-group">
-            <span class="group-label">VERSION CONTROL</span>
+            <span class="group-label">{{ t('settings.group.versionControl') }}</span>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Default Branch</span>
-                <span class="setting-desc">Default branch name for new repositories</span>
+                <span class="setting-label">{{ t('settings.label.defaultBranch') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.defaultBranch') }}</span>
               </div>
               <div class="select-value mono">
                 <span>{{ defaultBranch }}</span>
@@ -220,8 +253,8 @@ const autoPull = ref(false)
             </div>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Auto Commit</span>
-                <span class="setting-desc">Automatically commit changes on save</span>
+                <span class="setting-label">{{ t('settings.label.autoCommit') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.autoCommit') }}</span>
               </div>
               <button
                 class="toggle"
@@ -233,8 +266,8 @@ const autoPull = ref(false)
             </div>
             <div class="setting-row">
               <div class="setting-info">
-                <span class="setting-label">Auto Pull</span>
-                <span class="setting-desc">Automatically pull changes on startup</span>
+                <span class="setting-label">{{ t('settings.label.autoPull') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.autoPull') }}</span>
               </div>
               <button
                 class="toggle"
@@ -249,21 +282,21 @@ const autoPull = ref(false)
 
         <!-- About -->
         <template v-if="activeSection === 'about'">
-          <h1 class="section-title">About</h1>
+          <h1 class="section-title">{{ t('settings.section.about') }}</h1>
 
           <div class="settings-group">
-            <span class="group-label">INFORMATION</span>
+            <span class="group-label">{{ t('settings.group.information') }}</span>
             <div class="about-card">
               <div class="about-header">
-                <span class="about-name">MindStack</span>
-                <span class="about-version">v0.1.0</span>
+                <span class="about-name">{{ t('settings.about.name') }}</span>
+                <span class="about-version">{{ t('settings.about.version') }}</span>
               </div>
               <div class="about-sep" />
               <p class="about-desc">
-                A developer-focused markdown editor with git sync.
+                {{ t('settings.about.desc') }}
               </p>
               <p class="about-build">
-                Built with Wails, Vue 3 and Go.
+                {{ t('settings.about.build') }}
               </p>
             </div>
           </div>
@@ -545,6 +578,56 @@ const autoPull = ref(false)
 
 .select-value.mono {
   font-family: var(--font-mono);
+}
+
+/* Select Dropdown */
+.select-dropdown {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.select-dropdown .select-value {
+  cursor: pointer;
+  background: none;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 120px;
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  z-index: 100;
+}
+
+.dropdown-item {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background-color: var(--surface-hover);
+}
+
+.dropdown-item.active {
+  color: var(--accent-primary);
+  font-weight: 500;
 }
 
 /* About Card */

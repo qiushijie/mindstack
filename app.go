@@ -28,6 +28,7 @@ type App struct {
 	fileServerPort int
 	recentEntries  []RecentEntry
 	dialogOpen     int32
+	locale         string
 }
 
 func NewApp() *App {
@@ -49,6 +50,149 @@ func (a *App) startFileServer() {
 	handler := NewLocalFileHandler(a)
 	server := &http.Server{Handler: handler}
 	go server.Serve(listener)
+}
+
+var dialogLabels = map[string]map[string]string{
+	"en": {
+		"openFolder":     "Open Folder",
+		"selectImage":    "Select Image",
+		"imageFiles":     "Image Files",
+		"allFiles":       "All Files",
+		"openFile":       "Open File",
+		"markdownFiles":  "Markdown Files",
+		"textFiles":      "Text Files",
+		"confirmDelete":  "Confirm Delete",
+		"delete":         "Delete",
+		"cancel":         "Cancel",
+		"file":           "file",
+		"folder":         "folder",
+	},
+	"ja": {
+		"openFolder":     "フォルダを開く",
+		"selectImage":    "画像を選択",
+		"imageFiles":     "画像ファイル",
+		"allFiles":       "すべてのファイル",
+		"openFile":       "ファイルを開く",
+		"markdownFiles":  "Markdown ファイル",
+		"textFiles":      "テキストファイル",
+		"confirmDelete":  "削除の確認",
+		"delete":         "削除",
+		"cancel":         "キャンセル",
+		"file":           "ファイル",
+		"folder":         "フォルダ",
+	},
+	"fr": {
+		"openFolder":     "Ouvrir le dossier",
+		"selectImage":    "Sélectionner une image",
+		"imageFiles":     "Fichiers image",
+		"allFiles":       "Tous les fichiers",
+		"openFile":       "Ouvrir le fichier",
+		"markdownFiles":  "Fichiers Markdown",
+		"textFiles":      "Fichiers texte",
+		"confirmDelete":  "Confirmer la suppression",
+		"delete":         "Supprimer",
+		"cancel":         "Annuler",
+		"file":           "fichier",
+		"folder":         "dossier",
+	},
+	"de": {
+		"openFolder":     "Ordner öffnen",
+		"selectImage":    "Bild auswählen",
+		"imageFiles":     "Bilddateien",
+		"allFiles":       "Alle Dateien",
+		"openFile":       "Datei öffnen",
+		"markdownFiles":  "Markdown-Dateien",
+		"textFiles":      "Textdateien",
+		"confirmDelete":  "Löschen bestätigen",
+		"delete":         "Löschen",
+		"cancel":         "Abbrechen",
+		"file":           "Datei",
+		"folder":         "Ordner",
+	},
+	"es": {
+		"openFolder":     "Abrir carpeta",
+		"selectImage":    "Seleccionar imagen",
+		"imageFiles":     "Archivos de imagen",
+		"allFiles":       "Todos los archivos",
+		"openFile":       "Abrir archivo",
+		"markdownFiles":  "Archivos Markdown",
+		"textFiles":      "Archivos de texto",
+		"confirmDelete":  "Confirmar eliminación",
+		"delete":         "Eliminar",
+		"cancel":         "Cancelar",
+		"file":           "archivo",
+		"folder":         "carpeta",
+	},
+	"ru": {
+		"openFolder":     "Открыть папку",
+		"selectImage":    "Выбрать изображение",
+		"imageFiles":     "Файлы изображений",
+		"allFiles":       "Все файлы",
+		"openFile":       "Открыть файл",
+		"markdownFiles":  "Markdown-файлы",
+		"textFiles":      "Текстовые файлы",
+		"confirmDelete":  "Подтвердить удаление",
+		"delete":         "Удалить",
+		"cancel":         "Отмена",
+		"file":           "файл",
+		"folder":         "папка",
+	},
+	"ko": {
+		"openFolder":     "폴더 열기",
+		"selectImage":    "이미지 선택",
+		"imageFiles":     "이미지 파일",
+		"allFiles":       "모든 파일",
+		"openFile":       "파일 열기",
+		"markdownFiles":  "Markdown 파일",
+		"textFiles":      "텍스트 파일",
+		"confirmDelete":  "삭제 확인",
+		"delete":         "삭제",
+		"cancel":         "취소",
+		"file":           "파일",
+		"folder":         "폴더",
+	},
+	"zh": {
+		"openFolder":     "打开文件夹",
+		"selectImage":    "选择图片",
+		"imageFiles":     "图片文件",
+		"allFiles":       "所有文件",
+		"openFile":       "打开文件",
+		"markdownFiles":  "Markdown 文件",
+		"textFiles":      "文本文件",
+		"confirmDelete":  "确认删除",
+		"delete":         "删除",
+		"cancel":         "取消",
+		"file":           "文件",
+		"folder":         "文件夹",
+	},
+}
+
+func (a *App) labelText(labels map[string]map[string]string, key string) string {
+	a.mu.RLock()
+	locale := a.locale
+	a.mu.RUnlock()
+	if locale == "" {
+		locale = "en"
+	}
+	m, ok := labels[locale]
+	if !ok {
+		m = labels["en"]
+	}
+	if v, ok := m[key]; ok {
+		return v
+	}
+	return key
+}
+
+func (a *App) dialogText(key string) string {
+	return a.labelText(dialogLabels, key)
+}
+
+func (a *App) SetLocale(locale string) {
+	a.mu.Lock()
+	a.locale = locale
+	a.mu.Unlock()
+	a.rebuildMenu()
 }
 
 func (a *App) SetRootPath(p string) {
@@ -87,7 +231,7 @@ func (a *App) OpenFolderDialog() string {
 	defer atomic.StoreInt32(&a.dialogOpen, 0)
 
 	path, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Open Folder",
+		Title: a.dialogText("openFolder"),
 	})
 	if err != nil || path == "" {
 		return ""
@@ -97,10 +241,10 @@ func (a *App) OpenFolderDialog() string {
 
 func (a *App) OpenImageFileDialog() string {
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Select Image",
+		Title: a.dialogText("selectImage"),
 		Filters: []runtime.FileFilter{
-			{DisplayName: "Image Files", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.svg;*.webp"},
-			{DisplayName: "All Files", Pattern: "*.*"},
+			{DisplayName: a.dialogText("imageFiles"), Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.svg;*.webp"},
+			{DisplayName: a.dialogText("allFiles"), Pattern: "*.*"},
 		},
 	})
 	if err != nil || path == "" {
@@ -116,11 +260,11 @@ func (a *App) OpenFileDialog() string {
 	defer atomic.StoreInt32(&a.dialogOpen, 0)
 
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Open File",
+		Title: a.dialogText("openFile"),
 		Filters: []runtime.FileFilter{
-			{DisplayName: "Markdown Files", Pattern: "*.md"},
-			{DisplayName: "Text Files", Pattern: "*.txt"},
-			{DisplayName: "All Files", Pattern: "*.*"},
+			{DisplayName: a.dialogText("markdownFiles"), Pattern: "*.md"},
+			{DisplayName: a.dialogText("textFiles"), Pattern: "*.txt"},
+			{DisplayName: a.dialogText("allFiles"), Pattern: "*.*"},
 		},
 	})
 	if err != nil || path == "" {
@@ -168,17 +312,17 @@ func (a *App) FileExists(filePath string) bool {
 }
 
 func (a *App) ConfirmDelete(name string, isDir bool) bool {
-	label := "file"
+	label := a.dialogText("file")
 	if isDir {
-		label = "folder"
+		label = a.dialogText("folder")
 	}
 	result, _ := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 		Type:    runtime.QuestionDialog,
-		Title:   "Confirm Delete",
-		Message: "Delete " + label + " \"" + name + "\"?",
-		Buttons: []string{"Delete", "Cancel"},
+		Title:   a.dialogText("confirmDelete"),
+		Message: a.dialogText("delete") + " " + label + " \"" + name + "\"?",
+		Buttons: []string{a.dialogText("delete"), a.dialogText("cancel")},
 	})
-	return result == "Delete"
+	return result == a.dialogText("delete")
 }
 
 func (a *App) DeleteFile(filePath string) error {

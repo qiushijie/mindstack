@@ -15,6 +15,7 @@ import {
 import { main } from '../../wailsjs/go/models'
 import type { TreeNode } from '../types/file'
 import { useSettings } from './useSettings'
+import { t } from '../i18n'
 import { useEditorState } from './useEditorState'
 import { setCurrentFilePath, setFileServerPort } from '../extensions/currentFilePath'
 
@@ -42,7 +43,7 @@ export async function resolvePasteFilePath(
   clipboardText: string,
   fileExists: (path: string) => Promise<boolean>
 ): Promise<{ path: string; content: string }> {
-  const fileName = clipboardText.trim().split('\n')[0].split('/').pop() || 'pasted.md'
+  const fileName = clipboardText.trim().split('\n')[0].split('/').pop() || `${t('file.pastedFileName')}.md`
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
   const [nameBase, nameExt] = (() => {
     const idx = safeName.lastIndexOf('.')

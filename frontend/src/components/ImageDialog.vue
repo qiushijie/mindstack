@@ -1,6 +1,9 @@
 <script lang="ts" setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { OpenImageFileDialog } from '../../wailsjs/go/main/App'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   visible: boolean
@@ -144,14 +147,14 @@ onUnmounted(() => {
     <div v-if="visible" class="image-dialog-overlay" @mousedown="handleOverlayClick">
       <div class="image-dialog">
         <div class="image-dialog-header">
-          <span class="image-dialog-title">{{ editingFrom != null ? 'Edit Image' : 'Insert Image' }}</span>
+          <span class="image-dialog-title">{{ editingFrom != null ? t('imageDialog.editTitle') : t('imageDialog.insertTitle') }}</span>
           <button class="image-dialog-close" @click="handleClose">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
           </button>
         </div>
 
         <div class="image-dialog-content">
-          <label class="image-dialog-label">Image URL</label>
+          <label class="image-dialog-label">{{ t('imageDialog.imageUrl') }}</label>
           <div class="image-dialog-input-wrap">
             <svg class="input-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             <input
@@ -159,17 +162,17 @@ onUnmounted(() => {
               v-model="urlValue"
               type="text"
               class="image-dialog-input"
-              placeholder="https://example.com/image.png"
+              :placeholder="t('imageDialog.urlPlaceholder')"
             />
           </div>
 
           <div class="image-dialog-or">
             <span class="or-line" />
-            <span class="or-text">or</span>
+            <span class="or-text">{{ t('imageDialog.or') }}</span>
             <span class="or-line" />
           </div>
 
-          <label class="image-dialog-label">Upload Image</label>
+          <label class="image-dialog-label">{{ t('imageDialog.uploadImage') }}</label>
           <div
             class="image-dialog-dropzone"
             :class="{ 'is-dragover': isDragOver }"
@@ -180,32 +183,32 @@ onUnmounted(() => {
           >
             <svg class="dropzone-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
             <div class="dropzone-text">
-              <span class="dropzone-text-muted">Drop image here or </span>
-              <span class="dropzone-text-link">browse</span>
+              <span class="dropzone-text-muted">{{ t('imageDialog.dropHint') }}</span>
+              <span class="dropzone-text-link">{{ t('imageDialog.browse') }}</span>
             </div>
-            <span class="dropzone-hint">Supports PNG, JPG, GIF, SVG, WebP</span>
+            <span class="dropzone-hint">{{ t('imageDialog.formatHint') }}</span>
           </div>
-          <label class="image-dialog-label">Alt Text</label>
+          <label class="image-dialog-label">{{ t('imageDialog.altText') }}</label>
           <div class="image-dialog-input-wrap">
             <svg class="input-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
             <input
               v-model="altValue"
               type="text"
               class="image-dialog-input"
-              placeholder="Describe the image"
+              :placeholder="t('imageDialog.altPlaceholder')"
             />
           </div>
         </div>
 
         <div class="image-dialog-footer">
-          <button class="image-dialog-btn image-dialog-btn-cancel" @click="handleClose">Cancel</button>
+          <button class="image-dialog-btn image-dialog-btn-cancel" @click="handleClose">{{ t('imageDialog.cancel') }}</button>
           <button
             class="image-dialog-btn image-dialog-btn-insert"
             :disabled="!canInsert"
             @click="handleInsert"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
-            {{ editingFrom != null ? 'Update' : 'Insert' }}
+            {{ editingFrom != null ? t('imageDialog.update') : t('imageDialog.insert') }}
           </button>
         </div>
       </div>

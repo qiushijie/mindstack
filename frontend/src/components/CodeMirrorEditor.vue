@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { syntaxTree } from '@codemirror/language'
 import { useCodeMirror } from '../composables/useCodeMirror'
 import SelectionToolbar from './SelectionToolbar.vue'
@@ -12,6 +13,7 @@ import { currentFilePathField } from '../extensions/currentFilePath'
 import { getTableCellFromEvent } from '../extensions/tableWidget'
 import { parseTable, addRowBelow, addRowAbove, deleteRow, addColumnLeft, addColumnRight, deleteColumn, type TableData } from '../utils/tableUtils'
 
+const { t } = useI18n()
 const containerRef = ref<HTMLElement | null>(null)
 const imageDialogVisible = ref(false)
 let imageInsertLineFrom = -1
@@ -324,7 +326,7 @@ function handleImageConfirm(payload: { url: string; alt: string; editingFrom?: n
   const v = view.value
   if (!v) return
 
-  const alt = payload.alt || 'image'
+  const alt = payload.alt || t('imageDialog.altPlaceholder')
 
   if (payload.editingFrom != null && payload.editingTo != null) {
     // Edit mode: replace existing image markdown
@@ -391,20 +393,20 @@ onUnmounted(() => {
       }"
     >
       <template v-if="tableContext">
-        <button class="ctx-item" @click="handleContextAction('addRowAbove')">Add Row Above</button>
-        <button class="ctx-item" @click="handleContextAction('addRowBelow')">Add Row Below</button>
-        <button class="ctx-item" @click="handleContextAction('deleteRow')">Delete Row</button>
+        <button class="ctx-item" @click="handleContextAction('addRowAbove')">{{ t('editor.contextMenu.addRowAbove') }}</button>
+        <button class="ctx-item" @click="handleContextAction('addRowBelow')">{{ t('editor.contextMenu.addRowBelow') }}</button>
+        <button class="ctx-item" @click="handleContextAction('deleteRow')">{{ t('editor.contextMenu.deleteRow') }}</button>
         <div class="ctx-separator" />
-        <button class="ctx-item" @click="handleContextAction('addColumnLeft')">Add Column Left</button>
-        <button class="ctx-item" @click="handleContextAction('addColumnRight')">Add Column Right</button>
-        <button class="ctx-item" @click="handleContextAction('deleteColumn')">Delete Column</button>
+        <button class="ctx-item" @click="handleContextAction('addColumnLeft')">{{ t('editor.contextMenu.addColumnLeft') }}</button>
+        <button class="ctx-item" @click="handleContextAction('addColumnRight')">{{ t('editor.contextMenu.addColumnRight') }}</button>
+        <button class="ctx-item" @click="handleContextAction('deleteColumn')">{{ t('editor.contextMenu.deleteColumn') }}</button>
       </template>
       <template v-else>
-        <button class="ctx-item" @click="handleContextAction('cut')">Cut</button>
-        <button class="ctx-item" @click="handleContextAction('copy')">Copy</button>
-        <button class="ctx-item" @click="handleContextAction('paste')">Paste</button>
+        <button class="ctx-item" @click="handleContextAction('cut')">{{ t('editor.contextMenu.cut') }}</button>
+        <button class="ctx-item" @click="handleContextAction('copy')">{{ t('editor.contextMenu.copy') }}</button>
+        <button class="ctx-item" @click="handleContextAction('paste')">{{ t('editor.contextMenu.paste') }}</button>
         <div class="ctx-separator" />
-        <button class="ctx-item" @click="handleContextAction('refresh')">Refresh</button>
+        <button class="ctx-item" @click="handleContextAction('refresh')">{{ t('editor.contextMenu.refresh') }}</button>
       </template>
     </div>
     <ImageDialog

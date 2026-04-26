@@ -2,6 +2,7 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 import { StateEffect } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
 import { BLOCK_REGISTRY, type BlockConfig } from '../utils/blockRegistry'
+import { t } from '../i18n'
 
 // StateEffect to track the currently selected index in the slash menu
 const setSelectedIndex = StateEffect.define<number>({})
@@ -35,6 +36,7 @@ function matchScore(kind: MatchKind): number {
 }
 
 export interface SlashMenuItem {
+  key: string
   label: string
   description: string
   prefix: string
@@ -42,8 +44,17 @@ export interface SlashMenuItem {
 }
 
 export const SLASH_ITEMS: SlashMenuItem[] = BLOCK_REGISTRY.map(
-  ({ label, description, prefix, example }) => ({ label, description, prefix, example }),
+  ({ key, label, description, prefix, example }) => ({ key, label, description, prefix, example }),
 )
+
+function getTranslatedItem(item: SlashMenuItem): SlashMenuItem {
+  return {
+    ...item,
+    label: t(`blocks.${item.key}.label`),
+    description: t(`blocks.${item.key}.desc`),
+    example: t(`blocks.${item.key}.example`),
+  }
+}
 
 class SlashMenuWidget extends WidgetType {
   constructor(
@@ -64,7 +75,7 @@ class SlashMenuWidget extends WidgetType {
       : -1
 
     for (let i = 0; i < filtered.length; i++) {
-      const item = filtered[i]
+      const item = getTranslatedItem(filtered[i])
       const row = document.createElement('div')
       row.className = 'cm-slash-item'
       if (i === clampedIndex) {
@@ -73,7 +84,7 @@ class SlashMenuWidget extends WidgetType {
       row.innerHTML = `<span class="cm-slash-label">${item.label}</span><span class="cm-slash-desc">${item.description}</span>`
       row.addEventListener('pointerdown', (e) => {
         e.preventDefault()
-        applyItem(view, item, this.slashFrom)
+        applyItem(view, filtered[i], this.slashFrom)
       })
       container.appendChild(row)
     }
@@ -81,7 +92,7 @@ class SlashMenuWidget extends WidgetType {
     if (filtered.length === 0) {
       const empty = document.createElement('div')
       empty.className = 'cm-slash-empty'
-      empty.textContent = 'No results'
+      empty.textContent = t('slash.noResults')
       container.appendChild(empty)
     }
 
@@ -177,7 +188,8 @@ function applyItem(view: EditorView, item: SlashMenuItem, slashFrom: number) {
   const slashOffset = slashFrom - line.from
   const before = line.text.slice(0, slashOffset) // leading whitespace before /
   const prefixLen = item.prefix.length
-  const insertText = before + item.prefix + item.example
+  const translated = getTranslatedItem(item)
+  const insertText = before + item.prefix + translated.example
   const anchor = line.from + before.length + prefixLen
   const head = line.from + insertText.length
   view.dispatch({
