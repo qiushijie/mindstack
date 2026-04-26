@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('../../../wailsjs/go/main/App', () => ({
   LoadConfig: vi.fn(),
   SaveConfig: vi.fn(),
+  SetLocale: vi.fn().mockResolvedValue(undefined),
 }))
 
 import { LoadConfig, SaveConfig } from '../../../wailsjs/go/main/App'

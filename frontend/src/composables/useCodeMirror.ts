@@ -35,15 +35,21 @@ interface UseCodeMirrorReturn {
 
 type ShallowRef<T> = ReturnType<typeof shallowRef<T>>
 
+function isDarkTheme(): boolean {
+  return document.documentElement.getAttribute('data-theme') === 'dark'
+}
+
 export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorReturn {
+  const themeCompartment = new Compartment()
   const extCompartment = new Compartment()
   const view = shallowRef<EditorView | null>(null)
   const doc = ref(options.initialDoc ?? '')
   const { editorView: sharedView } = useEditorState()
+  let themeObserver: MutationObserver | null = null
 
   function getBaseExtensions(): Extension[] {
     return [
-      ...createEditorTheme(),
+      themeCompartment.of(createEditorTheme(isDarkTheme())),
       markdown({ extensions: GFM, codeLanguages: languages }),
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -90,9 +96,22 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     if (selectedFilePath.value) {
       view.value.dispatch({ effects: setCurrentFilePath.of(selectedFilePath.value) })
     }
+
+    // Watch for theme changes and reconfigure editor theme
+    themeObserver = new MutationObserver(() => {
+      if (!view.value) return
+      view.value.dispatch({
+        effects: themeCompartment.reconfigure(createEditorTheme(isDarkTheme())),
+      })
+    })
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
   })
 
   onUnmounted(() => {
+    themeObserver?.disconnect()
     view.value?.destroy()
     view.value = null
     sharedView.value = null
@@ -111,6 +130,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
   }
 
   function destroy() {
+    themeObserver?.disconnect()
     view.value?.destroy()
     sharedView.value = null
     view.value = null

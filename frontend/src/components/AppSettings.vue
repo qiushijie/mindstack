@@ -10,7 +10,7 @@ import {
   ArrowLeft,
 } from 'lucide-vue-next'
 import { useNavigation } from '../composables/useNavigation'
-import { useSettings } from '../composables/useSettings'
+import { useSettings, applyTheme } from '../composables/useSettings'
 
 const { t } = useI18n()
 const { navigateTo } = useNavigation()
@@ -31,8 +31,7 @@ const navItems: NavItem[] = [
   { key: 'about', icon: Info },
 ]
 
-const theme = ref<'light' | 'dark'>('light')
-const { autoSave, autoSaveDelay, locale, saveSettings } = useSettings()
+const { autoSave, autoSaveDelay, locale, theme, saveSettings } = useSettings()
 const fontFamily = ref('Inter')
 const fontSize = ref(16)
 const tabSize = ref(2)
@@ -108,14 +107,14 @@ async function selectLocale(key: Locale) {
                 <button
                   class="theme-btn"
                   :class="{ active: theme === 'light' }"
-                  @click="theme = 'light'"
+                  @click="theme = 'light'; applyTheme('light')"
                 >
                   {{ t('settings.theme.light') }}
                 </button>
                 <button
                   class="theme-btn"
                   :class="{ active: theme === 'dark' }"
-                  @click="theme = 'dark'"
+                  @click="theme = 'dark'; applyTheme('dark')"
                 >
                   {{ t('settings.theme.dark') }}
                 </button>

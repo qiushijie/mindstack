@@ -8,15 +8,16 @@ import AppSettings from './components/AppSettings.vue'
 import { useNavigation } from './composables/useNavigation'
 import { provideEditorState } from './composables/useEditorState'
 import { useFileTree } from './composables/useFileTree'
-import { useSettings } from './composables/useSettings'
+import { useSettings, applyTheme } from './composables/useSettings'
 
 const { currentPage, navigateTo } = useNavigation()
 provideEditorState()
 const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile } = useFileTree()
-const { loadSettings } = useSettings()
+const { loadSettings, theme } = useSettings()
 
 onMounted(async () => {
   await loadSettings()
+  applyTheme(theme.value)
   restoreSession()
 
   EventsOff('menu:navigate')
