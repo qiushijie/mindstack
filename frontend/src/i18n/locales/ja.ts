@@ -4,12 +4,14 @@ export default {
     nav: {
       general: '一般',
       editor: 'エディタ',
+      model: 'モデル',
       git: 'Git',
       about: 'について',
     },
     section: {
       general: '一般',
       editor: 'エディタ',
+      model: 'モデル',
       git: 'Git',
       about: 'について',
     },
@@ -19,6 +21,7 @@ export default {
       font: 'フォント',
       display: '表示',
       versionControl: 'バージョン管理',
+      aiModels: 'AI モデル',
       information: '情報',
     },
     label: {
@@ -68,6 +71,17 @@ export default {
       version: 'v0.1.0',
       desc: 'Git 同期に対応した、開発者向けの Markdown エディタです。',
       build: 'Wails、Vue 3、Go で構築されています。',
+    },
+    model: {
+      namePlaceholder: 'Model name',
+      apiUrl: 'API URL',
+      apiUrlPlaceholder: 'https://api.deepseek.com',
+      apiKey: 'API Key',
+      apiKeyPlaceholder: 'Enter API key',
+      activate: 'Activate',
+      inactive: 'Inactive',
+      active: 'Active',
+      add: 'Add Model',
     },
   },
   sidebar: {

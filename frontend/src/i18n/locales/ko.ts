@@ -4,12 +4,14 @@ export default {
     nav: {
       general: '일반',
       editor: '편집기',
+      model: '모델',
       git: 'Git',
       about: '정보',
     },
     section: {
       general: '일반',
       editor: '편집기',
+      model: '모델',
       git: 'Git',
       about: '정보',
     },
@@ -19,6 +21,7 @@ export default {
       font: '글꼴',
       display: '표시',
       versionControl: '버전 관리',
+      aiModels: 'AI 모델',
       information: '정보',
     },
     label: {
@@ -68,6 +71,17 @@ export default {
       version: 'v0.1.0',
       desc: 'Git 동기화를 지원하는 개발자용 Markdown 편집기입니다.',
       build: 'Wails, Vue 3 및 Go로 빌드되었습니다.',
+    },
+    model: {
+      namePlaceholder: 'Model name',
+      apiUrl: 'API URL',
+      apiUrlPlaceholder: 'https://api.deepseek.com',
+      apiKey: 'API Key',
+      apiKeyPlaceholder: 'Enter API key',
+      activate: 'Activate',
+      inactive: 'Inactive',
+      active: 'Active',
+      add: 'Add Model',
     },
   },
   sidebar: {

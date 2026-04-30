@@ -4,12 +4,14 @@ export default {
     nav: {
       general: 'General',
       editor: 'Editor',
+      model: 'Model',
       git: 'Git',
       about: 'About',
     },
     section: {
       general: 'General',
       editor: 'Editor',
+      model: 'Model',
       git: 'Git',
       about: 'About',
     },
@@ -20,6 +22,7 @@ export default {
       display: 'Display',
       versionControl: 'Version Control',
       information: 'Information',
+      aiModels: 'AI MODELS',
     },
     label: {
       theme: 'Theme',
@@ -68,6 +71,17 @@ export default {
       version: 'v0.1.0',
       desc: 'A developer-focused markdown editor with git sync.',
       build: 'Built with Wails, Vue 3 and Go.',
+    },
+    model: {
+      namePlaceholder: 'Model name',
+      apiUrl: 'API URL',
+      apiUrlPlaceholder: 'https://api.deepseek.com',
+      apiKey: 'API Key',
+      apiKeyPlaceholder: 'Enter API key',
+      activate: 'Activate',
+      inactive: 'Inactive',
+      active: 'Active',
+      add: 'Add Model',
     },
   },
   sidebar: {

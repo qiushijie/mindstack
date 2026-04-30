@@ -48,6 +48,7 @@ vi.mock('../useEditorState', () => ({
 // Mock currentFilePath extension
 vi.mock('../../extensions/currentFilePath', () => ({
   setCurrentFilePath: { is: () => false, of: vi.fn() },
+  setFileServerPort: vi.fn(),
 }))
 
 import {
@@ -56,21 +57,22 @@ import {
   ReadDirEntries,
   ReadFileContent,
   SaveFileContent,
+  LoadConfig,
   AddRecentEntry,
 } from '../../../wailsjs/go/main/App'
 import { useFileTree } from '../useFileTree'
+import { useTabs } from '../useTabs'
 
 // Helper: reset shared module state between tests
 function resetState() {
+  const { clearTabs } = useTabs()
+  clearTabs()
   const state = useFileTree()
   state.rootPath.value = ''
   state.treeData.value = []
   state.selectedFilePath.value = ''
   state.selectedFileContent.value = ''
   state.isDirty.value = false
-  // Reset editorAdapter to a no-op so "no adapter" tests work correctly.
-  // useFileTree checks truthiness of editorAdapter; setting a passthrough
-  // adapter that returns selectedFileContent simulates the no-adapter fallback.
   state.setEditorAdapter({
     setContent: () => {},
     getContent: () => state.selectedFileContent.value,
@@ -79,7 +81,7 @@ function resetState() {
 
 describe('useFileTree', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     resetState()
   })
 
@@ -701,6 +703,281 @@ describe('useFileTree', () => {
       expect(selectedFilePath.value).toBe('/recent/doc.md')
       expect(selectedFileContent.value).toBe('content')
       expect(AddRecentEntry).toHaveBeenCalledWith('/recent/doc.md', false)
+    })
+  })
+
+  describe('restoreSession', () => {
+    it('restores last folder and file from config', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue(JSON.stringify({
+        lastFolderPath: '/root',
+        lastFilePath: '/root/notes.md',
+      }))
+      vi.mocked(ReadDirEntries).mockResolvedValue([
+        { name: 'notes.md', path: '/root/notes.md', isDir: false },
+      ])
+      vi.mocked(ReadFileContent).mockResolvedValue('# Restored')
+
+      const { rootPath, selectedFilePath, selectedFileContent, restoreSession } = useFileTree()
+      await restoreSession()
+
+      expect(rootPath.value).toBe('/root')
+      expect(selectedFilePath.value).toBe('/root/notes.md')
+      expect(selectedFileContent.value).toBe('# Restored')
+    })
+
+    it('restores only folder when no lastFilePath', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue(JSON.stringify({
+        lastFolderPath: '/root',
+      }))
+      vi.mocked(ReadDirEntries).mockResolvedValue([])
+
+      const { rootPath, selectedFilePath, restoreSession } = useFileTree()
+      await restoreSession()
+
+      expect(rootPath.value).toBe('/root')
+      expect(selectedFilePath.value).toBe('')
+    })
+
+    it('does nothing when config is empty', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue('{}')
+
+      const { rootPath, selectedFilePath, restoreSession } = useFileTree()
+      await restoreSession()
+
+      expect(rootPath.value).toBe('')
+      expect(selectedFilePath.value).toBe('')
+    })
+
+    it('handles invalid config JSON', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue('')
+
+      const { rootPath, restoreSession } = useFileTree()
+      await restoreSession()
+
+      expect(rootPath.value).toBe('')
+    })
+
+    it('handles errors gracefully', async () => {
+      vi.mocked(LoadConfig).mockRejectedValue(new Error('disk error'))
+
+      const { rootPath, restoreSession } = useFileTree()
+      await restoreSession()
+
+      expect(rootPath.value).toBe('')
+    })
+  })
+
+  describe('switchToTab', () => {
+    // Helper: open a fresh folder to clear tabContentCache between tests
+    async function cleanOpen() {
+      vi.mocked(OpenFolderDialog).mockResolvedValueOnce('/__tabtest__')
+      vi.mocked(ReadDirEntries).mockResolvedValueOnce([])
+      const { openFolder } = useFileTree()
+      await openFolder()
+      // clearAllMocks resets mock call counts but keeps implementations
+    }
+
+    it('switches to another tab and loads its content', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b')
+
+      const { selectedFilePath, selectedFileContent, selectFile, switchToTab } = useFileTree()
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      await switchToTab(0)
+
+      expect(selectedFilePath.value).toBe('/root/a.md')
+      expect(selectedFileContent.value).toBe('content-a')
+    })
+
+    it('skips when index equals activeTabIndex', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+
+      const { selectedFilePath, selectFile, switchToTab } = useFileTree()
+
+      await selectFile('/root/a.md')
+      await switchToTab(0)
+
+      expect(selectedFilePath.value).toBe('/root/a.md')
+    })
+
+    it('saves current content to cache before switching', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b')
+
+      const { selectFile, switchToTab, setEditorAdapter, selectedFileContent } = useFileTree()
+      let editorContent = ''
+      const mockAdapter = {
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      }
+      setEditorAdapter(mockAdapter)
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      editorContent = 'modified-b'
+
+      await switchToTab(0)
+
+      expect(selectedFileContent.value).toBe('content-a')
+    })
+
+    it('cancels auto-save timer on switch', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectFile, switchToTab, setEditorAdapter, markDirty } = useFileTree()
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      markDirty()
+
+      vi.useFakeTimers()
+      try {
+        await switchToTab(0)
+        vi.advanceTimersByTime(5000)
+        await vi.runOnlyPendingTimersAsync()
+        expect(SaveFileContent).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  describe('closeFileTab', () => {
+    async function cleanOpen() {
+      vi.mocked(OpenFolderDialog).mockResolvedValueOnce('/__tabtest__')
+      vi.mocked(ReadDirEntries).mockResolvedValueOnce([])
+      const { openFolder } = useFileTree()
+      await openFolder()
+    }
+
+    it('closes active tab and switches to adjacent', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b')
+        .mockResolvedValueOnce('content-c')
+
+      const { selectedFilePath, selectedFileContent, selectFile, closeFileTab, setEditorAdapter } = useFileTree()
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      await selectFile('/root/c.md')
+      await closeFileTab(2)
+
+      expect(selectedFilePath.value).toBe('/root/b.md')
+      expect(selectedFileContent.value).toBe('content-b')
+    })
+
+    it('closes the last tab and clears editor', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+
+      const { selectedFilePath, selectedFileContent, isDirty, selectFile, closeFileTab, markDirty } = useFileTree()
+
+      await selectFile('/root/a.md')
+      markDirty()
+      await closeFileTab(0)
+
+      expect(selectedFilePath.value).toBe('')
+      expect(selectedFileContent.value).toBe('')
+      expect(isDirty.value).toBe(false)
+    })
+
+    it('closes a tab before active and adjusts index', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b')
+        .mockResolvedValueOnce('content-c')
+
+      const { selectedFilePath, selectFile, closeFileTab, setEditorAdapter } = useFileTree()
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      await selectFile('/root/c.md')
+      await closeFileTab(0)
+
+      expect(selectedFilePath.value).toBe('/root/c.md')
+    })
+
+    it('clears dirty state for closed tab', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectFile, closeFileTab, markDirty, setEditorAdapter } = useFileTree()
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/a.md')
+      markDirty()
+      await closeFileTab(0)
+
+      vi.useFakeTimers()
+      try {
+        vi.advanceTimersByTime(5000)
+        await vi.runOnlyPendingTimersAsync()
+        expect(SaveFileContent).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('saves current content to cache when closing active tab', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('original-a')
+        .mockResolvedValueOnce('original-b')
+
+      const { selectFile, closeFileTab, setEditorAdapter } = useFileTree()
+      let editorContent = ''
+      const mockAdapter = {
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      }
+      setEditorAdapter(mockAdapter)
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      await closeFileTab(1)
+
+      expect(mockAdapter.setContent).toHaveBeenLastCalledWith('original-a')
     })
   })
 })

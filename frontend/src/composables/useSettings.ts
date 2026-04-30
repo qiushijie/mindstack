@@ -1,12 +1,29 @@
 import { ref, watch, nextTick } from 'vue'
-import { LoadConfig, SaveConfig, SetLocale } from '../../wailsjs/go/main/App'
+import { LoadConfig, SaveConfig, SetLocale, ReloadLLM } from '../../wailsjs/go/main/App'
 import { WindowSetLightTheme, WindowSetDarkTheme } from '../../wailsjs/runtime/runtime'
 import { setLocale, type Locale } from '../i18n'
+
+export const SUPPORTED_MODELS = [
+  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+  { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+] as const
+
+export type SupportedModel = (typeof SUPPORTED_MODELS)[number]['value']
+
+export interface ModelConfig {
+  id: string
+  model: SupportedModel
+  apiUrl: string
+  apiKey: string
+}
 
 const autoSave = ref(true)
 const autoSaveDelay = ref(5)
 const locale = ref<Locale>('en')
 const theme = ref<'light' | 'dark'>('light')
+const models = ref<ModelConfig[]>([])
+const activeModelId = ref('')
+const showKeyIds = ref<Set<string>>(new Set())
 
 let loaded = false
 let skipWatch = false
@@ -50,6 +67,8 @@ async function doSave() {
           autoSaveDelay: autoSaveDelay.value,
           locale: locale.value,
           theme: theme.value,
+          models: models.value,
+          activeModelId: activeModelId.value,
         }
         const result = await SaveConfig(JSON.stringify(config))
         if (result) {
@@ -86,6 +105,8 @@ export function useSettings() {
         theme.value = s.theme
         applyTheme(theme.value)
       }
+      if (Array.isArray(s.models)) models.value = s.models.map((m: any) => ({ ...m, model: m.model || 'deepseek-v4-flash', apiUrl: m.apiUrl || '' }))
+      if (s.activeModelId) activeModelId.value = s.activeModelId
     } catch (err) {
       console.error('Failed to load settings:', err)
     }
@@ -95,12 +116,53 @@ export function useSettings() {
 
   async function saveSettings() {
     await doSave()
+    if (activeModelId.value) {
+      ReloadLLM().catch(() => {})
+    }
   }
 
-  return { autoSave, autoSaveDelay, locale, theme, loadSettings, saveSettings }
+  function addModel() {
+    models.value.push({
+      id: crypto.randomUUID(),
+      model: 'deepseek-v4-flash',
+      apiUrl: '',
+      apiKey: '',
+    })
+    doSave()
+  }
+
+  function removeModel(id: string) {
+    models.value = models.value.filter(m => m.id !== id)
+    if (activeModelId.value === id) {
+      activeModelId.value = models.value.length > 0 ? models.value[0].id : ''
+    }
+    const s = new Set(showKeyIds.value)
+    s.delete(id)
+    showKeyIds.value = s
+    doSave()
+  }
+
+  function activateModel(id: string) {
+    activeModelId.value = id
+    doSave().then(() => ReloadLLM().catch(() => {}))
+  }
+
+  function toggleShowKey(id: string) {
+    const s = new Set(showKeyIds.value)
+    if (s.has(id)) s.delete(id)
+    else s.add(id)
+    showKeyIds.value = s
+  }
+
+  return {
+    autoSave, autoSaveDelay, locale, theme,
+    models, activeModelId, showKeyIds,
+    loadSettings, saveSettings,
+    addModel, removeModel, activateModel, toggleShowKey,
+  }
 }
 
-watch([autoSave, autoSaveDelay, locale, theme], async () => {
+watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models], async () => {
   if (!loaded || skipWatch) return
   await doSave()
-})
+}, { deep: true })

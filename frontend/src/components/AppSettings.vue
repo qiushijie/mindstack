@@ -4,18 +4,24 @@ import { useI18n } from 'vue-i18n'
 import {
   Settings,
   Type,
+  Sparkles,
   GitBranch,
   Info,
   ChevronDown,
   ArrowLeft,
+  Eye,
+  EyeOff,
+  Trash2,
+  Plus,
 } from 'lucide-vue-next'
 import { useNavigation } from '../composables/useNavigation'
-import { useSettings, applyTheme } from '../composables/useSettings'
+import { useSettings, applyTheme, SUPPORTED_MODELS } from '../composables/useSettings'
+import type { SupportedModel } from '../composables/useSettings'
 
 const { t } = useI18n()
 const { navigateTo } = useNavigation()
 
-type SettingsSection = 'general' | 'editor' | 'git' | 'about'
+type SettingsSection = 'general' | 'editor' | 'model' | 'git' | 'about'
 
 const activeSection = ref<SettingsSection>('general')
 
@@ -27,11 +33,12 @@ interface NavItem {
 const navItems: NavItem[] = [
   { key: 'general', icon: Settings },
   { key: 'editor', icon: Type },
+  { key: 'model', icon: Sparkles },
   { key: 'git', icon: GitBranch },
   { key: 'about', icon: Info },
 ]
 
-const { autoSave, autoSaveDelay, locale, theme, saveSettings } = useSettings()
+const { autoSave, autoSaveDelay, locale, theme, models, activeModelId, showKeyIds, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
 const fontFamily = ref('Inter')
 const fontSize = ref(16)
 const tabSize = ref(2)
@@ -42,6 +49,22 @@ const autoCommit = ref(false)
 const autoPull = ref(false)
 
 const langOpen = ref(false)
+const modelDropdownOpen = ref('')
+
+function toggleModelDropdown(id: string) {
+  modelDropdownOpen.value = modelDropdownOpen.value === id ? '' : id
+}
+
+function selectModelCardModel(id: string, value: string) {
+  const item = models.value.find(m => m.id === id)
+  if (item) item.model = value as SupportedModel
+  modelDropdownOpen.value = ''
+  saveSettings()
+}
+
+function getModelLabel(model: string): string {
+  return SUPPORTED_MODELS.find(m => m.value === model)?.label ?? model
+}
 import type { Locale } from '../i18n'
 
 const locales: { key: Locale; labelKey: string }[] = [
@@ -232,6 +255,84 @@ async function selectLocale(key: Locale) {
                 <span class="toggle-thumb" />
               </button>
             </div>
+          </div>
+        </template>
+
+        <!-- Model -->
+        <template v-if="activeSection === 'model'">
+          <h1 class="section-title">{{ t('settings.section.model') }}</h1>
+
+          <div class="settings-group">
+            <span class="group-label">{{ t('settings.group.aiModels') }}</span>
+
+            <div
+              v-for="model in models"
+              :key="model.id"
+              class="model-card"
+              :class="{ active: model.id === activeModelId }"
+            >
+              <div class="model-header">
+                <div class="select-dropdown model-select" :class="{ open: modelDropdownOpen === model.id }">
+                  <button class="select-value" @click="toggleModelDropdown(model.id)">
+                    <span>{{ getModelLabel(model.model) }}</span>
+                    <ChevronDown :size="12" />
+                  </button>
+                  <div v-if="modelDropdownOpen === model.id" class="dropdown-menu">
+                    <button
+                      v-for="m in SUPPORTED_MODELS"
+                      :key="m.value"
+                      class="dropdown-item"
+                      :class="{ active: model.model === m.value }"
+                      @click="selectModelCardModel(model.id, m.value)"
+                    >
+                      {{ m.label }}
+                    </button>
+                  </div>
+                </div>
+                <div v-if="model.id === activeModelId" class="model-active-badge">
+                  <span class="active-dot" />
+                  <span class="active-text">{{ t('settings.model.active') }}</span>
+                </div>
+                <div v-else class="model-inactive-badge" @click="activateModel(model.id)">
+                  <span class="inactive-dot" />
+                  <span class="inactive-text">{{ t('settings.model.inactive') }}</span>
+                </div>
+              </div>
+              <div class="model-divider" />
+              <div class="model-api-row">
+                <span class="api-row-label">{{ t('settings.model.apiUrl') }}</span>
+                <input
+                  v-model="model.apiUrl"
+                  class="api-row-input"
+                  :placeholder="t('settings.model.apiUrlPlaceholder')"
+                  @change="saveSettings"
+                  @keydown.enter="saveSettings"
+                />
+              </div>
+              <div class="model-api-key-row">
+                <span class="api-key-label">{{ t('settings.model.apiKey') }}</span>
+                <input
+                  v-model="model.apiKey"
+                  :type="showKeyIds.has(model.id) ? 'text' : 'password'"
+                  class="api-key-input"
+                  :placeholder="t('settings.model.apiKeyPlaceholder')"
+                  @change="saveSettings"
+                  @keydown.enter="saveSettings"
+                />
+                <button class="icon-btn" @click="toggleShowKey(model.id)">
+                  <Eye v-if="!showKeyIds.has(model.id)" :size="16" />
+                  <EyeOff v-else :size="16" />
+                </button>
+                <button class="icon-btn delete" @click="removeModel(model.id)">
+                  <Trash2 :size="16" />
+                </button>
+              </div>
+            </div>
+
+            <button class="add-model-btn" @click="addModel">
+              <Plus :size="16" />
+              <span>{{ t('settings.model.add') }}</span>
+            </button>
           </div>
         </template>
 
@@ -673,5 +774,201 @@ async function selectLocale(key: Locale) {
   font-size: 12px;
   color: var(--foreground-tertiary);
   line-height: 1.5;
+}
+
+/* Model Card */
+.model-card {
+  padding: 20px;
+  background-color: var(--surface-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.model-card.active {
+  border-color: var(--accent-primary);
+}
+
+.model-header {
+  display: flex;
+  align-items: center;
+}
+
+.model-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-select .select-value {
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 2px 4px;
+}
+
+.model-select .dropdown-menu {
+  right: auto;
+  left: 0;
+  min-width: 180px;
+}
+
+.model-active-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #22c55e;
+}
+
+.active-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #22c55e;
+}
+
+.model-inactive-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.inactive-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--foreground-tertiary);
+}
+
+.inactive-text {
+  font-size: 12px;
+  color: var(--foreground-tertiary);
+}
+
+.model-divider {
+  height: 1px;
+  background-color: var(--border-subtle);
+}
+
+.model-api-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.api-row-label {
+  font-size: 13px;
+  color: var(--foreground-secondary);
+  flex-shrink: 0;
+}
+
+.api-row-input {
+  flex: 1;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--foreground-secondary);
+  outline: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  min-width: 0;
+}
+
+.api-row-input:focus {
+  background-color: var(--surface-primary);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.api-row-input::placeholder {
+  color: var(--foreground-tertiary);
+}
+
+.model-api-key-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.api-key-label {
+  font-size: 13px;
+  color: var(--foreground-secondary);
+  flex-shrink: 0;
+}
+
+.api-key-input {
+  flex: 1;
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--foreground-secondary);
+  outline: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  min-width: 0;
+}
+
+.api-key-input:focus {
+  background-color: var(--surface-primary);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.api-key-input::placeholder {
+  color: var(--foreground-tertiary);
+}
+
+.icon-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--foreground-tertiary);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+
+.icon-btn:hover {
+  color: var(--foreground-secondary);
+  background-color: var(--surface-hover);
+}
+
+.icon-btn.delete:hover {
+  color: #ef4444;
+}
+
+.add-model-btn {
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--foreground-tertiary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.add-model-btn:hover {
+  background-color: var(--surface-secondary);
+  color: var(--foreground-secondary);
 }
 </style>

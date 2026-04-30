@@ -4,12 +4,14 @@ export default {
     nav: {
       general: '通用',
       editor: '编辑器',
+      model: '模型',
       git: 'Git',
       about: '关于',
     },
     section: {
       general: '通用',
       editor: '编辑器',
+      model: '模型',
       git: 'Git',
       about: '关于',
     },
@@ -20,6 +22,7 @@ export default {
       display: '显示',
       versionControl: '版本控制',
       information: '信息',
+      aiModels: 'AI 模型',
     },
     label: {
       theme: '主题',
@@ -68,6 +71,17 @@ export default {
       version: 'v0.1.0',
       desc: '面向开发者的 Markdown 编辑器，支持 Git 同步。',
       build: '基于 Wails、Vue 3 和 Go 构建。',
+    },
+    model: {
+      namePlaceholder: '模型名称',
+      apiUrl: 'API URL',
+      apiUrlPlaceholder: 'https://api.deepseek.com',
+      apiKey: 'API Key',
+      apiKeyPlaceholder: '输入 API Key',
+      activate: '激活',
+      inactive: '未激活',
+      active: '已激活',
+      add: '添加模型',
     },
   },
   sidebar: {

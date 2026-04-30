@@ -4,12 +4,14 @@ export default {
     nav: {
       general: 'Общие',
       editor: 'Редактор',
+      model: 'Модель',
       git: 'Git',
       about: 'О программе',
     },
     section: {
       general: 'Общие',
       editor: 'Редактор',
+      model: 'Модель',
       git: 'Git',
       about: 'О программе',
     },
@@ -19,6 +21,7 @@ export default {
       font: 'Шрифт',
       display: 'Отображение',
       versionControl: 'Управление версиями',
+      aiModels: 'ИИ МОДЕЛИ',
       information: 'Информация',
     },
     label: {
@@ -68,6 +71,17 @@ export default {
       version: 'v0.1.0',
       desc: 'Markdown-редактор для разработчиков с синхронизацией Git.',
       build: 'Создано с помощью Wails, Vue 3 и Go.',
+    },
+    model: {
+      namePlaceholder: 'Model name',
+      apiUrl: 'API URL',
+      apiUrlPlaceholder: 'https://api.deepseek.com',
+      apiKey: 'API Key',
+      apiKeyPlaceholder: 'Enter API key',
+      activate: 'Activate',
+      inactive: 'Inactive',
+      active: 'Active',
+      add: 'Add Model',
     },
   },
   sidebar: {
