@@ -19,6 +19,7 @@ import { useSettings } from './useSettings'
 import { t } from '../i18n'
 import { useEditorState } from './useEditorState'
 import { setCurrentFilePath, setFileServerPort } from '../extensions/currentFilePath'
+import { useTabs } from './useTabs'
 
 export async function resolveUniqueFilePath(
   dirPath: string,
@@ -95,6 +96,10 @@ const isDirty = ref(false)
 let editorAdapter: EditorAdapter | null = null
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 
+const { tabs, activeTabIndex, openTab, closeTab, switchTab, clearTabs } = useTabs()
+const tabContentCache = new Map<string, string>()
+const dirtyTabs = new Set<string>()
+
 function clearAutoSaveTimer() {
   if (autoSaveTimer !== null) {
     clearTimeout(autoSaveTimer)
@@ -156,11 +161,31 @@ export function useFileTree() {
     editorAdapter = adapter
   }
 
-  async function saveAppConfig() {
-    const config = {
-      lastFolderPath: rootPath.value,
-      lastFilePath: selectedFilePath.value,
+  function saveCurrentToCache() {
+    if (selectedFilePath.value && editorAdapter) {
+      tabContentCache.set(selectedFilePath.value, editorAdapter.getContent())
     }
+  }
+
+  async function loadTabContent(path: string): Promise<string> {
+    const cached = tabContentCache.get(path)
+    return cached !== undefined ? cached : await ReadFileContent(path)
+  }
+
+  function applyContent(path: string, content: string) {
+    selectedFilePath.value = path
+    selectedFileContent.value = content
+    isDirty.value = dirtyTabs.has(path)
+    if (editorAdapter) {
+      editorAdapter.setContent(content)
+    }
+  }
+
+  async function saveAppConfig() {
+    const raw = await LoadConfig()
+    const config = JSON.parse(raw || '{}')
+    config.lastFolderPath = rootPath.value
+    config.lastFilePath = selectedFilePath.value
     await SaveConfig(JSON.stringify(config))
   }
 
@@ -178,11 +203,9 @@ export function useFileTree() {
 
         if (config.lastFilePath) {
           const content = await ReadFileContent(config.lastFilePath)
-          selectedFilePath.value = config.lastFilePath
-          selectedFileContent.value = content
-          if (editorAdapter) {
-            editorAdapter.setContent(content)
-          }
+          openTab(config.lastFilePath)
+          tabContentCache.set(config.lastFilePath, content)
+          applyContent(config.lastFilePath, content)
         }
       }
     } catch {
@@ -195,6 +218,9 @@ export function useFileTree() {
     if (!path) return
 
     clearAutoSaveTimer()
+    clearTabs()
+    tabContentCache.clear()
+    dirtyTabs.clear()
     rootPath.value = path
     selectedFilePath.value = ''
     selectedFileContent.value = ''
@@ -217,14 +243,11 @@ export function useFileTree() {
       await SetWorkspaceRoot(dir)
     }
 
+    saveCurrentToCache()
     const content = await ReadFileContent(path)
-    selectedFilePath.value = path
-    selectedFileContent.value = content
-    isDirty.value = false
-
-    if (editorAdapter) {
-      editorAdapter.setContent(content)
-    }
+    openTab(path)
+    tabContentCache.set(path, content)
+    applyContent(path, content)
     await saveAppConfig()
     AddRecentEntry(path, false)
   }
@@ -233,14 +256,14 @@ export function useFileTree() {
     if (path === selectedFilePath.value) return
 
     clearAutoSaveTimer()
-    const content = await ReadFileContent(path)
-    selectedFilePath.value = path
-    selectedFileContent.value = content
-    isDirty.value = false
+    saveCurrentToCache()
 
-    if (editorAdapter) {
-      editorAdapter.setContent(content)
+    const { isNew } = openTab(path)
+    const content = await loadTabContent(path)
+    if (isNew) {
+      tabContentCache.set(path, content)
     }
+    applyContent(path, content)
     await saveAppConfig()
     AddRecentEntry(path, false)
   }
@@ -267,6 +290,8 @@ export function useFileTree() {
     const err = await SaveFileContent(selectedFilePath.value, content)
     if (!err) {
       isDirty.value = false
+      dirtyTabs.delete(selectedFilePath.value)
+      tabContentCache.set(selectedFilePath.value, content)
     }
   }
 
@@ -282,6 +307,9 @@ export function useFileTree() {
 
   function markDirty() {
     isDirty.value = true
+    if (selectedFilePath.value) {
+      dirtyTabs.add(selectedFilePath.value)
+    }
 
     if (autoSave.value && selectedFilePath.value) {
       clearAutoSaveTimer()
@@ -306,6 +334,9 @@ export function useFileTree() {
 
   async function openRecentFolder(path: string) {
     clearAutoSaveTimer()
+    clearTabs()
+    tabContentCache.clear()
+    dirtyTabs.clear()
     rootPath.value = path
     selectedFilePath.value = ''
     selectedFileContent.value = ''
@@ -320,16 +351,58 @@ export function useFileTree() {
 
   async function openRecentFile(path: string) {
     clearAutoSaveTimer()
-    const content = await ReadFileContent(path)
-    selectedFilePath.value = path
-    selectedFileContent.value = content
-    isDirty.value = false
+    saveCurrentToCache()
 
-    if (editorAdapter) {
-      editorAdapter.setContent(content)
+    const { isNew } = openTab(path)
+    const content = await loadTabContent(path)
+    if (isNew) {
+      tabContentCache.set(path, content)
     }
+    applyContent(path, content)
     await saveAppConfig()
     AddRecentEntry(path, false)
+  }
+
+  async function switchToTab(index: number) {
+    if (index === activeTabIndex.value) return
+
+    clearAutoSaveTimer()
+    saveCurrentToCache()
+
+    switchTab(index)
+
+    const newPath = tabs.value[index].path
+    const content = await loadTabContent(newPath)
+    applyContent(newPath, content)
+    await saveAppConfig()
+  }
+
+  async function closeFileTab(index: number) {
+    clearAutoSaveTimer()
+
+    if (index === activeTabIndex.value) {
+      saveCurrentToCache()
+    }
+
+    const path = tabs.value[index].path
+    tabContentCache.delete(path)
+    dirtyTabs.delete(path)
+
+    const newPath = closeTab(index)
+
+    if (newPath) {
+      const content = await loadTabContent(newPath)
+      applyContent(newPath, content)
+    } else {
+      selectedFilePath.value = ''
+      selectedFileContent.value = ''
+      isDirty.value = false
+      if (editorAdapter) {
+        editorAdapter.setContent('')
+      }
+    }
+
+    await saveAppConfig()
   }
 
   watch(selectedFilePath, (newPath) => {
@@ -359,5 +432,7 @@ export function useFileTree() {
     restoreSession,
     openRecentFolder,
     openRecentFile,
+    switchToTab,
+    closeFileTab,
   }
 }

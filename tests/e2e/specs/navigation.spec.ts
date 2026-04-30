@@ -32,11 +32,12 @@ test.describe('Navigation', () => {
     await navigateTo(page, 'settings')
 
     const navItems = page.locator('.settings-nav .nav-item')
-    await expect(navItems).toHaveCount(4)
+    await expect(navItems).toHaveCount(5)
     await expect(navItems.nth(0)).toContainText('General')
     await expect(navItems.nth(1)).toContainText('Editor')
-    await expect(navItems.nth(2)).toContainText('Git')
-    await expect(navItems.nth(3)).toContainText('About')
+    await expect(navItems.nth(2)).toContainText('Model')
+    await expect(navItems.nth(3)).toContainText('Git')
+    await expect(navItems.nth(4)).toContainText('About')
   })
 
   test('should switch settings sections', async ({ page }) => {
