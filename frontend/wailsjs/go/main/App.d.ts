@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function AddRecentEntry(arg1:string,arg2:boolean):Promise<void>;
 
+export function Chat(arg1:string):Promise<string>;
+
 export function ClearRecentEntries():Promise<void>;
 
 export function ClipboardGetText():Promise<string>;
@@ -15,6 +17,8 @@ export function ConfirmDelete(arg1:string,arg2:boolean):Promise<boolean>;
 export function DeleteFile(arg1:string):Promise<void>;
 
 export function FileExists(arg1:string):Promise<boolean>;
+
+export function GetActiveModelInfo():Promise<string>;
 
 export function GetFileServerPort():Promise<number>;
 
@@ -36,12 +40,20 @@ export function ReadDirEntries(arg1:string):Promise<Array<main.FileEntry>>;
 
 export function ReadFileContent(arg1:string):Promise<string>;
 
+export function ReloadLLM():Promise<string>;
+
 export function SaveConfig(arg1:string):Promise<string>;
 
 export function SaveFileContent(arg1:string,arg2:string):Promise<string>;
+
+export function SearchDocs(arg1:string):Promise<string>;
 
 export function SetLocale(arg1:string):Promise<void>;
 
 export function SetRootPath(arg1:string):Promise<void>;
 
 export function SetWorkspaceRoot(arg1:string):Promise<void>;
+
+export function StreamChat(arg1:string):Promise<string>;
+
+export function SyncWorkspace():Promise<string>;

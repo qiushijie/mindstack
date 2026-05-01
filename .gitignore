@@ -24,6 +24,10 @@ frontend/test-results/
 *.out
 test-results/.last-run.json
 /mindstack
+/cli
+/cli.test
 
 # log
 *.log
+
+.mindstack

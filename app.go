@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +13,12 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"mindstack/internal/config"
+	"mindstack/internal/llm"
+	"mindstack/internal/search"
+	syncpkg "mindstack/internal/sync"
+
+	einoschema "github.com/cloudwego/eino/schema"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -28,9 +35,12 @@ type App struct {
 	fileServerPort   int
 	recentEntries    []RecentEntry
 	dialogOpen       int32
+	streaming        int32
+	syncing          int32
 	locale           string
 	pendingOpenPath  string
 	frontendReady    bool
+	llm              *llm.Service
 }
 
 func NewApp() *App {
@@ -39,6 +49,10 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.llm = llm.NewService(config.ConfigPath())
+	if err := a.llm.InitFromConfig(); err != nil {
+		fmt.Println("failed to init LLM:", err)
+	}
 	a.startFileServer()
 	a.rebuildMenu()
 }
@@ -396,6 +410,92 @@ func (a *App) SaveFileContent(filePath string, content string) string {
 	return ""
 }
 
+func (a *App) Chat(messagesJSON string) string {
+	var msgs []*einoschema.Message
+	if err := json.Unmarshal([]byte(messagesJSON), &msgs); err != nil {
+		out, _ := json.Marshal(map[string]string{"error": "parse messages: " + err.Error()})
+		return string(out)
+	}
+	resp, err := a.llm.Chat(a.ctx, msgs)
+	if err != nil {
+		out, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(out)
+	}
+	out, _ := json.Marshal(map[string]string{"content": resp})
+	return string(out)
+}
+
+func (a *App) StreamChat(messagesJSON string) string {
+	var msgs []*einoschema.Message
+	if err := json.Unmarshal([]byte(messagesJSON), &msgs); err != nil {
+		out, _ := json.Marshal(map[string]string{"error": "parse messages: " + err.Error()})
+		return string(out)
+	}
+
+	if !atomic.CompareAndSwapInt32(&a.streaming, 0, 1) {
+		out, _ := json.Marshal(map[string]string{"error": "stream already in progress"})
+		return string(out)
+	}
+
+	go func() {
+		defer atomic.StoreInt32(&a.streaming, 0)
+		_ = a.llm.StreamChat(a.ctx, msgs, func(chunk llm.StreamChunk) {
+			data, _ := json.Marshal(chunk)
+			runtime.EventsEmit(a.ctx, "llm:chunk", string(data))
+		})
+	}()
+	return ""
+}
+
+func (a *App) SyncWorkspace() string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+
+	if root == "" {
+		return `{"error":"no workspace open"}`
+	}
+
+	if !atomic.CompareAndSwapInt32(&a.syncing, 0, 1) {
+		out, _ := json.Marshal(map[string]string{"error": "sync already in progress"})
+		return string(out)
+	}
+
+	go func() {
+		defer atomic.StoreInt32(&a.syncing, 0)
+		err := syncpkg.SyncWorkspace(a.ctx, a.llm, root, func(p syncpkg.SyncProgress) {
+			data, _ := json.Marshal(p)
+			runtime.EventsEmit(a.ctx, "sync:progress", string(data))
+		})
+		if err != nil {
+			errMsg, _ := json.Marshal(syncpkg.SyncProgress{Status: "error", Error: err.Error()})
+			runtime.EventsEmit(a.ctx, "sync:progress", string(errMsg))
+		}
+	}()
+
+	return ""
+}
+
+func (a *App) ReloadLLM() string {
+	if err := a.llm.InitFromConfig(); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+func (a *App) GetActiveModelInfo() string {
+	m := a.llm.GetActiveModel()
+	if m == nil {
+		return `{"configured":false}`
+	}
+	out, _ := json.Marshal(map[string]interface{}{
+		"configured": true,
+		"id":         m.ID,
+		"model":      m.Model,
+	})
+	return string(out)
+}
+
 type RecentEntry struct {
 	Path  string `json:"path"`
 	IsDir bool   `json:"isDir"`
@@ -407,16 +507,8 @@ type AppConfig struct {
 	RecentEntries  []RecentEntry `json:"recentEntries"`
 }
 
-func configPath() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		dir = "."
-	}
-	return filepath.Join(dir, "mindstack", "config.json")
-}
-
 func (a *App) LoadConfig() string {
-	data, err := os.ReadFile(configPath())
+	data, err := os.ReadFile(config.ConfigPath())
 	if err != nil {
 		return "{}"
 	}
@@ -434,7 +526,7 @@ func (a *App) LoadConfig() string {
 }
 
 func (a *App) SaveConfig(jsonStr string) string {
-	cp := configPath()
+	cp := config.ConfigPath()
 	dir := filepath.Dir(cp)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err.Error()
@@ -494,7 +586,7 @@ func (a *App) removeRecentEntry(path string) {
 // saveRecentEntriesLocked reads the current config JSON, merges recentEntries, and writes back.
 // Must be called with a.mu held.
 func (a *App) saveRecentEntriesLocked() {
-	cp := configPath()
+	cp := config.ConfigPath()
 	data, err := os.ReadFile(cp)
 	if err != nil {
 		data = []byte("{}")
@@ -522,4 +614,22 @@ func (a *App) saveRecentEntriesLocked() {
 	dir := filepath.Dir(cp)
 	os.MkdirAll(dir, 0755)
 	os.WriteFile(cp, out, 0644)
+}
+
+func (a *App) SearchDocs(tag string) string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+
+	if root == "" {
+		return `{"error":"no workspace open"}`
+	}
+
+	result, err := search.SearchByTag(root, tag, "", true)
+	if err != nil {
+		out, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(out)
+	}
+	out, _ := json.Marshal(result)
+	return string(out)
 }

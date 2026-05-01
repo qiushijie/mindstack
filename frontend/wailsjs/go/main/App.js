@@ -6,6 +6,10 @@ export function AddRecentEntry(arg1, arg2) {
   return window['go']['main']['App']['AddRecentEntry'](arg1, arg2);
 }
 
+export function Chat(arg1) {
+  return window['go']['main']['App']['Chat'](arg1);
+}
+
 export function ClearRecentEntries() {
   return window['go']['main']['App']['ClearRecentEntries']();
 }
@@ -28,6 +32,10 @@ export function DeleteFile(arg1) {
 
 export function FileExists(arg1) {
   return window['go']['main']['App']['FileExists'](arg1);
+}
+
+export function GetActiveModelInfo() {
+  return window['go']['main']['App']['GetActiveModelInfo']();
 }
 
 export function GetFileServerPort() {
@@ -70,12 +78,20 @@ export function ReadFileContent(arg1) {
   return window['go']['main']['App']['ReadFileContent'](arg1);
 }
 
+export function ReloadLLM() {
+  return window['go']['main']['App']['ReloadLLM']();
+}
+
 export function SaveConfig(arg1) {
   return window['go']['main']['App']['SaveConfig'](arg1);
 }
 
 export function SaveFileContent(arg1, arg2) {
   return window['go']['main']['App']['SaveFileContent'](arg1, arg2);
+}
+
+export function SearchDocs(arg1) {
+  return window['go']['main']['App']['SearchDocs'](arg1);
 }
 
 export function SetLocale(arg1) {
@@ -88,4 +104,12 @@ export function SetRootPath(arg1) {
 
 export function SetWorkspaceRoot(arg1) {
   return window['go']['main']['App']['SetWorkspaceRoot'](arg1);
+}
+
+export function StreamChat(arg1) {
+  return window['go']['main']['App']['StreamChat'](arg1);
+}
+
+export function SyncWorkspace() {
+  return window['go']['main']['App']['SyncWorkspace']();
 }

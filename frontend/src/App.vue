@@ -6,16 +6,19 @@ import AppSidebar from './components/AppSidebar.vue'
 import AppEditor from './components/AppEditor.vue'
 import AppStatusBar from './components/AppStatusBar.vue'
 import AppSettings from './components/AppSettings.vue'
+import AppTabBar from './components/AppTabBar.vue'
+import AIChatPanel from './components/AIChatPanel.vue'
 import { useNavigation } from './composables/useNavigation'
 import { provideEditorState } from './composables/useEditorState'
 import { useFileTree } from './composables/useFileTree'
 import { useSettings, applyTheme } from './composables/useSettings'
 
 const sidebarCollapsed = ref(false)
+const showAIChat = ref(false)
 
 const { currentPage, navigateTo } = useNavigation()
 provideEditorState()
-const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile } = useFileTree()
+const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab } = useFileTree()
 const { loadSettings, theme } = useSettings()
 
 onMounted(async () => {
@@ -111,11 +114,20 @@ onMounted(async () => {
     <AppSidebar v-if="currentPage === 'editor'" v-model:collapsed="sidebarCollapsed" />
     <div class="app-content">
       <template v-if="currentPage === 'editor'">
+        <AppTabBar
+          :ai-active="showAIChat"
+          @switch="switchToTab"
+          @close="closeFileTab"
+          @toggle-ai="showAIChat = !showAIChat"
+        />
         <AppEditor />
         <AppStatusBar />
       </template>
       <AppSettings v-else-if="currentPage === 'settings'" />
     </div>
+    <template v-if="currentPage === 'editor'">
+      <AIChatPanel v-if="showAIChat" @close="showAIChat = false" @open-file="selectFile" />
+    </template>
   </div>
 </template>
 
@@ -125,6 +137,7 @@ onMounted(async () => {
   height: 100vh;
   width: 100vw;
   background-color: var(--surface-primary);
+  position: relative;
 }
 
 .app-content {

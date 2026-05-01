@@ -20,6 +20,10 @@
   --border-subtle: #E5E5E5;
   --border-strong: #D0D0D0;
 
+  /* Danger */
+  --danger-primary: #E53E3E;
+  --danger-hover: #C53030;
+
   /* Code */
   --code-bg: #F5F5F5;
   --code-inline-bg: #EDEDED;
@@ -74,6 +78,9 @@
 
   --border-subtle: #333333;
   --border-strong: #444444;
+
+  --danger-primary: #FC8181;
+  --danger-hover: #F56565;
 
   --code-bg: #2A2A2A;
   --code-inline-bg: #333333;
