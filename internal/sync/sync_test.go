@@ -659,17 +659,42 @@ func TestGenerateMeta_Success(t *testing.T) {
 }
 
 func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
-	callCount := 0
+	metaCallCount := 0
+	relationCallCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		var title, summary string
-		switch callCount {
-		case 1:
-			title = "First Doc"
-			summary = "The first document."
-		default:
-			title = "Second Doc"
-			summary = "The second document."
+		// Detect prompt type from request body
+		var reqBody struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&reqBody)
+
+		isRelationPrompt := len(reqBody.Messages) > 0 && strings.Contains(reqBody.Messages[0].Content, "Evaluate how related it is to each")
+
+		var responseContent string
+		if isRelationPrompt {
+			relationCallCount++
+			// Determine the source doc from the prompt line "- path: \"xxx\"" to return matching target
+			var targetDoc string
+			if strings.Contains(reqBody.Messages[0].Content, `- path: "a.md"`) {
+				targetDoc = "b.md"
+			} else {
+				targetDoc = "a.md"
+			}
+			responseContent = `[{"target":"` + targetDoc + `","score":0.9,"reason":"both are test docs"}]`
+		} else {
+			metaCallCount++
+			var title, summary string
+			switch metaCallCount {
+			case 1:
+				title = "First Doc"
+				summary = "The first document."
+			default:
+				title = "Second Doc"
+				summary = "The second document."
+			}
+			responseContent = `{"title":"` + title + `","summary":"` + summary + `","tags":["test"]}`
 		}
 
 		resp := openaiResponse{
@@ -690,7 +715,7 @@ func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 						Content string `json:"content"`
 					}{
 						Role:    "assistant",
-						Content: `{"title":"` + title + `","summary":"` + summary + `","tags":["test"]}`,
+						Content: responseContent,
 					},
 					FinishReason: "stop",
 				},
@@ -725,8 +750,11 @@ func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if callCount != 2 {
-		t.Fatalf("expected 2 LLM calls, got %d", callCount)
+	if metaCallCount != 2 {
+		t.Fatalf("expected 2 meta LLM calls, got %d", metaCallCount)
+	}
+	if relationCallCount != 2 {
+		t.Fatalf("expected 2 relation LLM calls, got %d", relationCallCount)
 	}
 
 	m1, err := meta.LoadMeta(dir, "a.md")
@@ -844,5 +872,472 @@ func TestGenerateMeta_PreservesExistingStatus(t *testing.T) {
 	// Status should be preserved from the existing metadata
 	if m.Status != "archived" {
 		t.Fatalf("expected status 'archived' to be preserved, got %q", m.Status)
+	}
+}
+
+// --- Incremental sync tests ---
+
+func TestSyncWorkspace_SkipsUnchangedFiles(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		resp := openaiResponse{
+			ID: "test-id", Object: "chat.completion",
+			Choices: []struct {
+				Index   int `json:"index"`
+				Message struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
+			}{{Index: 0, Message: struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			}{Role: "assistant", Content: `{"title":"Doc","summary":"A doc.","tags":["test"]}`}, FinishReason: "stop"}},
+			Usage: struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+				TotalTokens      int `json:"total_tokens"`
+			}{PromptTokens: 10, CompletionTokens: 20, TotalTokens: 30},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	svc := llm.NewService(t.TempDir())
+	svc.UpdateModel(&llm.ActiveModelConfig{
+		ID: "test", Model: "test-model", ApiURL: server.URL, ApiKey: "test-key",
+	})
+
+	dir := setupTestWorkspace(t)
+	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc"), 0644)
+
+	// First sync: should process the file
+	err := SyncWorkspace(context.Background(), svc, dir, func(SyncProgress) {})
+	if err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+	firstCallCount := callCount
+
+	// Second sync: should skip (content unchanged)
+	var progresses []SyncProgress
+	err = SyncWorkspace(context.Background(), svc, dir, func(p SyncProgress) {
+		progresses = append(progresses, p)
+	})
+	if err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+
+	// No additional LLM calls
+	if callCount != firstCallCount {
+		t.Fatalf("expected no additional LLM calls, got %d total (was %d)", callCount, firstCallCount)
+	}
+
+	// Should have skipped status
+	found := false
+	for _, p := range progresses {
+		if p.Status == "skipped" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected skipped status for unchanged file")
+	}
+}
+
+func TestSyncWorkspace_ReprocessesChangedFile(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		title := "Doc v1"
+		if callCount > 1 {
+			title = "Doc v2"
+		}
+		resp := openaiResponse{
+			ID: "test-id", Object: "chat.completion",
+			Choices: []struct {
+				Index   int `json:"index"`
+				Message struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
+			}{{Index: 0, Message: struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			}{Role: "assistant", Content: `{"title":"` + title + `","summary":"A doc.","tags":["test"]}`}, FinishReason: "stop"}},
+			Usage: struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+				TotalTokens      int `json:"total_tokens"`
+			}{PromptTokens: 10, CompletionTokens: 20, TotalTokens: 30},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	svc := llm.NewService(t.TempDir())
+	svc.UpdateModel(&llm.ActiveModelConfig{
+		ID: "test", Model: "test-model", ApiURL: server.URL, ApiKey: "test-key",
+	})
+
+	dir := setupTestWorkspace(t)
+	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc v1"), 0644)
+
+	// First sync
+	SyncWorkspace(context.Background(), svc, dir, func(SyncProgress) {})
+
+	// Modify the file
+	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc v2 - updated"), 0644)
+
+	// Second sync: should reprocess
+	var progresses []SyncProgress
+	SyncWorkspace(context.Background(), svc, dir, func(p SyncProgress) {
+		progresses = append(progresses, p)
+	})
+
+	// Should have done status (not skipped)
+	found := false
+	for _, p := range progresses {
+		if p.Status == "done" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected done status for changed file")
+	}
+
+	m, _ := meta.LoadMeta(dir, "doc.md")
+	if m.Title != "Doc v2" {
+		t.Fatalf("expected title 'Doc v2', got %q", m.Title)
+	}
+}
+
+// --- computeHash tests ---
+
+func TestComputeHash(t *testing.T) {
+	h1 := computeHash([]byte("hello"))
+	h2 := computeHash([]byte("hello"))
+	h3 := computeHash([]byte("world"))
+
+	if h1 != h2 {
+		t.Fatal("same content should produce same hash")
+	}
+	if h1 == h3 {
+		t.Fatal("different content should produce different hash")
+	}
+}
+
+// --- findCandidateDocs tests ---
+
+func TestFindCandidateDocs_NoSharedTags(t *testing.T) {
+	metas := []*meta.DocumentMeta{
+		{Path: "a.md", Tags: []string{"go"}},
+		{Path: "b.md", Tags: []string{"python"}},
+	}
+	changed := map[string]bool{"a.md": true}
+
+	result := findCandidateDocs(metas, changed)
+	if len(result) != 0 {
+		t.Fatalf("expected 0 entries, got %d", len(result))
+	}
+}
+
+func TestFindCandidateDocs_SharedTags(t *testing.T) {
+	metas := []*meta.DocumentMeta{
+		{Path: "a.md", Tags: []string{"go", "api"}},
+		{Path: "b.md", Tags: []string{"go", "testing"}},
+		{Path: "c.md", Tags: []string{"python"}},
+	}
+	changed := map[string]bool{"a.md": true}
+
+	result := findCandidateDocs(metas, changed)
+	candidates, ok := result["a.md"]
+	if !ok {
+		t.Fatal("expected entry for a.md")
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate for a.md, got %d", len(candidates))
+	}
+	if candidates[0].path != "b.md" {
+		t.Fatalf("expected candidate path 'b.md', got %s", candidates[0].path)
+	}
+	found := false
+	for _, tag := range candidates[0].sharedTags {
+		if tag == "go" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected shared tag 'go', got %v", candidates[0].sharedTags)
+	}
+}
+
+func TestFindCandidateDocs_SkipsUnchangedPairs(t *testing.T) {
+	metas := []*meta.DocumentMeta{
+		{Path: "a.md", Tags: []string{"go"}},
+		{Path: "b.md", Tags: []string{"go"}},
+		{Path: "c.md", Tags: []string{"go"}},
+	}
+	changed := map[string]bool{"a.md": true}
+
+	result := findCandidateDocs(metas, changed)
+	// Only candidates involving a.md: b and c. b↔c should be skipped.
+	if len(result["a.md"]) != 2 {
+		t.Fatalf("expected 2 candidates for a.md, got %d", len(result["a.md"]))
+	}
+}
+
+func TestFindCandidateDocs_NoChangedDocs(t *testing.T) {
+	metas := []*meta.DocumentMeta{
+		{Path: "a.md", Tags: []string{"go"}},
+		{Path: "b.md", Tags: []string{"go"}},
+	}
+	changed := map[string]bool{}
+
+	result := findCandidateDocs(metas, changed)
+	if len(result) != 0 {
+		t.Fatalf("expected 0 entries with no changed docs, got %d", len(result))
+	}
+}
+
+// --- intersectTags tests ---
+
+func TestIntersectTags(t *testing.T) {
+	tagSet := map[string]bool{"go": true, "api": true, "testing": true}
+	tags := []string{"go", "python", "testing"}
+
+	result := intersectTags(tagSet, tags)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 shared tags, got %d: %v", len(result), result)
+	}
+}
+
+func TestIntersectTags_NoOverlap(t *testing.T) {
+	result := intersectTags(map[string]bool{"go": true}, []string{"python"})
+	if len(result) != 0 {
+		t.Fatalf("expected 0 shared tags, got %d", len(result))
+	}
+}
+
+// --- analyzeDocRelations tests ---
+
+// newMockRelationLLMService creates a mock HTTP server that returns different
+// responses based on call count. This allows testing retry and filter behaviors.
+func newMockRelationLLMService(t *testing.T, handler http.HandlerFunc) (*llm.Service, *httptest.Server) {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
+	svc := llm.NewService(t.TempDir())
+	err := svc.UpdateModel(&llm.ActiveModelConfig{
+		ID:     "test",
+		Model:  "test-model",
+		ApiURL: server.URL,
+		ApiKey: "test-key",
+	})
+	if err != nil {
+		server.Close()
+		t.Fatalf("failed to update model: %v", err)
+	}
+
+	return svc, server
+}
+
+// writeOpenAIResponse writes a standard OpenAI-format chat completion response.
+func writeOpenAIResponse(t *testing.T, w http.ResponseWriter, content string) {
+	t.Helper()
+
+	resp := openaiResponse{
+		ID:     "test-id",
+		Object: "chat.completion",
+		Choices: []struct {
+			Index   int `json:"index"`
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		}{
+			{
+				Index: 0,
+				Message: struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				}{
+					Role:    "assistant",
+					Content: content,
+				},
+				FinishReason: "stop",
+			},
+		},
+		Usage: struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		}{
+			PromptTokens: 10, CompletionTokens: 20, TotalTokens: 30,
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// TestAnalyzeDocRelations_RetryPath verifies that when the first LLM response
+// is missing a candidate, the retry mechanism supplements the result and all
+// candidates are covered.
+func TestAnalyzeDocRelations_RetryPath(t *testing.T) {
+	callCount := 0
+	svc, server := newMockRelationLLMService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+
+		// Decode the request body to determine if this is a retry call
+		var reqBody struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&reqBody)
+
+		// Retry calls have 3 messages (user, assistant, user)
+		isRetry := len(reqBody.Messages) == 3
+
+		if isRetry {
+			// Second call: supplement the missing candidate
+			writeOpenAIResponse(t, w, `[{"target":"c.md","score":0.7,"reason":"both about testing"}]`)
+		} else {
+			// First call: return only 1 of 2 candidates (missing c.md)
+			writeOpenAIResponse(t, w, `[{"target":"b.md","score":0.8,"reason":"both about go"}]`)
+		}
+	}))
+	defer server.Close()
+
+	candidates := []candidateInfo{
+		{path: "b.md", sharedTags: []string{"go"}},
+		{path: "c.md", sharedTags: []string{"testing"}},
+	}
+
+	metaMap := map[string]*meta.DocumentMeta{
+		"a.md": {Path: "a.md", Summary: "Doc A summary", Tags: []string{"go", "testing"}},
+		"b.md": {Path: "b.md", Summary: "Doc B summary", Tags: []string{"go", "api"}},
+		"c.md": {Path: "c.md", Summary: "Doc C summary", Tags: []string{"testing", "unit"}},
+	}
+
+	relations, err := analyzeDocRelations(context.Background(), svc, "a.md", candidates, metaMap)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have made 2 calls: initial + 1 retry
+	if callCount != 2 {
+		t.Fatalf("expected 2 LLM calls (initial + retry), got %d", callCount)
+	}
+
+	// Both candidates should be present in the results
+	if len(relations) != 2 {
+		t.Fatalf("expected 2 relations, got %d", len(relations))
+	}
+
+	foundB, foundC := false, false
+	for _, r := range relations {
+		if r.Target == "b.md" {
+			foundB = true
+			if r.Score != 0.8 {
+				t.Fatalf("expected score 0.8 for b.md, got %f", r.Score)
+			}
+		}
+		if r.Target == "c.md" {
+			foundC = true
+			if r.Score != 0.7 {
+				t.Fatalf("expected score 0.7 for c.md, got %f", r.Score)
+			}
+		}
+	}
+	if !foundB {
+		t.Fatal("expected relation for b.md")
+	}
+	if !foundC {
+		t.Fatal("expected relation for c.md (added via retry)")
+	}
+}
+
+// TestAnalyzeDocRelations_ScoreFilter verifies that relations with score < 0.3
+// are filtered out from the results.
+func TestAnalyzeDocRelations_ScoreFilter(t *testing.T) {
+	svc, server := newMockRelationLLMService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return one high-score and one low-score relation
+		writeOpenAIResponse(t, w, `[
+			{"target":"b.md","score":0.9,"reason":"highly related"},
+			{"target":"c.md","score":0.1,"reason":"barely related"}
+		]`)
+	}))
+	defer server.Close()
+
+	candidates := []candidateInfo{
+		{path: "b.md", sharedTags: []string{"go"}},
+		{path: "c.md", sharedTags: []string{"api"}},
+	}
+
+	metaMap := map[string]*meta.DocumentMeta{
+		"a.md": {Path: "a.md", Summary: "Doc A", Tags: []string{"go", "api"}},
+		"b.md": {Path: "b.md", Summary: "Doc B", Tags: []string{"go"}},
+		"c.md": {Path: "c.md", Summary: "Doc C", Tags: []string{"api"}},
+	}
+
+	relations, err := analyzeDocRelations(context.Background(), svc, "a.md", candidates, metaMap)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only the high-score relation should survive
+	if len(relations) != 1 {
+		t.Fatalf("expected 1 relation (low score filtered), got %d", len(relations))
+	}
+	if relations[0].Target != "b.md" {
+		t.Fatalf("expected target b.md, got %s", relations[0].Target)
+	}
+	if relations[0].Score != 0.9 {
+		t.Fatalf("expected score 0.9, got %f", relations[0].Score)
+	}
+}
+
+// TestAnalyzeDocRelations_HallucinatedTarget verifies that when the LLM returns
+// a target path that does not exist in the candidate list, it is filtered out.
+func TestAnalyzeDocRelations_HallucinatedTarget(t *testing.T) {
+	svc, server := newMockRelationLLMService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return one valid target and one hallucinated target
+		writeOpenAIResponse(t, w, `[
+			{"target":"b.md","score":0.8,"reason":"valid relation"},
+			{"target":"phantom.md","score":0.9,"reason":"hallucinated target"}
+		]`)
+	}))
+	defer server.Close()
+
+	candidates := []candidateInfo{
+		{path: "b.md", sharedTags: []string{"go"}},
+	}
+
+	metaMap := map[string]*meta.DocumentMeta{
+		"a.md": {Path: "a.md", Summary: "Doc A", Tags: []string{"go"}},
+		"b.md": {Path: "b.md", Summary: "Doc B", Tags: []string{"go"}},
+	}
+
+	relations, err := analyzeDocRelations(context.Background(), svc, "a.md", candidates, metaMap)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only the valid target should survive
+	if len(relations) != 1 {
+		t.Fatalf("expected 1 relation (hallucinated target filtered), got %d", len(relations))
+	}
+	if relations[0].Target != "b.md" {
+		t.Fatalf("expected target b.md, got %s", relations[0].Target)
 	}
 }

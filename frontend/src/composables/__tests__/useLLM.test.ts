@@ -111,7 +111,7 @@ describe('useLLM', () => {
 
   describe('streamChat', () => {
     it('calls onChunk for each content chunk', () => {
-      vi.mocked(StreamChat).mockResolvedValue(undefined)
+      vi.mocked(StreamChat).mockResolvedValue('')
 
       const { streamChat, loading } = useLLM()
       const onChunk = vi.fn()
@@ -133,7 +133,7 @@ describe('useLLM', () => {
     })
 
     it('calls onDone and cleans up when chunk.done is true', () => {
-      vi.mocked(StreamChat).mockResolvedValue(undefined)
+      vi.mocked(StreamChat).mockResolvedValue('')
 
       const { streamChat, loading } = useLLM()
       const onChunk = vi.fn()
@@ -152,7 +152,7 @@ describe('useLLM', () => {
     })
 
     it('calls onError and cleans up when chunk contains error', () => {
-      vi.mocked(StreamChat).mockResolvedValue(undefined)
+      vi.mocked(StreamChat).mockResolvedValue('')
 
       const { streamChat, loading, error } = useLLM()
       const onChunk = vi.fn()
@@ -170,7 +170,7 @@ describe('useLLM', () => {
     })
 
     it('ignores malformed JSON chunks', () => {
-      vi.mocked(StreamChat).mockResolvedValue(undefined)
+      vi.mocked(StreamChat).mockResolvedValue('')
 
       const { streamChat } = useLLM()
       const onChunk = vi.fn()
@@ -207,7 +207,7 @@ describe('useLLM', () => {
     })
 
     it('removes previous listener when called again', () => {
-      vi.mocked(StreamChat).mockResolvedValue(undefined)
+      vi.mocked(StreamChat).mockResolvedValue('')
 
       const { streamChat } = useLLM()
       const onDone1 = vi.fn()

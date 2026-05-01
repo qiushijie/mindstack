@@ -14,11 +14,12 @@ const maxMetaSize = 2 * 1024 * 1024 // 2MB
 
 // DocumentMeta holds metadata for a single markdown document.
 type DocumentMeta struct {
-	Path    string   `yaml:"-" json:"-"`
-	Title   string   `yaml:"title" json:"title"`
-	Summary string   `yaml:"summary" json:"summary"`
-	Tags    []string `yaml:"tags" json:"tags"`
-	Status  string   `yaml:"status" json:"status"`
+	Path        string   `yaml:"-" json:"-"`
+	Title       string   `yaml:"title" json:"title"`
+	Summary     string   `yaml:"summary" json:"summary"`
+	Tags        []string `yaml:"tags" json:"tags"`
+	Status      string   `yaml:"status" json:"status"`
+	ContentHash string   `yaml:"-" json:"contentHash,omitempty"`
 }
 
 // metaStore is the on-disk format: map from doc path to metadata.
@@ -54,7 +55,7 @@ func saveAll(kbRoot string, store metaStore) error {
 	}
 	data, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal meta store: %w", err)
 	}
 	return os.WriteFile(metaFilePath(kbRoot), data, 0644)
 }
@@ -104,6 +105,28 @@ func ScanAll(kbRoot, subdir string) ([]*DocumentMeta, error) {
 		results = append(results, m)
 	}
 	return results, nil
+}
+
+// RemoveStale deletes meta entries for paths not in existingFiles.
+// Returns the list of removed paths.
+func RemoveStale(kbRoot string, existingFiles map[string]bool) ([]string, error) {
+	store, err := loadAll(kbRoot)
+	if err != nil {
+		return nil, err
+	}
+	var removed []string
+	for path := range store {
+		if !existingFiles[path] {
+			delete(store, path)
+			removed = append(removed, path)
+		}
+	}
+	if len(removed) > 0 {
+		if err := saveAll(kbRoot, store); err != nil {
+			return nil, err
+		}
+	}
+	return removed, nil
 }
 
 // FindByTag filters meta list by tag.

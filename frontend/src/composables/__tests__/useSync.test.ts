@@ -28,7 +28,7 @@ beforeEach(() => {
 describe('useSync', () => {
   describe('syncWorkspace', () => {
     it('calls onProgress for each progress event', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue(undefined)
+      vi.mocked(SyncWorkspace).mockResolvedValue('')
 
       const { syncWorkspace, syncLoading } = useSync()
       const onProgress = vi.fn()
@@ -53,7 +53,7 @@ describe('useSync', () => {
     })
 
     it('calls onDone and cleans up when status is complete', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue(undefined)
+      vi.mocked(SyncWorkspace).mockResolvedValue('')
 
       const { syncWorkspace, syncLoading } = useSync()
       const onProgress = vi.fn()
@@ -72,7 +72,7 @@ describe('useSync', () => {
     })
 
     it('calls onError and cleans up when fatal error is received', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue(undefined)
+      vi.mocked(SyncWorkspace).mockResolvedValue('')
 
       const { syncWorkspace, syncLoading, syncError } = useSync()
       const onProgress = vi.fn()
@@ -95,7 +95,7 @@ describe('useSync', () => {
     })
 
     it('reports file-level errors as progress, not fatal', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue(undefined)
+      vi.mocked(SyncWorkspace).mockResolvedValue('')
 
       const { syncWorkspace } = useSync()
       const onProgress = vi.fn()
@@ -150,7 +150,7 @@ describe('useSync', () => {
     })
 
     it('calls onError and cleans up on malformed JSON', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue(undefined)
+      vi.mocked(SyncWorkspace).mockResolvedValue('')
 
       const { syncWorkspace, syncLoading, syncError } = useSync()
       const onProgress = vi.fn()
@@ -168,7 +168,7 @@ describe('useSync', () => {
     })
 
     it('uses default error message when fatal error has no error field', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue(undefined)
+      vi.mocked(SyncWorkspace).mockResolvedValue('')
 
       const { syncWorkspace, syncError } = useSync()
       const onError = vi.fn()

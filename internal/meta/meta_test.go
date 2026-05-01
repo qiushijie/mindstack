@@ -172,6 +172,63 @@ func TestFindByTag_IgnoreCase(t *testing.T) {
 	}
 }
 
+func TestRemoveStale(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	SaveMeta(kbRoot, "a.md", &DocumentMeta{Title: "A", Tags: []string{"test"}, Status: "active"})
+	SaveMeta(kbRoot, "b.md", &DocumentMeta{Title: "B", Tags: []string{"test"}, Status: "active"})
+	SaveMeta(kbRoot, "c.md", &DocumentMeta{Title: "C", Tags: []string{"test"}, Status: "active"})
+
+	existing := map[string]bool{"a.md": true, "c.md": true}
+	removed, err := RemoveStale(kbRoot, existing)
+	if err != nil {
+		t.Fatalf("RemoveStale error: %v", err)
+	}
+	if len(removed) != 1 || removed[0] != "b.md" {
+		t.Fatalf("expected removed [b.md], got %v", removed)
+	}
+
+	// b.md should no longer be loadable
+	if _, err := LoadMeta(kbRoot, "b.md"); err == nil {
+		t.Fatal("b.md should be removed")
+	}
+	// a.md and c.md should still exist
+	if _, err := LoadMeta(kbRoot, "a.md"); err != nil {
+		t.Fatal("a.md should still exist")
+	}
+	if _, err := LoadMeta(kbRoot, "c.md"); err != nil {
+		t.Fatal("c.md should still exist")
+	}
+}
+
+func TestRemoveStale_NothingToRemove(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	SaveMeta(kbRoot, "a.md", &DocumentMeta{Title: "A", Tags: []string{"test"}, Status: "active"})
+
+	existing := map[string]bool{"a.md": true}
+	removed, err := RemoveStale(kbRoot, existing)
+	if err != nil {
+		t.Fatalf("RemoveStale error: %v", err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("expected no removals, got %v", removed)
+	}
+}
+
+func TestRemoveStale_EmptyStore(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	existing := map[string]bool{"a.md": true}
+	removed, err := RemoveStale(kbRoot, existing)
+	if err != nil {
+		t.Fatalf("RemoveStale error: %v", err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("expected no removals, got %v", removed)
+	}
+}
+
 func TestMetaFilePath(t *testing.T) {
 	expected := filepath.Join("/tmp/project", workspace.KnowledgeBaseDir, "meta.json")
 	got := metaFilePath("/tmp/project")

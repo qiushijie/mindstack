@@ -2,14 +2,17 @@ package sync
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"mindstack/internal/llm"
 	"mindstack/internal/meta"
+	"mindstack/internal/relation"
 	"mindstack/internal/workspace"
 
 	einoschema "github.com/cloudwego/eino/schema"
@@ -17,18 +20,25 @@ import (
 
 const maxContentLength = 8000
 
-// SyncProgress is emitted for each file processed.
+// SyncProgress is emitted for each step processed.
 type SyncProgress struct {
 	File    string `json:"file"`
 	Current int    `json:"current"`
 	Total   int    `json:"total"`
-	Status  string `json:"status"` // "processing" | "done" | "error" | "complete"
+	Status  string `json:"status"` // "processing" | "done" | "error" | "complete" | "skipped" | "analyzing"
 	Error   string `json:"error,omitempty"`
 	Summary string `json:"summary,omitempty"`
+	Phase   string `json:"phase"` // "meta" | "relation"
+}
+
+type candidateInfo struct {
+	path       string
+	sharedTags []string
 }
 
 // SyncWorkspace scans all markdown files under rootPath and generates
-// summary + tags metadata for each one using the LLM service.
+// summary + tags metadata for each one using the LLM service,
+// then analyzes document relations based on shared tags.
 func SyncWorkspace(
 	ctx context.Context,
 	llmSvc *llm.Service,
@@ -42,10 +52,36 @@ func SyncWorkspace(
 	files := listMarkdownFiles(rootPath)
 	total := len(files)
 
+	// Clean up meta and relations for deleted files
+	existingSet := make(map[string]bool, len(files))
+	for _, f := range files {
+		existingSet[f] = true
+	}
+	removed, err := meta.RemoveStale(rootPath, existingSet)
+	if err != nil {
+		onProgress(SyncProgress{Status: "error", Error: fmt.Sprintf("cleanup meta: %v", err), Phase: "meta"})
+	}
+	if len(removed) > 0 {
+		store, err := relation.Load(rootPath)
+		if err != nil {
+			onProgress(SyncProgress{Status: "error", Error: fmt.Sprintf("load relations for cleanup: %v", err), Phase: "meta"})
+		} else {
+			for _, p := range removed {
+				relation.RemoveByDoc(store, p)
+			}
+			if err := relation.Save(rootPath, store); err != nil {
+				onProgress(SyncProgress{Status: "error", Error: fmt.Sprintf("save relations after cleanup: %v", err), Phase: "meta"})
+			}
+		}
+	}
+
 	if total == 0 {
-		onProgress(SyncProgress{Status: "complete", Total: 0, Current: 0})
+		onProgress(SyncProgress{Status: "complete", Total: 0, Current: 0, Phase: "meta"})
 		return nil
 	}
+
+	// Phase 1: Meta generation (incremental)
+	changedDocs := make(map[string]bool)
 
 	for i, relPath := range files {
 		select {
@@ -59,6 +95,7 @@ func SyncWorkspace(
 			Current: i + 1,
 			Total:   total,
 			Status:  "processing",
+			Phase:   "meta",
 		})
 
 		absPath := filepath.Join(rootPath, relPath)
@@ -70,6 +107,20 @@ func SyncWorkspace(
 				Total:   total,
 				Status:  "error",
 				Error:   fmt.Sprintf("read: %v", err),
+				Phase:   "meta",
+			})
+			continue
+		}
+
+		hash := computeHash(content)
+		existing, _ := meta.LoadMeta(rootPath, relPath)
+		if existing != nil && existing.ContentHash == hash {
+			onProgress(SyncProgress{
+				File:    relPath,
+				Current: i + 1,
+				Total:   total,
+				Status:  "skipped",
+				Phase:   "meta",
 			})
 			continue
 		}
@@ -83,15 +134,16 @@ func SyncWorkspace(
 				Total:   total,
 				Status:  "error",
 				Error:   fmt.Sprintf("llm: %v", err),
+				Phase:   "meta",
 			})
 			continue
 		}
 
-		existing, _ := meta.LoadMeta(rootPath, relPath)
 		if existing != nil && existing.Status != "" {
 			result.Status = existing.Status
 		}
 		result.Path = relPath
+		result.ContentHash = hash
 
 		if err := meta.SaveMeta(rootPath, relPath, result); err != nil {
 			onProgress(SyncProgress{
@@ -100,9 +152,12 @@ func SyncWorkspace(
 				Total:   total,
 				Status:  "error",
 				Error:   fmt.Sprintf("save: %v", err),
+				Phase:   "meta",
 			})
 			continue
 		}
+
+		changedDocs[relPath] = true
 
 		onProgress(SyncProgress{
 			File:    relPath,
@@ -110,6 +165,7 @@ func SyncWorkspace(
 			Total:   total,
 			Status:  "done",
 			Summary: result.Summary,
+			Phase:   "meta",
 		})
 	}
 
@@ -117,6 +173,106 @@ func SyncWorkspace(
 		Current: total,
 		Total:   total,
 		Status:  "complete",
+		Phase:   "meta",
+	})
+
+	// Phase 2: Relation analysis
+	if err := analyzeRelations(ctx, llmSvc, rootPath, changedDocs, onProgress); err != nil {
+		onProgress(SyncProgress{
+			Status: "error",
+			Error:  fmt.Sprintf("relation analysis: %v", err),
+			Phase:  "relation",
+		})
+	}
+
+	return nil
+}
+
+func analyzeRelations(
+	ctx context.Context,
+	llmSvc *llm.Service,
+	rootPath string,
+	changedDocs map[string]bool,
+	onProgress func(SyncProgress),
+) error {
+	if len(changedDocs) == 0 {
+		return nil
+	}
+
+	allMetas, err := meta.ScanAll(rootPath, "")
+	if err != nil {
+		return fmt.Errorf("scan meta: %w", err)
+	}
+
+	candidates := findCandidateDocs(allMetas, changedDocs)
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	store, err := relation.Load(rootPath)
+	if err != nil {
+		return fmt.Errorf("load relations: %w", err)
+	}
+	for docPath := range changedDocs {
+		relation.RemoveByDoc(store, docPath)
+	}
+
+	metaMap := make(map[string]*meta.DocumentMeta, len(allMetas))
+	for _, m := range allMetas {
+		metaMap[m.Path] = m
+	}
+
+	docList := sortedKeys(candidates)
+	totalDocs := len(docList)
+
+	for i, docPath := range docList {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		onProgress(SyncProgress{
+			File:    docPath,
+			Current: i + 1,
+			Total:   totalDocs,
+			Status:  "analyzing",
+			Phase:   "relation",
+			Summary: fmt.Sprintf("%d candidates", len(candidates[docPath])),
+		})
+
+		relations, err := analyzeDocRelations(ctx, llmSvc, docPath, candidates[docPath], metaMap)
+		if err != nil {
+			onProgress(SyncProgress{
+				File:    docPath,
+				Current: i + 1,
+				Total:   totalDocs,
+				Status:  "error",
+				Error:   fmt.Sprintf("%v", err),
+				Phase:   "relation",
+			})
+			continue
+		}
+
+		relation.AddRelations(store, relations)
+
+		onProgress(SyncProgress{
+			File:    docPath,
+			Current: i + 1,
+			Total:   totalDocs,
+			Status:  "done",
+			Phase:   "relation",
+			Summary: fmt.Sprintf("found %d relations", len(relations)),
+		})
+	}
+
+	if err := relation.Save(rootPath, store); err != nil {
+		return fmt.Errorf("save relations: %w", err)
+	}
+
+	onProgress(SyncProgress{
+		Status: "complete",
+		Phase:  "relation",
 	})
 	return nil
 }
@@ -165,6 +321,199 @@ Example response:
 	}, nil
 }
 
+func analyzeDocRelations(
+	ctx context.Context,
+	svc *llm.Service,
+	docPath string,
+	candidates []candidateInfo,
+	metaMap map[string]*meta.DocumentMeta,
+) ([]relation.Relation, error) {
+	doc := metaMap[docPath]
+	if doc == nil {
+		return nil, nil
+	}
+
+	var candidateBuilder strings.Builder
+	for _, c := range candidates {
+		m := metaMap[c.path]
+		if m == nil {
+			continue
+		}
+		candidateBuilder.WriteString(fmt.Sprintf("- %q | summary: %s | tags: %v | shared tags: %v\n", c.path, m.Summary, m.Tags, c.sharedTags))
+	}
+
+	prompt := fmt.Sprintf(`Given the following document:
+- path: %q
+- summary: %s
+- tags: %v
+
+Evaluate how related it is to each of the following documents:
+
+%s
+
+Respond with ONLY a JSON array (no markdown, no code fences):
+[{"target":"path/to/doc.md","score":0.8,"reason":"brief explanation"}]
+
+Rules:
+- You MUST return an entry for EVERY document listed above, do not skip any
+- Score 0 means unrelated, 1 means highly related
+- Reason should be one concise sentence
+- Use the exact file paths from the candidate list`, docPath, doc.Summary, doc.Tags, candidateBuilder.String())
+
+	messages := []*einoschema.Message{
+		{Role: einoschema.User, Content: prompt},
+	}
+
+	candidateKeys := make(map[string]bool, len(candidates))
+	candidateTagsMap := make(map[string][]string, len(candidates))
+	for _, c := range candidates {
+		candidateKeys[c.path] = true
+		candidateTagsMap[c.path] = c.sharedTags
+	}
+
+	type llmResult struct {
+		Target string  `json:"target"`
+		Score  float64 `json:"score"`
+		Reason string  `json:"reason"`
+	}
+
+	// Initial LLM call
+	resp, err := svc.Chat(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []llmResult
+	cleaned := stripCodeFences(resp)
+	if err := json.Unmarshal([]byte(cleaned), &results); err != nil {
+		return nil, fmt.Errorf("parse LLM response: %w (raw: %s)", err, resp)
+	}
+
+	// Retry up to 2 times for missing candidates (incremental append)
+	for attempt := 0; attempt < 2; attempt++ {
+		covered := make(map[string]bool, len(results))
+		for _, r := range results {
+			covered[r.Target] = true
+		}
+
+		var missing []string
+		for key := range candidateKeys {
+			if !covered[key] {
+				missing = append(missing, "- "+key)
+			}
+		}
+
+		if len(missing) == 0 {
+			break
+		}
+
+		retryPrompt := fmt.Sprintf(`You missed the following documents. Please evaluate them:
+%s
+
+Respond with ONLY a JSON array:
+[{"target":"path/to/doc.md","score":0.8,"reason":"brief explanation"}]`, strings.Join(missing, "\n"))
+
+		retryResp, err := svc.Chat(ctx, []*einoschema.Message{
+			{Role: einoschema.User, Content: prompt},
+			{Role: einoschema.Assistant, Content: resp},
+			{Role: einoschema.User, Content: retryPrompt},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		var retryResults []llmResult
+		cleanedRetry := stripCodeFences(retryResp)
+		if err := json.Unmarshal([]byte(cleanedRetry), &retryResults); err != nil {
+			return nil, fmt.Errorf("parse retry response: %w (raw: %s)", err, retryResp)
+		}
+
+		results = append(results, retryResults...)
+	}
+
+	var filtered []relation.Relation
+	for _, r := range results {
+		if r.Score < 0.3 {
+			continue
+		}
+		if !candidateKeys[r.Target] {
+			continue
+		}
+		filtered = append(filtered, relation.Relation{
+			Source:     docPath,
+			Target:     r.Target,
+			Score:      r.Score,
+			Reason:     r.Reason,
+			SharedTags: candidateTagsMap[r.Target],
+		})
+	}
+
+	return filtered, nil
+}
+
+func findCandidateDocs(allMetas []*meta.DocumentMeta, changedDocs map[string]bool) map[string][]candidateInfo {
+	tagMap := make(map[string][]string, len(allMetas))
+	for _, m := range allMetas {
+		tagMap[m.Path] = m.Tags
+	}
+
+	result := make(map[string][]candidateInfo)
+
+	for _, changedDoc := range sortedKeys(changedDocs) {
+		changedTags := tagMap[changedDoc]
+		if len(changedTags) == 0 {
+			continue
+		}
+
+		tagSet := make(map[string]bool, len(changedTags))
+		for _, t := range changedTags {
+			tagSet[t] = true
+		}
+
+		for _, m := range allMetas {
+			if m.Path == changedDoc {
+				continue
+			}
+			shared := intersectTags(tagSet, m.Tags)
+			if len(shared) > 0 {
+				result[changedDoc] = append(result[changedDoc], candidateInfo{
+					path:       m.Path,
+					sharedTags: shared,
+				})
+			}
+		}
+	}
+
+	return result
+}
+
+func intersectTags(tagSet map[string]bool, tags []string) []string {
+	var shared []string
+	for _, t := range tags {
+		if tagSet[t] {
+			shared = append(shared, t)
+		}
+	}
+	return shared
+}
+
+// sortedKeys returns the keys of a map whose key type is ~string, sorted lexicographically.
+func sortedKeys[M ~map[K]V, K ~string, V any](m M) []K {
+	keys := make([]K, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i] < keys[j]
+	})
+	return keys
+}
+
+func computeHash(data []byte) string {
+	h := sha256.Sum256(data)
+	return fmt.Sprintf("%x", h)
+}
+
 func truncateContent(content string, maxLen int) string {
 	runes := []rune(content)
 	if len(runes) <= maxLen {
@@ -186,6 +535,9 @@ func stripCodeFences(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// listMarkdownFiles collects all markdown files under rootPath as relative paths.
+// WalkDir error is intentionally ignored because the caller (SyncWorkspace) handles
+// the case where no files are found (e.g. rootPath does not exist).
 func listMarkdownFiles(rootPath string) []string {
 	var files []string
 	filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
@@ -203,7 +555,11 @@ func listMarkdownFiles(rootPath string) []string {
 		}
 		ext := strings.ToLower(filepath.Ext(d.Name()))
 		if ext == ".md" || ext == ".markdown" {
-			rel, _ := filepath.Rel(rootPath, path)
+			rel, err := filepath.Rel(rootPath, path)
+			if err != nil {
+				// Skip file if relative path cannot be resolved
+				return nil
+			}
 			files = append(files, rel)
 		}
 		return nil
