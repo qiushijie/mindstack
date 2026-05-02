@@ -1,6 +1,7 @@
 <script lang="ts" setup>
-import { FileText, X, MessageSquare } from 'lucide-vue-next'
+import { FileText, X, MessageSquare, Network } from 'lucide-vue-next'
 import { useTabs } from '../composables/useTabs'
+import { useNavigation } from '../composables/useNavigation'
 
 defineProps<{
   aiActive?: boolean
@@ -13,6 +14,7 @@ const emit = defineEmits<{
 }>()
 
 const { tabs, activeTabIndex } = useTabs()
+const { navigateTo } = useNavigation()
 
 function handleTabClick(index: number) {
   if (index !== activeTabIndex.value) {
@@ -42,6 +44,9 @@ function handleClose(index: number, e: MouseEvent) {
       </button>
     </div>
     <div class="tab-spacer" />
+    <button class="ai-btn" title="Relation Graph" @click="navigateTo('relations')">
+      <Network :size="18" />
+    </button>
     <button class="ai-btn" :class="{ active: aiActive }" @click="emit('toggle-ai')" title="AI Assistant">
       <MessageSquare :size="20" />
     </button>

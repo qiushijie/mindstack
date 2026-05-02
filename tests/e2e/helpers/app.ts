@@ -12,7 +12,7 @@ export async function resetAppState(page: Page): Promise<void> {
   })
 }
 
-export async function navigateTo(page: Page, name: 'editor' | 'settings'): Promise<void> {
+export async function navigateTo(page: Page, name: 'editor' | 'settings' | 'relations'): Promise<void> {
   await page.evaluate((n) => {
     // Exposed in DEV mode by useNavigation.ts
     ;(window as any).__navigateTo?.(n)

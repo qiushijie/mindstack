@@ -116,10 +116,13 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     })
     sharedView.value = view.value
 
-    // Sync current file path into editor state
-    const { selectedFilePath } = useFileTree()
+    // Sync current file path and content into editor state
+    const { selectedFilePath, selectedFileContent } = useFileTree()
     if (selectedFilePath.value) {
       view.value.dispatch({ effects: setCurrentFilePath.of(selectedFilePath.value) })
+    }
+    if (selectedFileContent.value) {
+      setContent(selectedFileContent.value)
     }
 
     // Watch for theme changes and reconfigure editor theme

@@ -40,8 +40,8 @@ describe('useSync', () => {
       expect(syncLoading.value).toBe(true)
       expect(progressListener).not.toBeNull()
 
-      const progress1: SyncProgress = { file: 'a.md', current: 1, total: 3, status: 'processing' }
-      const progress2: SyncProgress = { file: 'b.md', current: 2, total: 3, status: 'processing' }
+      const progress1: SyncProgress = { file: 'a.md', current: 1, total: 3, status: 'processing', phase: 'meta' }
+      const progress2: SyncProgress = { file: 'b.md', current: 2, total: 3, status: 'processing', phase: 'meta' }
 
       progressListener!(JSON.stringify(progress1))
       progressListener!(JSON.stringify(progress2))
@@ -52,7 +52,7 @@ describe('useSync', () => {
       expect(syncLoading.value).toBe(true)
     })
 
-    it('calls onDone and cleans up when status is complete', () => {
+    it('calls onDone and cleans up when relation phase completes', () => {
       vi.mocked(SyncWorkspace).mockResolvedValue('')
 
       const { syncWorkspace, syncLoading } = useSync()
@@ -62,13 +62,38 @@ describe('useSync', () => {
 
       syncWorkspace(onProgress, onDone, onError)
 
-      const progress: SyncProgress = { file: '', current: 3, total: 3, status: 'complete' }
-      progressListener!(JSON.stringify(progress))
+      const metaComplete: SyncProgress = { file: '', current: 3, total: 3, status: 'complete', phase: 'meta' }
+      progressListener!(JSON.stringify(metaComplete))
 
-      expect(onProgress).toHaveBeenCalledWith(progress)
+      expect(onProgress).toHaveBeenCalledWith(metaComplete)
+      expect(onDone).not.toHaveBeenCalled()
+      expect(syncLoading.value).toBe(true)
+
+      const relationComplete: SyncProgress = { file: '', current: 3, total: 3, status: 'complete', phase: 'relation' }
+      progressListener!(JSON.stringify(relationComplete))
+
+      expect(onProgress).toHaveBeenCalledWith(relationComplete)
       expect(onDone).toHaveBeenCalled()
       expect(syncLoading.value).toBe(false)
       expect(EventsOff).toHaveBeenCalledWith('sync:progress')
+    })
+
+    it('does not call onDone on meta phase complete', () => {
+      vi.mocked(SyncWorkspace).mockResolvedValue('')
+
+      const { syncWorkspace, syncLoading } = useSync()
+      const onProgress = vi.fn()
+      const onDone = vi.fn()
+      const onError = vi.fn()
+
+      syncWorkspace(onProgress, onDone, onError)
+
+      const metaComplete: SyncProgress = { file: '', current: 3, total: 3, status: 'complete', phase: 'meta' }
+      progressListener!(JSON.stringify(metaComplete))
+
+      expect(onProgress).toHaveBeenCalledWith(metaComplete)
+      expect(onDone).not.toHaveBeenCalled()
+      expect(syncLoading.value).toBe(true)
     })
 
     it('calls onError and cleans up when fatal error is received', () => {
@@ -81,9 +106,8 @@ describe('useSync', () => {
 
       syncWorkspace(onProgress, onDone, onError)
 
-      // Fatal error: status=error, current=0, total=0
       const errorProgress: SyncProgress = {
-        file: '', current: 0, total: 0, status: 'error', error: 'Git not initialized',
+        file: '', current: 0, total: 0, status: 'error', error: 'Git not initialized', phase: 'meta',
       }
       progressListener!(JSON.stringify(errorProgress))
 
@@ -104,13 +128,11 @@ describe('useSync', () => {
 
       syncWorkspace(onProgress, onDone, onError)
 
-      // File-level error: status=error but current/total are non-zero
       const fileError: SyncProgress = {
-        file: 'broken.md', current: 2, total: 5, status: 'error', error: 'Parse error',
+        file: 'broken.md', current: 2, total: 5, status: 'error', error: 'Parse error', phase: 'meta',
       }
       progressListener!(JSON.stringify(fileError))
 
-      // File errors are forwarded as progress, not treated as fatal
       expect(onProgress).toHaveBeenCalledWith(fileError)
       expect(onError).not.toHaveBeenCalled()
     })
@@ -176,7 +198,7 @@ describe('useSync', () => {
       syncWorkspace(vi.fn(), vi.fn(), onError)
 
       const errorProgress: SyncProgress = {
-        file: '', current: 0, total: 0, status: 'error',
+        file: '', current: 0, total: 0, status: 'error', phase: 'meta',
       }
       progressListener!(JSON.stringify(errorProgress))
 

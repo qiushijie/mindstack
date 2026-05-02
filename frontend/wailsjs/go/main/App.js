@@ -38,6 +38,14 @@ export function GetActiveModelInfo() {
   return window['go']['main']['App']['GetActiveModelInfo']();
 }
 
+export function GetDocumentMetas() {
+  return window['go']['main']['App']['GetDocumentMetas']();
+}
+
+export function GetDocumentRelations() {
+  return window['go']['main']['App']['GetDocumentRelations']();
+}
+
 export function GetFileServerPort() {
   return window['go']['main']['App']['GetFileServerPort']();
 }

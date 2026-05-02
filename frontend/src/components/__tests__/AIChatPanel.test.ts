@@ -452,13 +452,13 @@ describe('AIChatPanel', () => {
       // Extract onProgress callback
       const onProgress = mockSyncWorkspace.mock.calls[0][0]
 
-      onProgress({ status: 'processing', current: 1, total: 3, file: 'a.md' })
+      onProgress({ status: 'processing', current: 1, total: 3, file: 'a.md', phase: 'meta' })
       await nextTick()
 
       let assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
       expect(assistantBubble.text()).toContain('Syncing (1/3): a.md')
 
-      onProgress({ status: 'done', current: 1, total: 3, file: 'a.md' })
+      onProgress({ status: 'done', current: 1, total: 3, file: 'a.md', phase: 'meta' })
       await nextTick()
 
       assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
@@ -476,12 +476,14 @@ describe('AIChatPanel', () => {
       const onProgress = mockSyncWorkspace.mock.calls[0][0]
       const onDone = mockSyncWorkspace.mock.calls[0][1]
 
-      onProgress({ status: 'complete', current: 5, total: 5, file: '' })
+      onProgress({ status: 'complete', current: 5, total: 5, file: '', phase: 'meta' })
+      await nextTick()
+      onProgress({ status: 'complete', current: 5, total: 5, file: '', phase: 'relation' })
       onDone()
       await nextTick()
 
       const assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
-      expect(assistantBubble.text()).toContain('Sync complete. Processed 5 file(s).')
+      expect(assistantBubble.text()).toContain('Sync complete.')
     })
 
     it('shows no files message when sync finds nothing', async () => {
@@ -495,12 +497,14 @@ describe('AIChatPanel', () => {
       const onProgress = mockSyncWorkspace.mock.calls[0][0]
       const onDone = mockSyncWorkspace.mock.calls[0][1]
 
-      onProgress({ status: 'complete', current: 0, total: 0, file: '' })
+      onProgress({ status: 'complete', current: 0, total: 0, file: '', phase: 'meta' })
+      await nextTick()
+      onProgress({ status: 'complete', current: 0, total: 0, file: '', phase: 'relation' })
       onDone()
       await nextTick()
 
       const assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
-      expect(assistantBubble.text()).toContain('No markdown files found')
+      expect(assistantBubble.text()).toContain('Sync complete.')
     })
   })
 

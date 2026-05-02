@@ -8,6 +8,7 @@ import AppStatusBar from './components/AppStatusBar.vue'
 import AppSettings from './components/AppSettings.vue'
 import AppTabBar from './components/AppTabBar.vue'
 import AIChatPanel from './components/AIChatPanel.vue'
+import RelationGraph from './components/RelationGraph.vue'
 import { useNavigation } from './composables/useNavigation'
 import { provideEditorState } from './composables/useEditorState'
 import { useFileTree } from './composables/useFileTree'
@@ -33,7 +34,7 @@ onMounted(async () => {
 
   EventsOff('menu:navigate')
   EventsOn('menu:navigate', (page: string) => {
-    if (page === 'settings' || page === 'editor') {
+    if (page === 'settings' || page === 'editor' || page === 'relations') {
       navigateTo(page)
     }
   })
@@ -124,6 +125,7 @@ onMounted(async () => {
         <AppStatusBar />
       </template>
       <AppSettings v-else-if="currentPage === 'settings'" />
+      <RelationGraph v-else-if="currentPage === 'relations'" @back="navigateTo('editor')" />
     </div>
     <template v-if="currentPage === 'editor'">
       <AIChatPanel v-if="showAIChat" @close="showAIChat = false" @open-file="selectFile" />

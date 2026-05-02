@@ -14,7 +14,7 @@ const maxMetaSize = 2 * 1024 * 1024 // 2MB
 
 // DocumentMeta holds metadata for a single markdown document.
 type DocumentMeta struct {
-	Path        string   `yaml:"-" json:"-"`
+	Path        string   `yaml:"-" json:"path,omitempty"`
 	Title       string   `yaml:"title" json:"title"`
 	Summary     string   `yaml:"summary" json:"summary"`
 	Tags        []string `yaml:"tags" json:"tags"`

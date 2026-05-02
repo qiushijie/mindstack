@@ -198,4 +198,21 @@ export default {
   file: {
     pastedFileName: 'вставка',
   },
+  relationGraph: {
+    title: 'Связи документов',
+    searchPlaceholder: 'Поиск документов...',
+    loading: 'Загрузка...',
+    empty: 'Документы не найдены. Сначала выполните синхронизацию.',
+    selectedDocument: 'ВЫБРАННЫЙ ДОКУМЕНТ',
+    relations: 'СВЯЗИ',
+    noRelations: 'Связи не найдены',
+    sharedTags: 'ОБЩИЕ ТЕГИ',
+    noSharedTags: 'Нет общих тегов',
+    statDocuments: 'Документы',
+    statRelations: 'Связи',
+    statTags: 'Теги',
+    outgoing: 'Исходящие',
+    incoming: 'Входящие',
+    openInEditor: 'Открыть в редакторе',
+  },
 }

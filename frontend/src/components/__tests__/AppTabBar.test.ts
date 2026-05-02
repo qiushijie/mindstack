@@ -8,6 +8,7 @@ vi.mock('lucide-vue-next', () => ({
   FileText: { template: '<span />', props: ['size'] },
   X: { template: '<span />', props: ['size'] },
   MessageSquare: { template: '<span />', props: ['size'] },
+  Network: { template: '<span />', props: ['size'] },
 }))
 
 // Shared reactive state for useTabs mock
@@ -78,13 +79,13 @@ describe('AppTabBar', () => {
     it('marks AI button as active when aiActive prop is true', () => {
       const wrapper = mountComponent({ aiActive: true })
 
-      expect(wrapper.find('.ai-btn').classes()).toContain('active')
+      expect(wrapper.find('[title="AI Assistant"]').classes()).toContain('active')
     })
 
     it('AI button is not active by default', () => {
       const wrapper = mountComponent()
 
-      expect(wrapper.find('.ai-btn').classes()).not.toContain('active')
+      expect(wrapper.find('[title="AI Assistant"]').classes()).not.toContain('active')
     })
 
     it('renders close button for each tab', async () => {
@@ -165,7 +166,7 @@ describe('AppTabBar', () => {
     it('emits toggle-ai when clicking AI button', async () => {
       const wrapper = mountComponent()
 
-      await wrapper.find('.ai-btn').trigger('click')
+      await wrapper.find('[title="AI Assistant"]').trigger('click')
 
       expect(wrapper.emitted('toggle-ai')).toHaveLength(1)
     })

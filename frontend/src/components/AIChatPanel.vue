@@ -247,16 +247,30 @@ function runSync() {
   syncWorkspace(
     (progress) => {
       if (activeStreamIdx.value !== idx) return
-      if (progress.status === 'processing') {
-        messages.value[idx].content = `Syncing (${progress.current}/${progress.total}): ${progress.file}...`
-      } else if (progress.status === 'done') {
-        messages.value[idx].content = `Synced (${progress.current}/${progress.total}): ${progress.file}`
-      } else if (progress.status === 'complete') {
-        messages.value[idx].content = progress.total > 0
-          ? `Sync complete. Processed ${progress.total} file(s).`
-          : 'No markdown files found in workspace.'
-      } else if (progress.status === 'error') {
-        messages.value[idx].content += `\nError on ${progress.file}: ${progress.error}`
+      if (progress.phase === 'meta') {
+        if (progress.status === 'processing') {
+          messages.value[idx].content = `Syncing (${progress.current}/${progress.total}): ${progress.file}...`
+        } else if (progress.status === 'done') {
+          messages.value[idx].content = `Synced (${progress.current}/${progress.total}): ${progress.file}`
+        } else if (progress.status === 'skipped') {
+          messages.value[idx].content = `No changes (${progress.current}/${progress.total}): ${progress.file}`
+        } else if (progress.status === 'complete') {
+          messages.value[idx].content = progress.total > 0
+            ? `Meta sync complete. Analyzing relations...`
+            : 'No markdown files found in workspace.'
+        } else if (progress.status === 'error') {
+          messages.value[idx].content += `\nError on ${progress.file}: ${progress.error}`
+        }
+      } else if (progress.phase === 'relation') {
+        if (progress.status === 'analyzing') {
+          messages.value[idx].content = `Analyzing relations (${progress.current}/${progress.total}): ${progress.file}`
+        } else if (progress.status === 'done') {
+          messages.value[idx].content = `Analyzed (${progress.current}/${progress.total}): ${progress.file}`
+        } else if (progress.status === 'complete') {
+          messages.value[idx].content = 'Sync complete.'
+        } else if (progress.status === 'error') {
+          messages.value[idx].content += `\nRelation error on ${progress.file}: ${progress.error}`
+        }
       }
       scrollToBottom()
     },
@@ -294,7 +308,7 @@ function runSearch(query: string) {
     if (result.items && result.items.length > 0) {
       messages.value[idx].content = `Found ${result.total} document(s) for tag "${result.tag}":`
       messages.value[idx].links = result.items.map(
-        (item: { path: string; title: string }) => ({ path: item.path, title: item.title || item.path }),
+        (item: { path: string; abs_path: string; title: string }) => ({ path: item.abs_path || item.path, title: item.title || item.path }),
       )
     } else {
       messages.value[idx].content = `No documents found for tag "${query}".`

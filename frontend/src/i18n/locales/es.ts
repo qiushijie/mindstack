@@ -198,4 +198,21 @@ export default {
   file: {
     pastedFileName: 'pegado',
   },
+  relationGraph: {
+    title: 'Relaciones entre documentos',
+    searchPlaceholder: 'Buscar documentos...',
+    loading: 'Cargando...',
+    empty: 'No se encontraron documentos. Ejecute una sincronización primero.',
+    selectedDocument: 'DOCUMENTO SELECCIONADO',
+    relations: 'RELACIONES',
+    noRelations: 'No se encontraron relaciones',
+    sharedTags: 'ETIQUETAS COMPARTIDAS',
+    noSharedTags: 'Sin etiquetas compartidas',
+    statDocuments: 'Documentos',
+    statRelations: 'Relaciones',
+    statTags: 'Etiquetas',
+    outgoing: 'Saliente',
+    incoming: 'Entrante',
+    openInEditor: 'Abrir en el editor',
+  },
 }

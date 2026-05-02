@@ -6,9 +6,10 @@ export interface SyncProgress {
   file: string
   current: number
   total: number
-  status: 'processing' | 'done' | 'error' | 'complete'
+  status: 'processing' | 'done' | 'error' | 'complete' | 'skipped' | 'analyzing'
   error?: string
   summary?: string
+  phase: 'meta' | 'relation'
 }
 
 export function useSync() {
@@ -40,7 +41,7 @@ export function useSync() {
         cleanup()
       } else {
         onProgress(progress)
-        if (progress.status === 'complete') {
+        if (progress.status === 'complete' && progress.phase === 'relation') {
           cleanup()
           onDone()
         }

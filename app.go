@@ -15,6 +15,8 @@ import (
 
 	"mindstack/internal/config"
 	"mindstack/internal/llm"
+	"mindstack/internal/meta"
+	"mindstack/internal/relation"
 	"mindstack/internal/search"
 	syncpkg "mindstack/internal/sync"
 
@@ -631,5 +633,41 @@ func (a *App) SearchDocs(tag string) string {
 		return string(out)
 	}
 	out, _ := json.Marshal(result)
+	return string(out)
+}
+
+func (a *App) GetDocumentMetas() string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+
+	if root == "" {
+		return `{"error":"no workspace open"}`
+	}
+
+	metas, err := meta.ScanAll(root, "")
+	if err != nil {
+		out, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(out)
+	}
+	out, _ := json.Marshal(metas)
+	return string(out)
+}
+
+func (a *App) GetDocumentRelations() string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+
+	if root == "" {
+		return `{"error":"no workspace open"}`
+	}
+
+	store, err := relation.Load(root)
+	if err != nil {
+		out, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(out)
+	}
+	out, _ := json.Marshal(store)
 	return string(out)
 }

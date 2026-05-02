@@ -320,11 +320,9 @@ func TestSyncWorkspace_LLMError_ReportsError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expected sequence per file: processing -> error
-	// Then final complete event.
-	// Total: 2 * (processing + error) + complete = 5 events
-	if len(progresses) != 5 {
-		t.Fatalf("expected 5 progress events, got %d", len(progresses))
+	// Expected: 2 * (processing + error) + meta complete + relation complete = 6 events
+	if len(progresses) != 6 {
+		t.Fatalf("expected 6 progress events, got %d", len(progresses))
 	}
 
 	// File 1: processing -> error
@@ -349,9 +347,14 @@ func TestSyncWorkspace_LLMError_ReportsError(t *testing.T) {
 		t.Fatal("progress[3]: expected non-empty error message")
 	}
 
-	// Final complete event
-	if progresses[4].Status != "complete" {
-		t.Fatalf("progress[4]: expected complete, got %s", progresses[4].Status)
+	// Meta complete
+	if progresses[4].Status != "complete" || progresses[4].Phase != "meta" {
+		t.Fatalf("progress[4]: expected meta complete, got status=%s phase=%s", progresses[4].Status, progresses[4].Phase)
+	}
+
+	// Relation complete
+	if progresses[5].Status != "complete" || progresses[5].Phase != "relation" {
+		t.Fatalf("progress[5]: expected relation complete, got status=%s phase=%s", progresses[5].Status, progresses[5].Phase)
 	}
 }
 
@@ -409,9 +412,9 @@ func TestSyncWorkspace_ReportsProgressOrder(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expected order: processing -> error -> complete
-	if len(progresses) != 3 {
-		t.Fatalf("expected 3 events, got %d", len(progresses))
+	// Expected order: processing -> error -> meta complete -> relation complete
+	if len(progresses) != 4 {
+		t.Fatalf("expected 4 events, got %d", len(progresses))
 	}
 	if progresses[0].Status != "processing" {
 		t.Fatalf("first event should be processing, got %s", progresses[0].Status)
@@ -426,8 +429,11 @@ func TestSyncWorkspace_ReportsProgressOrder(t *testing.T) {
 	if progresses[1].Status != "error" {
 		t.Fatalf("second event should be error, got %s", progresses[1].Status)
 	}
-	if progresses[2].Status != "complete" {
-		t.Fatalf("third event should be complete, got %s", progresses[2].Status)
+	if progresses[2].Status != "complete" || progresses[2].Phase != "meta" {
+		t.Fatalf("third event should be meta complete, got status=%s phase=%s", progresses[2].Status, progresses[2].Phase)
+	}
+	if progresses[3].Status != "complete" || progresses[3].Phase != "relation" {
+		t.Fatalf("fourth event should be relation complete, got status=%s phase=%s", progresses[3].Status, progresses[3].Phase)
 	}
 }
 
@@ -619,9 +625,9 @@ func TestGenerateMeta_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expected: processing -> done -> complete
-	if len(progresses) != 3 {
-		t.Fatalf("expected 3 progress events, got %d", len(progresses))
+	// Expected: processing -> done -> meta complete -> relation complete
+	if len(progresses) != 4 {
+		t.Fatalf("expected 4 progress events, got %d", len(progresses))
 	}
 	if progresses[0].Status != "processing" {
 		t.Fatalf("progress[0]: expected processing, got %s", progresses[0].Status)
@@ -635,8 +641,11 @@ func TestGenerateMeta_Success(t *testing.T) {
 	if progresses[1].Summary != "A test document for unit testing." {
 		t.Fatalf("progress[1]: unexpected summary: %s", progresses[1].Summary)
 	}
-	if progresses[2].Status != "complete" {
-		t.Fatalf("progress[2]: expected complete, got %s", progresses[2].Status)
+	if progresses[2].Status != "complete" || progresses[2].Phase != "meta" {
+		t.Fatalf("progress[2]: expected meta complete, got status=%s phase=%s", progresses[2].Status, progresses[2].Phase)
+	}
+	if progresses[3].Status != "complete" || progresses[3].Phase != "relation" {
+		t.Fatalf("progress[3]: expected relation complete, got status=%s phase=%s", progresses[3].Status, progresses[3].Phase)
 	}
 
 	// Verify metadata was saved correctly
@@ -792,9 +801,9 @@ func TestGenerateMeta_InvalidJSONResponse(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expected: processing -> error (JSON parse failure) -> complete
-	if len(progresses) != 3 {
-		t.Fatalf("expected 3 progress events, got %d", len(progresses))
+	// Expected: processing -> error (JSON parse failure) -> meta complete -> relation complete
+	if len(progresses) != 4 {
+		t.Fatalf("expected 4 progress events, got %d", len(progresses))
 	}
 	if progresses[0].Status != "processing" {
 		t.Fatalf("progress[0]: expected processing, got %s", progresses[0].Status)
@@ -805,8 +814,11 @@ func TestGenerateMeta_InvalidJSONResponse(t *testing.T) {
 	if !strings.Contains(progresses[1].Error, "parse LLM response") {
 		t.Fatalf("expected parse LLM response error, got: %s", progresses[1].Error)
 	}
-	if progresses[2].Status != "complete" {
-		t.Fatalf("progress[2]: expected complete, got %s", progresses[2].Status)
+	if progresses[2].Status != "complete" || progresses[2].Phase != "meta" {
+		t.Fatalf("progress[2]: expected meta complete, got status=%s phase=%s", progresses[2].Status, progresses[2].Phase)
+	}
+	if progresses[3].Status != "complete" || progresses[3].Phase != "relation" {
+		t.Fatalf("progress[3]: expected relation complete, got status=%s phase=%s", progresses[3].Status, progresses[3].Phase)
 	}
 }
 

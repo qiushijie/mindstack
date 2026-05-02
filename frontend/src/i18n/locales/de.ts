@@ -198,4 +198,21 @@ export default {
   file: {
     pastedFileName: 'eingefügt',
   },
+  relationGraph: {
+    title: 'Dokumentbeziehungen',
+    searchPlaceholder: 'Dokumente suchen...',
+    loading: 'Laden...',
+    empty: 'Keine Dokumente gefunden. Führen Sie zuerst eine Synchronisierung durch.',
+    selectedDocument: 'AUSGEWÄHLTES DOKUMENT',
+    relations: 'BEZIEHUNGEN',
+    noRelations: 'Keine Beziehungen gefunden',
+    sharedTags: 'GEMEINSAME TAGS',
+    noSharedTags: 'Keine gemeinsamen Tags',
+    statDocuments: 'Dokumente',
+    statRelations: 'Beziehungen',
+    statTags: 'Tags',
+    outgoing: 'Ausgehend',
+    incoming: 'Eingehend',
+    openInEditor: 'Im Editor öffnen',
+  },
 }

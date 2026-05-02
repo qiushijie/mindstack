@@ -198,4 +198,21 @@ export default {
   file: {
     pastedFileName: 'pasted',
   },
+  relationGraph: {
+    title: 'Document Relations',
+    searchPlaceholder: 'Search documents...',
+    loading: 'Loading...',
+    empty: 'No documents found. Run a sync first.',
+    selectedDocument: 'SELECTED DOCUMENT',
+    relations: 'RELATIONS',
+    noRelations: 'No relations found',
+    sharedTags: 'SHARED TAGS',
+    noSharedTags: 'No shared tags',
+    statDocuments: 'Documents',
+    statRelations: 'Relations',
+    statTags: 'Tags',
+    outgoing: 'Outgoing',
+    incoming: 'Incoming',
+    openInEditor: 'Open in Editor',
+  },
 }

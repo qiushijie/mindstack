@@ -176,6 +176,19 @@ func SyncWorkspace(
 		Phase:   "meta",
 	})
 
+	// If no content changed but relations.json is missing, rebuild all relations
+	if len(changedDocs) == 0 {
+		if _, err := os.Stat(filepath.Join(rootPath, workspace.KnowledgeBaseDir, "relations.json")); os.IsNotExist(err) {
+			allMetas, scanErr := meta.ScanAll(rootPath, "")
+			if scanErr != nil {
+				return fmt.Errorf("scan meta for relation rebuild: %w", scanErr)
+			}
+			for _, m := range allMetas {
+				changedDocs[m.Path] = true
+			}
+		}
+	}
+
 	// Phase 2: Relation analysis
 	if err := analyzeRelations(ctx, llmSvc, rootPath, changedDocs, onProgress); err != nil {
 		onProgress(SyncProgress{
@@ -196,6 +209,7 @@ func analyzeRelations(
 	onProgress func(SyncProgress),
 ) error {
 	if len(changedDocs) == 0 {
+		onProgress(SyncProgress{Status: "complete", Phase: "relation"})
 		return nil
 	}
 
@@ -206,6 +220,7 @@ func analyzeRelations(
 
 	candidates := findCandidateDocs(allMetas, changedDocs)
 	if len(candidates) == 0 {
+		onProgress(SyncProgress{Status: "complete", Phase: "relation"})
 		return nil
 	}
 

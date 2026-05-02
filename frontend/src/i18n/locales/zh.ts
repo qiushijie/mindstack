@@ -198,4 +198,21 @@ export default {
   file: {
     pastedFileName: '粘贴',
   },
+  relationGraph: {
+    title: '文档关联',
+    searchPlaceholder: '搜索文档...',
+    loading: '加载中...',
+    empty: '未找到文档，请先执行同步。',
+    selectedDocument: '已选文档',
+    relations: '关联',
+    noRelations: '未找到关联',
+    sharedTags: '共享标签',
+    noSharedTags: '无共享标签',
+    statDocuments: '文档',
+    statRelations: '关联',
+    statTags: '标签',
+    outgoing: '出向',
+    incoming: '入向',
+    openInEditor: '在编辑器中打开',
+  },
 }

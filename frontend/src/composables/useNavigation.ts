@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type PageName = 'editor' | 'settings'
+export type PageName = 'editor' | 'settings' | 'relations'
 
 const currentPage = ref<PageName>('editor')
 
@@ -14,7 +14,7 @@ export function useNavigation() {
 
 if (import.meta.env.DEV) {
   ;(window as any).__navigateTo = (page: string) => {
-    if (page === 'settings' || page === 'editor') {
+    if (page === 'settings' || page === 'editor' || page === 'relations') {
       currentPage.value = page
     }
   }

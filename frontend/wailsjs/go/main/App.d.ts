@@ -20,6 +20,10 @@ export function FileExists(arg1:string):Promise<boolean>;
 
 export function GetActiveModelInfo():Promise<string>;
 
+export function GetDocumentMetas():Promise<string>;
+
+export function GetDocumentRelations():Promise<string>;
+
 export function GetFileServerPort():Promise<number>;
 
 export function GetPendingOpenFile():Promise<string>;

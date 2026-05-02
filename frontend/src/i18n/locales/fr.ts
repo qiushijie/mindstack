@@ -198,4 +198,21 @@ export default {
   file: {
     pastedFileName: 'collé',
   },
+  relationGraph: {
+    title: 'Relations entre documents',
+    searchPlaceholder: 'Rechercher des documents...',
+    loading: 'Chargement...',
+    empty: 'Aucun document trouvé. Exécutez d\'abord une synchronisation.',
+    selectedDocument: 'DOCUMENT SÉLECTIONNÉ',
+    relations: 'RELATIONS',
+    noRelations: 'Aucune relation trouvée',
+    sharedTags: 'TAGS PARTAGÉS',
+    noSharedTags: 'Aucun tag partagé',
+    statDocuments: 'Documents',
+    statRelations: 'Relations',
+    statTags: 'Tags',
+    outgoing: 'Sortant',
+    incoming: 'Entrant',
+    openInEditor: 'Ouvrir dans l\'éditeur',
+  },
 }
