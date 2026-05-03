@@ -310,7 +310,6 @@ async function handleRefresh(dirPath: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-top: 1px solid var(--border-subtle);
 }
 
 .view-toggle-btn {
