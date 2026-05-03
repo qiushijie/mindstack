@@ -26,6 +26,7 @@ test-results/.last-run.json
 /mindstack
 /cli
 /cli.test
+bin/mindstack
 
 # log
 *.log
