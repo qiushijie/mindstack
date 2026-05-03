@@ -456,10 +456,8 @@ func TestSearchDocs(t *testing.T) {
 		var parsed struct {
 			Tag   string `json:"tag"`
 			Items []struct {
-				Path    string `json:"path"`
-				AbsPath string `json:"abs_path"`
-				Title   string `json:"title"`
-				Status  string `json:"status"`
+				Path   string `json:"path"`
+				Title  string `json:"title"`
 			} `json:"items"`
 			Total int `json:"total"`
 		}
@@ -472,14 +470,12 @@ func TestSearchDocs(t *testing.T) {
 		if len(parsed.Items) != 1 {
 			t.Fatalf("expected 1 item, got %d", len(parsed.Items))
 		}
-		if parsed.Items[0].Path != "notes/hello.md" {
-			t.Fatalf("expected path 'notes/hello.md', got %q", parsed.Items[0].Path)
+		expectedPath := filepath.Join(tmpDir, "notes/hello.md")
+		if parsed.Items[0].Path != expectedPath {
+			t.Fatalf("expected path %q, got %q", expectedPath, parsed.Items[0].Path)
 		}
 		if parsed.Items[0].Title != "Hello" {
 			t.Fatalf("expected title 'Hello', got %q", parsed.Items[0].Title)
-		}
-		if parsed.Items[0].Status != "active" {
-			t.Fatalf("expected status 'active', got %q", parsed.Items[0].Status)
 		}
 	})
 

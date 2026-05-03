@@ -45,8 +45,9 @@ func TestSearchByTag_SingleMatch(t *testing.T) {
 	if result.Total != 1 {
 		t.Fatalf("expected 1, got %d", result.Total)
 	}
-	if result.Items[0].Path != "api-specs/rest-api.md" {
-		t.Fatalf("expected api-specs/rest-api.md, got %s", result.Items[0].Path)
+	expectedPath := filepath.Join(kbRoot, "api-specs/rest-api.md")
+	if result.Items[0].Path != expectedPath {
+		t.Fatalf("expected %s, got %s", expectedPath, result.Items[0].Path)
 	}
 }
 

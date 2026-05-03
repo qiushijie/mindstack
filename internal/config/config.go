@@ -27,11 +27,11 @@ func ConfigPath() string {
 // Knowledge base side: has Name, Description, Version.
 // Project side (link): has KnowledgeBases pointing to KB paths.
 type Config struct {
-	Name            string   `yaml:"name,omitempty"`
-	Description     string   `yaml:"description,omitempty"`
-	Version         string   `yaml:"version,omitempty"`
-	KnowledgeBase   string   `yaml:"knowledge_base,omitempty"`    // backward compat, single link
-	KnowledgeBases  []string `yaml:"knowledge_bases,omitempty"`   // multiple links
+	Name            string   `yaml:"name,omitempty" json:"name,omitempty"`
+	Description     string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Version         string   `yaml:"version,omitempty" json:"version,omitempty"`
+	KnowledgeBase   string   `yaml:"knowledge_base,omitempty" json:"knowledge_base,omitempty"`    // backward compat, single link
+	KnowledgeBases  []string `yaml:"knowledge_bases,omitempty" json:"knowledge_bases,omitempty"` // multiple links
 }
 
 // DefaultConfig returns a knowledge base side config.
