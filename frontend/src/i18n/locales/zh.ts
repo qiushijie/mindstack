@@ -72,6 +72,7 @@ export default {
       desc: '面向开发者的 Markdown 编辑器，支持 Git 同步。',
       build: '基于 Wails、Vue 3 和 Go 构建。',
     },
+    searchPlaceholder: '搜索设置...',
     model: {
       namePlaceholder: '模型名称',
       apiUrl: 'API URL',
@@ -106,6 +107,8 @@ export default {
     words: '词',
     chars: '字符',
     encoding: 'UTF-8',
+    settings: '设置',
+    graph: '关系图',
   },
   imageDialog: {
     insertTitle: '插入图片',
@@ -214,5 +217,6 @@ export default {
     outgoing: '出向',
     incoming: '入向',
     openInEditor: '在编辑器中打开',
+    noSearchResults: '未找到匹配的文档',
   },
 }

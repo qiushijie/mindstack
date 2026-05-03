@@ -72,6 +72,7 @@ export default {
       desc: 'Git 同期に対応した、開発者向けの Markdown エディタです。',
       build: 'Wails、Vue 3、Go で構築されています。',
     },
+    searchPlaceholder: '設定を検索...',
     model: {
       namePlaceholder: 'Model name',
       apiUrl: 'API URL',
@@ -106,6 +107,8 @@ export default {
     words: '語',
     chars: '文字',
     encoding: 'UTF-8',
+    settings: '設定',
+    graph: 'グラフ',
   },
   imageDialog: {
     insertTitle: '画像を挿入',
@@ -214,5 +217,6 @@ export default {
     outgoing: '送信',
     incoming: '受信',
     openInEditor: 'エディタで開く',
+    noSearchResults: '一致するドキュメントが見つかりません',
   },
 }

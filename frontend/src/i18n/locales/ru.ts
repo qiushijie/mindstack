@@ -72,6 +72,7 @@ export default {
       desc: 'Markdown-редактор для разработчиков с синхронизацией Git.',
       build: 'Создано с помощью Wails, Vue 3 и Go.',
     },
+    searchPlaceholder: 'Поиск настроек...',
     model: {
       namePlaceholder: 'Model name',
       apiUrl: 'API URL',
@@ -106,6 +107,8 @@ export default {
     words: 'слов',
     chars: 'символов',
     encoding: 'UTF-8',
+    settings: 'Настройки',
+    graph: 'Граф',
   },
   imageDialog: {
     insertTitle: 'Вставить изображение',
@@ -214,5 +217,6 @@ export default {
     outgoing: 'Исходящие',
     incoming: 'Входящие',
     openInEditor: 'Открыть в редакторе',
+    noSearchResults: 'Совпадающие документы не найдены',
   },
 }

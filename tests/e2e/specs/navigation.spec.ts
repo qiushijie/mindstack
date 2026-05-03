@@ -16,7 +16,7 @@ test.describe('Navigation', () => {
     await navigateTo(page, 'settings')
 
     await expect(page.locator('.settings')).toBeVisible()
-    await expect(page.locator('.settings-nav')).toBeVisible()
+    await expect(page.locator('.settings-content')).toBeVisible()
   })
 
   test('should navigate back to editor from settings', async ({ page }) => {
@@ -26,27 +26,5 @@ test.describe('Navigation', () => {
     await navigateTo(page, 'editor')
     await expect(page.locator('.editor-container')).toBeVisible()
     await expect(page.locator('.settings')).toBeHidden()
-  })
-
-  test('should show all settings nav items', async ({ page }) => {
-    await navigateTo(page, 'settings')
-
-    const navItems = page.locator('.settings-nav .nav-item')
-    await expect(navItems).toHaveCount(5)
-    await expect(navItems.nth(0)).toContainText('General')
-    await expect(navItems.nth(1)).toContainText('Editor')
-    await expect(navItems.nth(2)).toContainText('Model')
-    await expect(navItems.nth(3)).toContainText('Git')
-    await expect(navItems.nth(4)).toContainText('About')
-  })
-
-  test('should switch settings sections', async ({ page }) => {
-    await navigateTo(page, 'settings')
-
-    await page.locator('.nav-item').filter({ hasText: 'Editor' }).click()
-    await expect(page.locator('.settings-content .section-title')).toContainText('Editor')
-
-    await page.locator('.nav-item').filter({ hasText: 'Git' }).click()
-    await expect(page.locator('.settings-content .section-title')).toContainText('Git')
   })
 })

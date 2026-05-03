@@ -44,7 +44,7 @@ const mockGraphInstance = {
   zoom: vi.fn().mockReturnValue(1),
   centerAt: vi.fn().mockReturnValue({ x: 0, y: 0 }),
 }
-const mockForceGraphFactory = vi.fn((_el?: HTMLElement) => mockGraphInstance)
+const mockForceGraphFactory = vi.fn<() => any>(() => mockGraphInstance)
 
 vi.mock('force-graph', () => ({
   default: () => mockForceGraphFactory,
@@ -58,8 +58,8 @@ const mockLoading = ref(false)
 const mockError = ref('')
 const mockLoadData = vi.fn()
 const mockGetNode = vi.fn()
-const mockGetRelationsForDoc = vi.fn(() => [])
-const mockGetRelatedDocs = vi.fn(() => [])
+const mockGetRelationsForDoc = vi.fn<() => any[]>(() => [])
+const mockGetRelatedDocs = vi.fn<() => any[]>(() => [])
 
 vi.mock('../../composables/useRelations', () => ({
   useRelations: () => ({
@@ -69,8 +69,8 @@ vi.mock('../../composables/useRelations', () => ({
     loading: mockLoading,
     error: mockError,
     loadData: mockLoadData,
-    getRelationsForDoc: (...args: any[]) => mockGetRelationsForDoc(...args),
-    getRelatedDocs: (...args: any[]) => mockGetRelatedDocs(...args),
+    getRelationsForDoc: () => mockGetRelationsForDoc(),
+    getRelatedDocs: () => mockGetRelatedDocs(),
     getNode: (...args: any[]) => mockGetNode(...args),
   }),
 }))
@@ -140,18 +140,10 @@ describe('RelationGraph', () => {
   })
 
   describe('component mounting', () => {
-    it('renders the header with title', async () => {
+    it('renders the graph search input', async () => {
       const wrapper = createWrapper()
       await flushAll()
-      expect(wrapper.find('.graph-header').exists()).toBe(true)
-      expect(wrapper.find('.header-title').text()).toBe('relationGraph.title')
-      wrapper.unmount()
-    })
-
-    it('renders the search input', async () => {
-      const wrapper = createWrapper()
-      await flushAll()
-      expect(wrapper.find('.search-input').exists()).toBe(true)
+      expect(wrapper.find('.graph-search-input').exists()).toBe(true)
       wrapper.unmount()
     })
 
@@ -289,7 +281,7 @@ describe('RelationGraph', () => {
       const wrapper = createWrapper()
       await flushAll()
 
-      await wrapper.find('.search-input').setValue('API')
+      await wrapper.find('.graph-search-input').setValue('API')
       await nextTick()
 
       // graphData should be updated with filtered nodes
@@ -309,7 +301,7 @@ describe('RelationGraph', () => {
       const wrapper = createWrapper()
       await flushAll()
 
-      await wrapper.find('.search-input').setValue('guide')
+      await wrapper.find('.graph-search-input').setValue('guide')
       await nextTick()
 
       const lastCall = mockGraphInstance.graphData.mock.calls.at(-1)
@@ -328,17 +320,104 @@ describe('RelationGraph', () => {
       const wrapper = createWrapper()
       await flushAll()
 
-      await wrapper.find('.search-input').setValue('Architecture')
+      await wrapper.find('.graph-search-input').setValue('Architecture')
       await nextTick()
 
       let lastCall = mockGraphInstance.graphData.mock.calls.at(-1)
       expect(lastCall![0].nodes).toHaveLength(1)
 
-      await wrapper.find('.search-input').setValue('')
+      await wrapper.find('.graph-search-input').setValue('')
       await nextTick()
 
       lastCall = mockGraphInstance.graphData.mock.calls.at(-1)
       expect(lastCall![0].nodes).toHaveLength(2)
+      wrapper.unmount()
+    })
+
+    it('shows no results overlay when filter matches nothing', async () => {
+      mockNodes.value = [
+        makeNode('a.md', 'Architecture'),
+        makeNode('b.md', 'Getting Started'),
+      ]
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      await wrapper.find('.graph-search-input').setValue('xyz-nonexistent')
+      await nextTick()
+
+      expect(wrapper.find('.graph-empty-overlay').exists()).toBe(true)
+      expect(wrapper.find('.graph-empty-overlay').text()).toContain('relationGraph.noSearchResults')
+      wrapper.unmount()
+    })
+
+    it('hides no results overlay when filter has matches', async () => {
+      mockNodes.value = [
+        makeNode('a.md', 'Architecture'),
+        makeNode('b.md', 'Getting Started'),
+      ]
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      await wrapper.find('.graph-search-input').setValue('xyz-nonexistent')
+      await nextTick()
+      expect(wrapper.find('.graph-empty-overlay').exists()).toBe(true)
+
+      await wrapper.find('.graph-search-input').setValue('Arch')
+      await nextTick()
+      expect(wrapper.find('.graph-empty-overlay').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('clears search via clear button', async () => {
+      mockNodes.value = [
+        makeNode('a.md', 'Architecture'),
+        makeNode('b.md', 'Getting Started'),
+      ]
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      await wrapper.find('.graph-search-input').setValue('Architecture')
+      await nextTick()
+
+      expect(wrapper.find('.graph-search-clear').exists()).toBe(true)
+      await wrapper.find('.graph-search-clear').trigger('click')
+      await nextTick()
+
+      expect((wrapper.find('.graph-search-input').element as HTMLInputElement).value).toBe('')
+      const lastCall = mockGraphInstance.graphData.mock.calls.at(-1)
+      expect(lastCall![0].nodes).toHaveLength(2)
+      wrapper.unmount()
+    })
+
+    it('toggles focused class on search box focus/blur', async () => {
+      mockNodes.value = [makeNode('a.md', 'Doc A')]
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      const searchBox = wrapper.find('.graph-search-box')
+      expect(searchBox.classes()).not.toContain('focused')
+
+      await searchBox.find('input').trigger('focus')
+      await nextTick()
+      expect(wrapper.find('.graph-search-box').classes()).toContain('focused')
+
+      await wrapper.find('.graph-search-input').trigger('blur')
+      await nextTick()
+      expect(wrapper.find('.graph-search-box').classes()).not.toContain('focused')
+      wrapper.unmount()
+    })
+
+    it('does not show clear button when search is empty', async () => {
+      mockNodes.value = [makeNode('a.md', 'Doc A')]
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      expect(wrapper.find('.graph-search-clear').exists()).toBe(false)
       wrapper.unmount()
     })
   })
@@ -374,13 +453,26 @@ describe('RelationGraph', () => {
     })
   })
 
-  describe('back navigation', () => {
-    it('emits back event when back button is clicked', async () => {
+  describe('open file', () => {
+    it('calls selectFile when open file button is clicked', async () => {
+      const nodeA = makeNode('a.md', 'Doc A')
+      mockNodes.value = [nodeA]
+      mockGetNode.mockImplementation((path: string) => path === 'a.md' ? nodeA : undefined)
+      mockGetRelationsForDoc.mockReturnValue([])
+      mockGetRelatedDocs.mockReturnValue([])
+
       const wrapper = createWrapper()
       await flushAll()
 
-      await wrapper.find('.back-btn').trigger('click')
-      expect(wrapper.emitted('back')).toHaveLength(1)
+      const clickCb = mockGraphInstance.onNodeClick.mock.calls[0][0]
+      clickCb({ id: 'a.md' })
+      await nextTick()
+
+      mockSelectFile.mockClear()
+      await wrapper.find('.open-file-btn').trigger('click')
+      await nextTick()
+
+      expect(mockSelectFile).toHaveBeenCalledTimes(1)
       wrapper.unmount()
     })
   })
@@ -485,6 +577,26 @@ describe('RelationGraph', () => {
       mockGraphInstance.zoom.mockClear()
       // Directly test the zoom functions by clicking
       // Since graphInstance is set during initGraph, test via button click after init
+      wrapper.unmount()
+    })
+
+    it('hides zoom controls when filtered nodes are empty', async () => {
+      mockNodes.value = [
+        makeNode('a.md', 'Architecture'),
+        makeNode('b.md', 'Getting Started'),
+      ]
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      // Zoom controls visible when all nodes shown
+      expect(wrapper.find('.zoom-controls').exists()).toBe(true)
+
+      // Filter to nothing
+      await wrapper.find('.graph-search-input').setValue('xyz-nonexistent')
+      await nextTick()
+
+      expect(wrapper.find('.zoom-controls').exists()).toBe(false)
       wrapper.unmount()
     })
   })
@@ -656,7 +768,6 @@ describe('RelationGraph', () => {
       await nextTick()
 
       expect(mockSelectFile).toHaveBeenCalledWith('/workspace/a.md')
-      expect(wrapper.emitted('back')).toHaveLength(1)
       wrapper.unmount()
     })
   })
@@ -800,19 +911,77 @@ describe('RelationGraph', () => {
       wrapper.unmount()
     })
 
-    it('shows error when containerRef is null', async () => {
-      mockNodes.value = [makeNode('a.md', 'Doc A')]
-      // Force containerRef to be null by not attaching to DOM
+    it('waits for ResizeObserver when container has zero dimensions', async () => {
       Object.defineProperties(HTMLElement.prototype, {
         clientWidth: { value: 0, configurable: true },
         clientHeight: { value: 0, configurable: true },
       })
 
-      const wrapper = mount(RelationGraph)
+      mockNodes.value = [makeNode('a.md', 'Doc A')]
+
+      const wrapper = mount(RelationGraph, { attachTo: document.body })
       await flushAll()
 
-      // The component should show error or handle gracefully
-      // Since containerRef is inside v-else, it should be rendered when nodes exist
+      // Graph should not be initialized yet due to zero dimensions
+      expect(mockForceGraphFactory).not.toHaveBeenCalled()
+
+      // Simulate ResizeObserver firing with non-zero dimensions
+      Object.defineProperties(HTMLElement.prototype, {
+        clientWidth: { value: 800, configurable: true },
+        clientHeight: { value: 600, configurable: true },
+      })
+
+      // Trigger resize observer callback manually
+      const roCallback = (ResizeObserver as any)._callback
+      if (roCallback) {
+        roCallback([{ contentRect: { width: 800, height: 600 } }])
+        await nextTick()
+      }
+
+      wrapper.unmount()
+    })
+  })
+
+  describe('wheel handler', () => {
+    it('registers wheel handler on canvas for pan', async () => {
+      mockNodes.value = [makeNode('a.md', 'Doc A')]
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      expect(mockGraphInstance.enableZoomInteraction).toHaveBeenCalledWith(false)
+
+      // Simulate wheel event on canvas for pan
+      const canvas = wrapper.find('.graph-container').element.querySelector('canvas')
+      if (canvas) {
+        const wheelEvent = new WheelEvent('wheel', { deltaX: 10, deltaY: 20, bubbles: true })
+        canvas.dispatchEvent(wheelEvent)
+        await nextTick()
+
+        expect(mockGraphInstance.centerAt).toHaveBeenCalled()
+      }
+      wrapper.unmount()
+    })
+
+    it('handles zoom wheel event with ctrl key', async () => {
+      mockNodes.value = [makeNode('a.md', 'Doc A')]
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      const canvas = wrapper.find('.graph-container').element.querySelector('canvas')
+      if (canvas) {
+        mockGraphInstance.zoom.mockReturnValue(1)
+        const wheelEvent = new WheelEvent('wheel', {
+          deltaY: 10,
+          ctrlKey: true,
+          bubbles: true,
+        })
+        canvas.dispatchEvent(wheelEvent)
+        await nextTick()
+
+        expect(mockGraphInstance.zoom).toHaveBeenCalled()
+      }
       wrapper.unmount()
     })
   })
@@ -825,7 +994,7 @@ describe('RelationGraph', () => {
       await flushAll()
 
       const dragCb = mockGraphInstance.onNodeDrag.mock.calls[0][0]
-      const node = { x: 100, y: 200 }
+      const node = { x: 100, y: 200 } as any
       dragCb(node)
       expect(node.fx).toBe(100)
       expect(node.fy).toBe(200)
@@ -843,7 +1012,7 @@ describe('RelationGraph', () => {
       const wrapper = createWrapper()
       await flushAll()
 
-      await wrapper.find('.search-input').setValue('architecture')
+      await wrapper.find('.graph-search-input').setValue('architecture')
       await nextTick()
 
       const lastCall = mockGraphInstance.graphData.mock.calls.at(-1)

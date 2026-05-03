@@ -1,6 +1,7 @@
 <script lang="ts" setup>
-import { FileText, X, MessageSquare, Network } from 'lucide-vue-next'
-import { useTabs } from '../composables/useTabs'
+import { FileText, X, MessageSquare, Network, Settings } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
+import { useTabs, isPageTab, openPageTab } from '../composables/useTabs'
 import { useNavigation } from '../composables/useNavigation'
 
 defineProps<{
@@ -15,6 +16,7 @@ const emit = defineEmits<{
 
 const { tabs, activeTabIndex } = useTabs()
 const { navigateTo } = useNavigation()
+const { t } = useI18n()
 
 function handleTabClick(index: number) {
   if (index !== activeTabIndex.value) {
@@ -25,6 +27,11 @@ function handleTabClick(index: number) {
 function handleClose(index: number, e: MouseEvent) {
   e.stopPropagation()
   emit('close', index)
+}
+
+function openRelationsTab() {
+  openPageTab('relations', t('relationGraph.title'))
+  navigateTo('relations')
 }
 </script>
 
@@ -37,14 +44,17 @@ function handleClose(index: number, e: MouseEvent) {
       :class="{ active: index === activeTabIndex }"
       @click="handleTabClick(index)"
     >
-      <FileText :size="14" class="tab-icon" />
+      <FileText v-if="!isPageTab(tab.path)" :size="14" class="tab-icon" />
+      <Settings v-else-if="tab.path === 'settings'" :size="14" class="tab-icon" />
+      <Network v-else-if="tab.path === 'relations'" :size="14" class="tab-icon" />
       <span class="tab-title">{{ tab.title }}</span>
       <button class="tab-close" @click="handleClose(index, $event)">
         <X :size="14" />
       </button>
     </div>
+
     <div class="tab-spacer" />
-    <button class="ai-btn" title="Relation Graph" @click="navigateTo('relations')">
+    <button class="ai-btn" title="Relation Graph" @click="openRelationsTab">
       <Network :size="18" />
     </button>
     <button class="ai-btn" :class="{ active: aiActive }" @click="emit('toggle-ai')" title="AI Assistant">

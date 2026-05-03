@@ -114,8 +114,8 @@ test.describe('Relation Graph', () => {
 
   test('should render the relation graph page', async ({ page }) => {
     await expect(page.locator('.relation-graph')).toBeVisible()
-    await expect(page.locator('.graph-header')).toBeVisible()
-    await expect(page.locator('.header-title')).toContainText('Document Relations')
+    await expect(page.locator('.graph-area')).toBeVisible()
+    await expect(page.locator('.graph-search-input')).toBeVisible()
   })
 
   test('should render the force-graph canvas', async ({ page }) => {
@@ -135,18 +135,14 @@ test.describe('Relation Graph', () => {
   test('should select a node via canvas click and show details', async ({ page }) => {
     await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
 
-    // Click center of canvas to hit a node (force-layout centers nodes)
     const canvas = page.locator('.graph-container canvas')
     const box = await canvas.boundingBox()
     expect(box).not.toBeNull()
 
-    // Click the center area where nodes are likely positioned
     await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2)
     await page.waitForTimeout(200)
 
-    // Detail panel should now show selected document info
     const detailTitle = page.locator('.detail-title')
-    // One of the nodes should be selected (any of the 5 documents)
     const isVisible = await detailTitle.isVisible().catch(() => false)
     if (isVisible) {
       const text = await detailTitle.textContent()
@@ -186,25 +182,63 @@ test.describe('Relation Graph', () => {
     }
   })
 
-  test('should filter via search', async ({ page }) => {
+  test('should filter via search by title', async ({ page }) => {
     await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
 
-    const searchInput = page.locator('.search-input')
+    const searchInput = page.locator('.graph-search-input')
     await searchInput.fill('API')
+    await page.waitForTimeout(300)
 
-    // Graph should still render (with filtered data)
+    // Graph container should still be rendered
+    await expect(page.locator('.graph-container')).toBeVisible()
+    // Canvas may be hidden if filtered to zero, but here API matches one doc
+    const canvas = page.locator('.graph-container canvas')
+    await expect(canvas).toBeVisible()
+  })
+
+  test('should show no results overlay when search matches nothing', async ({ page }) => {
+    await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
+
+    const searchInput = page.locator('.graph-search-input')
+    await searchInput.fill('xyz-nonexistent')
+    await page.waitForTimeout(300)
+
+    // Should show no results overlay
+    await expect(page.locator('.graph-empty-overlay')).toBeVisible()
+    const text = await page.locator('.graph-empty-overlay').textContent()
+    expect(text).toContain('No matching documents')
+  })
+
+  test('should restore all nodes when search is cleared', async ({ page }) => {
+    await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
+
+    const searchInput = page.locator('.graph-search-input')
+    await searchInput.fill('xyz-nonexistent')
+    await page.waitForTimeout(300)
+    await expect(page.locator('.graph-empty-overlay')).toBeVisible()
+
+    // Clear search via clear button
+    await page.locator('.graph-search-clear').click()
+    await page.waitForTimeout(300)
+
+    // Should hide overlay and show canvas again
+    await expect(page.locator('.graph-empty-overlay')).toBeHidden()
     await expect(page.locator('.graph-container canvas')).toBeVisible()
   })
 
-  test('should go back to editor via back button', async ({ page }) => {
-    await page.locator('.back-btn').click()
-    await expect(page.locator('.relation-graph')).toBeHidden()
+  test('should hide zoom controls when no search results', async ({ page }) => {
+    await expect(page.locator('.zoom-controls')).toBeVisible()
+
+    const searchInput = page.locator('.graph-search-input')
+    await searchInput.fill('xyz-nonexistent')
+    await page.waitForTimeout(300)
+
+    await expect(page.locator('.zoom-controls')).toBeHidden()
   })
 
   test('should have search input functional', async ({ page }) => {
-    const searchInput = page.locator('.search-input')
+    const searchInput = page.locator('.graph-search-input')
     await expect(searchInput).toBeVisible()
     await expect(searchInput).toHaveAttribute('placeholder', 'Search documents...')
   })
 })
-

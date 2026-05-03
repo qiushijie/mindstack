@@ -8,30 +8,23 @@ test.describe('Settings', () => {
     await navigateTo(page, 'settings')
   })
 
-  test('should display general section by default', async ({ page }) => {
-    await expect(page.locator('.settings-content .section-title')).toContainText('General')
+  test('should display general section', async ({ page }) => {
+    const titles = page.locator('.settings-content .section-title')
+    await expect(titles.first()).toContainText('General')
   })
 
-  test('should switch to editor section', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'Editor' }).click()
-    await expect(page.locator('.settings-content .section-title')).toContainText('Editor')
+  test('should display editor section', async ({ page }) => {
+    const titles = page.locator('.settings-content .section-title')
+    await expect(titles.filter({ hasText: 'Editor' })).toBeVisible()
   })
 
-  test('should switch to git section', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'Git' }).click()
-    await expect(page.locator('.settings-content .section-title')).toContainText('Git')
+  test('should display git section', async ({ page }) => {
+    const titles = page.locator('.settings-content .section-title')
+    await expect(titles.filter({ hasText: 'Git' })).toBeVisible()
   })
 
-  test('should switch to about section', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'About' }).click()
-    await expect(page.locator('.settings-content .section-title')).toContainText('About')
-  })
-
-  test('should have a back button to return to editor', async ({ page }) => {
-    const backBtn = page.locator('.nav-back')
-    if (await backBtn.isVisible()) {
-      await backBtn.click()
-      await expect(page.locator('.editor-container')).toBeVisible()
-    }
+  test('should display about section', async ({ page }) => {
+    const titles = page.locator('.settings-content .section-title')
+    await expect(titles.filter({ hasText: 'About' })).toBeVisible()
   })
 })

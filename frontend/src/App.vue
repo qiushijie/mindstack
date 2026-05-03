@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { EventsOn, EventsOff, ClipboardGetText } from '../wailsjs/runtime/runtime'
 import { GetPendingOpenFile } from '../wailsjs/go/main/App'
 import AppSidebar from './components/AppSidebar.vue'
@@ -13,6 +14,7 @@ import { useNavigation } from './composables/useNavigation'
 import { provideEditorState } from './composables/useEditorState'
 import { useFileTree } from './composables/useFileTree'
 import { useSettings, applyTheme } from './composables/useSettings'
+import { openPageTab } from './composables/useTabs'
 
 const sidebarCollapsed = ref(false)
 const showAIChat = ref(false)
@@ -21,6 +23,7 @@ const { currentPage, navigateTo } = useNavigation()
 provideEditorState()
 const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab } = useFileTree()
 const { loadSettings, theme } = useSettings()
+const { t } = useI18n()
 
 onMounted(async () => {
   await loadSettings()
@@ -34,8 +37,14 @@ onMounted(async () => {
 
   EventsOff('menu:navigate')
   EventsOn('menu:navigate', (page: string) => {
-    if (page === 'settings' || page === 'editor' || page === 'relations') {
-      navigateTo(page)
+    if (page === 'settings') {
+      openPageTab('settings', t('settings.title'))
+      navigateTo('settings')
+    } else if (page === 'relations') {
+      openPageTab('relations', t('relationGraph.title'))
+      navigateTo('relations')
+    } else if (page === 'editor') {
+      navigateTo('editor')
     }
   })
 
@@ -112,24 +121,20 @@ onMounted(async () => {
 
 <template>
   <div class="app-layout">
-    <AppSidebar v-if="currentPage === 'editor'" v-model:collapsed="sidebarCollapsed" />
+    <AppSidebar v-model:collapsed="sidebarCollapsed" />
     <div class="app-content">
-      <template v-if="currentPage === 'editor'">
-        <AppTabBar
-          :ai-active="showAIChat"
-          @switch="switchToTab"
-          @close="closeFileTab"
-          @toggle-ai="showAIChat = !showAIChat"
-        />
-        <AppEditor />
-        <AppStatusBar />
-      </template>
+      <AppTabBar
+        :ai-active="showAIChat"
+        @switch="switchToTab"
+        @close="closeFileTab"
+        @toggle-ai="showAIChat = !showAIChat"
+      />
+      <AppEditor v-if="currentPage === 'editor'" />
       <AppSettings v-else-if="currentPage === 'settings'" />
-      <RelationGraph v-else-if="currentPage === 'relations'" @back="navigateTo('editor')" />
+      <RelationGraph v-else-if="currentPage === 'relations'" />
+      <AppStatusBar />
     </div>
-    <template v-if="currentPage === 'editor'">
-      <AIChatPanel v-if="showAIChat" @close="showAIChat = false" @open-file="selectFile" />
-    </template>
+    <AIChatPanel v-if="showAIChat" @close="showAIChat = false" @open-file="selectFile" />
   </div>
 </template>
 

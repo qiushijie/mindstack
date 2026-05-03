@@ -72,6 +72,7 @@ export default {
       desc: 'Git 동기화를 지원하는 개발자용 Markdown 편집기입니다.',
       build: 'Wails, Vue 3 및 Go로 빌드되었습니다.',
     },
+    searchPlaceholder: '설정 검색...',
     model: {
       namePlaceholder: 'Model name',
       apiUrl: 'API URL',
@@ -106,6 +107,8 @@ export default {
     words: '단어',
     chars: '문자',
     encoding: 'UTF-8',
+    settings: '설정',
+    graph: '그래프',
   },
   imageDialog: {
     insertTitle: '이미지 삽입',
@@ -214,5 +217,6 @@ export default {
     outgoing: '발신',
     incoming: '수신',
     openInEditor: '편집기에서 열기',
+    noSearchResults: '일치하는 문서를 찾을 수 없습니다',
   },
 }

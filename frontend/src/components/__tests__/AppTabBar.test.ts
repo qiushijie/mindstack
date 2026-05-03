@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ref, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import AppTabBar from '../AppTabBar.vue'
+import { openPageTab } from '../../composables/useTabs'
+
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({ t: (key: string) => key }),
+}))
 
 // Mock lucide-vue-next icons
 vi.mock('lucide-vue-next', () => ({
@@ -9,6 +14,7 @@ vi.mock('lucide-vue-next', () => ({
   X: { template: '<span />', props: ['size'] },
   MessageSquare: { template: '<span />', props: ['size'] },
   Network: { template: '<span />', props: ['size'] },
+  Settings: { template: '<span />', props: ['size'] },
 }))
 
 // Shared reactive state for useTabs mock
@@ -20,6 +26,8 @@ vi.mock('../../composables/useTabs', () => ({
     tabs: mockTabs,
     activeTabIndex: mockActiveTabIndex,
   }),
+  isPageTab: (path: string) => path === 'settings' || path === 'relations',
+  openPageTab: vi.fn(),
 }))
 
 describe('AppTabBar', () => {
@@ -169,6 +177,33 @@ describe('AppTabBar', () => {
       await wrapper.find('[title="AI Assistant"]').trigger('click')
 
       expect(wrapper.emitted('toggle-ai')).toHaveLength(1)
+    })
+
+    it('opens relations page tab when clicking relation graph button', async () => {
+      const wrapper = mountComponent()
+
+      await wrapper.find('[title="Relation Graph"]').trigger('click')
+
+      expect(openPageTab).toHaveBeenCalledTimes(1)
+      expect(openPageTab).toHaveBeenCalledWith('relations', 'relationGraph.title')
+    })
+  })
+
+  describe('page tabs', () => {
+    it('renders page tabs alongside file tabs', async () => {
+      mockTabs.value = [
+        { path: '/a.md', title: 'a' },
+        { path: 'settings', title: 'Settings' },
+      ]
+      mockActiveTabIndex.value = 0
+
+      const wrapper = mountComponent()
+      await nextTick()
+
+      const items = wrapper.findAll('.tab-item')
+      expect(items).toHaveLength(2)
+      expect(items[0].find('.tab-title').text()).toBe('a')
+      expect(items[1].find('.tab-title').text()).toBe('Settings')
     })
   })
 })

@@ -8,7 +8,6 @@ import { useFileTree } from '../composables/useFileTree'
 const { t } = useI18n()
 
 const emit = defineEmits<{
-  back: []
   'open-file': [path: string]
 }>()
 
@@ -27,6 +26,7 @@ const { selectFile, rootPath } = useFileTree()
 
 const selectedPath = ref<string | null>(null)
 const searchQuery = ref('')
+const searchFocused = ref(false)
 const containerRef = ref<HTMLElement | null>(null)
 const graphError = ref('')
 const zoomLevel = ref(1)
@@ -109,10 +109,6 @@ function selectNode(path: string) {
   selectedPath.value = selectedPath.value === path ? null : path
 }
 
-function goBack() {
-  emit('back')
-}
-
 const zoomPercent = computed(() => `${Math.round(zoomLevel.value * 100)}%`)
 
 function zoomIn() {
@@ -135,7 +131,6 @@ async function openFile(path: string) {
     ? rootPath.value.replace(/\/$/, '') + '/' + path
     : path
   await selectFile(fullPath)
-  emit('back')
 }
 
 function getOutgoingScore(rel: RelationEdge): number | null {
@@ -475,40 +470,45 @@ onUnmounted(() => {
 
 <template>
   <div class="relation-graph">
-    <!-- Header -->
-    <div class="graph-header">
-      <button class="back-btn" @click="goBack">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 12H5M12 19l-7-7 7-7"/>
-        </svg>
-      </button>
-      <span class="header-title">{{ t('relationGraph.title') }}</span>
-      <div class="header-spacer" />
-      <div class="search-box">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-        </svg>
-        <input
-          v-model="searchQuery"
-          type="text"
-          class="search-input"
-          :placeholder="t('relationGraph.searchPlaceholder')"
-        />
-      </div>
-    </div>
-
     <!-- Content -->
     <div class="graph-content">
       <!-- Graph Area -->
       <div class="graph-area">
+        <div class="graph-search-box" :class="{ focused: searchFocused }">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="graph-search-input"
+            :placeholder="t('relationGraph.searchPlaceholder')"
+            @focus="searchFocused = true"
+            @blur="searchFocused = false"
+          />
+          <button
+            v-if="searchQuery"
+            class="graph-search-clear"
+            @click="searchQuery = ''"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
         <div v-if="graphError" class="graph-error">{{ graphError }}</div>
         <div v-else-if="loading" class="graph-loading">{{ t('relationGraph.loading') }}</div>
         <div v-else-if="error" class="graph-error">{{ error }}</div>
         <div v-else-if="nodes.length === 0" class="graph-empty">
           {{ t('relationGraph.empty') }}
         </div>
-        <div v-else ref="containerRef" class="graph-container" />
-        <div v-if="graphReady" class="zoom-controls">
+        <div v-else class="graph-wrapper">
+          <div ref="containerRef" class="graph-container" />
+          <div v-if="filteredNodes.length === 0" class="graph-empty-overlay">
+            {{ t('relationGraph.noSearchResults') }}
+          </div>
+        </div>
+        <div v-if="graphReady && filteredNodes.length > 0" class="zoom-controls">
           <button class="zoom-btn" @click="zoomIn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 12h14M12 5v14"/>
@@ -623,71 +623,63 @@ onUnmounted(() => {
   background-color: var(--surface-primary);
 }
 
-/* Header */
-.graph-header {
-  display: flex;
-  align-items: center;
-  height: 48px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--border-subtle);
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: none;
-  color: var(--foreground-secondary);
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.back-btn:hover {
-  background-color: var(--surface-hover);
-}
-
-.header-title {
-  font-size: var(--font-size-lg);
-  font-weight: 600;
-  color: var(--foreground-primary);
-}
-
-.header-spacer {
-  flex: 1;
-}
-
-.search-box {
+/* Search Box */
+.graph-search-box {
+  position: absolute;
+  top: 16px;
+  right: 16px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 4px 10px;
   border-radius: 6px;
-  background-color: var(--surface-secondary);
+  background-color: var(--surface-primary);
   border: 1px solid var(--border-subtle);
+  z-index: 10;
 }
 
-.search-box svg {
+.graph-search-box svg {
   color: var(--foreground-tertiary);
   flex-shrink: 0;
 }
 
-.search-input {
+.graph-search-input {
   border: none;
   background: none;
   outline: none;
   font-size: var(--font-size-sm);
   color: var(--foreground-primary);
-  width: 160px;
+  width: 130px;
   font-family: var(--font-sans);
 }
 
-.search-input::placeholder {
+.graph-search-input::placeholder {
   color: var(--foreground-tertiary);
+}
+
+.graph-search-box.focused {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--accent-primary);
+}
+
+.graph-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--foreground-tertiary);
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.graph-search-clear:hover {
+  color: var(--foreground-primary);
+  background-color: var(--surface-hover);
 }
 
 /* Content Layout */
@@ -705,9 +697,26 @@ onUnmounted(() => {
   background-color: var(--surface-secondary);
 }
 
+.graph-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .graph-container {
   width: 100%;
   height: 100%;
+}
+
+.graph-empty-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--foreground-tertiary);
+  font-size: var(--font-size-md);
+  background-color: var(--surface-secondary);
 }
 
 .graph-loading,

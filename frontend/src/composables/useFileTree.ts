@@ -19,7 +19,8 @@ import { useSettings } from './useSettings'
 import { t } from '../i18n'
 import { useEditorState } from './useEditorState'
 import { setCurrentFilePath, setFileServerPort } from '../extensions/currentFilePath'
-import { useTabs } from './useTabs'
+import { useTabs, isPageTab } from './useTabs'
+import { useNavigation, type PageName } from './useNavigation'
 
 export async function resolveUniqueFilePath(
   dirPath: string,
@@ -150,6 +151,7 @@ if (import.meta.env.DEV) {
 export function useFileTree() {
   const { autoSave, autoSaveDelay } = useSettings()
   const { editorView: sharedView } = useEditorState()
+  const { navigateTo } = useNavigation()
 
   const folderName = computed(() => {
     if (!rootPath.value) return 'MindStack'
@@ -206,6 +208,7 @@ export function useFileTree() {
           openTab(config.lastFilePath)
           tabContentCache.set(config.lastFilePath, content)
           applyContent(config.lastFilePath, content)
+          navigateTo('editor')
         }
       }
     } catch {
@@ -231,6 +234,7 @@ export function useFileTree() {
     treeData.value = entriesToNodes(entries)
     await saveAppConfig()
     AddRecentEntry(path, true)
+    navigateTo('editor')
   }
 
   async function openFile() {
@@ -248,6 +252,7 @@ export function useFileTree() {
     openTab(path)
     tabContentCache.set(path, content)
     applyContent(path, content)
+    navigateTo('editor')
     await saveAppConfig()
     AddRecentEntry(path, false)
   }
@@ -264,6 +269,7 @@ export function useFileTree() {
       tabContentCache.set(path, content)
     }
     applyContent(path, content)
+    navigateTo('editor')
     await saveAppConfig()
     AddRecentEntry(path, false)
   }
@@ -303,6 +309,7 @@ export function useFileTree() {
     if (editorAdapter) {
       editorAdapter.setContent('')
     }
+    navigateTo('editor')
   }
 
   function markDirty() {
@@ -347,6 +354,7 @@ export function useFileTree() {
     treeData.value = entriesToNodes(entries)
     await saveAppConfig()
     AddRecentEntry(path, true)
+    navigateTo('editor')
   }
 
   async function openRecentFile(path: string) {
@@ -359,6 +367,7 @@ export function useFileTree() {
       tabContentCache.set(path, content)
     }
     applyContent(path, content)
+    navigateTo('editor')
     await saveAppConfig()
     AddRecentEntry(path, false)
   }
@@ -371,9 +380,16 @@ export function useFileTree() {
 
     switchTab(index)
 
-    const newPath = tabs.value[index].path
+    const tab = tabs.value[index]
+    if (isPageTab(tab.path)) {
+      navigateTo(tab.path as PageName)
+      return
+    }
+
+    const newPath = tab.path
     const content = await loadTabContent(newPath)
     applyContent(newPath, content)
+    navigateTo('editor')
     await saveAppConfig()
   }
 
@@ -385,14 +401,21 @@ export function useFileTree() {
     }
 
     const path = tabs.value[index].path
-    tabContentCache.delete(path)
-    dirtyTabs.delete(path)
+    if (!isPageTab(path)) {
+      tabContentCache.delete(path)
+      dirtyTabs.delete(path)
+    }
 
     const newPath = closeTab(index)
 
     if (newPath) {
-      const content = await loadTabContent(newPath)
-      applyContent(newPath, content)
+      if (isPageTab(newPath)) {
+        navigateTo(newPath as PageName)
+      } else {
+        const content = await loadTabContent(newPath)
+        applyContent(newPath, content)
+        navigateTo('editor')
+      }
     } else {
       selectedFilePath.value = ''
       selectedFileContent.value = ''

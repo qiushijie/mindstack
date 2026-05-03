@@ -1,16 +1,37 @@
 import { ref, computed } from 'vue'
+import type { PageName } from './useNavigation'
 
 export interface Tab {
   path: string
   title: string
 }
 
+const PAGE_TABS = new Set<string>(['settings', 'relations'])
+
 const tabs = ref<Tab[]>([])
 const activeTabIndex = ref(-1)
 
+export function isPageTab(path: string): boolean {
+  return PAGE_TABS.has(path)
+}
+
+export function openPageTab(pageName: PageName, title: string): { isNew: boolean; index: number } {
+  const existing = tabs.value.findIndex(t => t.path === pageName)
+  if (existing >= 0) {
+    activeTabIndex.value = existing
+    return { isNew: false, index: existing }
+  }
+  tabs.value.push({ path: pageName, title })
+  activeTabIndex.value = tabs.value.length - 1
+  return { isNew: true, index: activeTabIndex.value }
+}
+
 export function useTabs() {
   const activeTab = computed(() => tabs.value[activeTabIndex.value] ?? null)
-  const activeFilePath = computed(() => activeTab.value?.path ?? '')
+  const activeFilePath = computed(() => {
+    const tab = activeTab.value
+    return tab && !isPageTab(tab.path) ? tab.path : ''
+  })
 
   function openTab(path: string): { isNew: boolean; index: number } {
     const existing = tabs.value.findIndex(t => t.path === path)

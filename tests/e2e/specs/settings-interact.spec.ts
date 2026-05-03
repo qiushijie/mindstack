@@ -22,14 +22,12 @@ test.describe('Settings Interactions', () => {
   })
 
   test('should show Auto Save toggle in General section', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'General' }).click()
     const autoSaveRow = page.locator('.setting-row').filter({ hasText: 'Auto Save' })
     const toggle = autoSaveRow.locator('.toggle')
     await expect(toggle).toBeVisible()
   })
 
   test('should toggle Auto Save on and off', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'General' }).click()
     const autoSaveRow = page.locator('.setting-row').filter({ hasText: 'Auto Save' })
     const toggle = autoSaveRow.locator('.toggle')
     const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
@@ -43,7 +41,6 @@ test.describe('Settings Interactions', () => {
   })
 
   test('should toggle Line Numbers', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'Editor' }).click()
     const row = page.locator('.setting-row').filter({ hasText: 'Line Numbers' })
     const toggle = row.locator('.toggle')
     const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
@@ -57,7 +54,6 @@ test.describe('Settings Interactions', () => {
   })
 
   test('should toggle Word Wrap', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'Editor' }).click()
     const row = page.locator('.setting-row').filter({ hasText: 'Word Wrap' })
     const toggle = row.locator('.toggle')
     const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
@@ -71,14 +67,12 @@ test.describe('Settings Interactions', () => {
   })
 
   test('should show Auto Commit toggle in Git section', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'Git' }).click()
     const autoCommitRow = page.locator('.setting-row').filter({ hasText: 'Auto Commit' })
     const toggle = autoCommitRow.locator('.toggle')
     await expect(toggle).toBeVisible()
   })
 
   test('should toggle Auto Commit', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'Git' }).click()
     const row = page.locator('.setting-row').filter({ hasText: 'Auto Commit' })
     const toggle = row.locator('.toggle')
     const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
@@ -92,8 +86,9 @@ test.describe('Settings Interactions', () => {
   })
 
   test('should show app info in About section', async ({ page }) => {
-    await page.locator('.nav-item').filter({ hasText: 'About' }).click()
     const content = page.locator('.settings-content')
     await expect(content).not.toBeEmpty()
+    const aboutName = page.locator('.about-name')
+    await expect(aboutName).toBeVisible()
   })
 })

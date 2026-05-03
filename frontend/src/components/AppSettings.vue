@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Settings,
@@ -8,35 +8,90 @@ import {
   GitBranch,
   Info,
   ChevronDown,
-  ArrowLeft,
   Eye,
   EyeOff,
   Trash2,
   Plus,
+  Search,
+  X,
 } from 'lucide-vue-next'
-import { useNavigation } from '../composables/useNavigation'
 import { useSettings, applyTheme, SUPPORTED_MODELS } from '../composables/useSettings'
 import type { SupportedModel } from '../composables/useSettings'
+import type { Locale } from '../i18n'
 
 const { t } = useI18n()
-const { navigateTo } = useNavigation()
 
-type SettingsSection = 'general' | 'editor' | 'model' | 'git' | 'about'
+const searchQuery = ref('')
 
-const activeSection = ref<SettingsSection>('general')
-
-interface NavItem {
-  key: SettingsSection
-  icon: typeof Settings
+function matchSearch(text: string): boolean {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return true
+  return text.toLowerCase().includes(q)
 }
 
-const navItems: NavItem[] = [
-  { key: 'general', icon: Settings },
-  { key: 'editor', icon: Type },
-  { key: 'model', icon: Sparkles },
-  { key: 'git', icon: GitBranch },
-  { key: 'about', icon: Info },
-]
+const generalKeywords = computed(() => [
+  t('settings.section.general'),
+  t('settings.group.appearance'),
+  t('settings.label.theme'),
+  t('settings.desc.theme'),
+  t('settings.theme.light'),
+  t('settings.theme.dark'),
+  t('settings.label.language'),
+  t('settings.desc.language'),
+  t('settings.group.saving'),
+  t('settings.label.autoSave'),
+  t('settings.desc.autoSave'),
+  t('settings.label.autoSaveDelay'),
+  t('settings.desc.autoSaveDelay'),
+].join(' '))
+
+const editorKeywords = computed(() => [
+  t('settings.section.editor'),
+  t('settings.group.font'),
+  t('settings.label.fontFamily'),
+  t('settings.desc.fontFamily'),
+  t('settings.label.fontSize'),
+  t('settings.desc.fontSize'),
+  t('settings.group.display'),
+  t('settings.label.tabSize'),
+  t('settings.desc.tabSize'),
+  t('settings.label.lineNumbers'),
+  t('settings.desc.lineNumbers'),
+  t('settings.label.wordWrap'),
+  t('settings.desc.wordWrap'),
+].join(' '))
+
+const modelKeywords = computed(() => [
+  t('settings.section.model'),
+  t('settings.group.aiModels'),
+  t('settings.model.apiUrl'),
+  t('settings.model.apiUrlPlaceholder'),
+  t('settings.model.apiKey'),
+  t('settings.model.apiKeyPlaceholder'),
+  t('settings.model.active'),
+  t('settings.model.inactive'),
+  t('settings.model.add'),
+].join(' '))
+
+const gitKeywords = computed(() => [
+  t('settings.section.git'),
+  t('settings.group.versionControl'),
+  t('settings.label.defaultBranch'),
+  t('settings.desc.defaultBranch'),
+  t('settings.label.autoCommit'),
+  t('settings.desc.autoCommit'),
+  t('settings.label.autoPull'),
+  t('settings.desc.autoPull'),
+].join(' '))
+
+const aboutKeywords = computed(() => [
+  t('settings.section.about'),
+  t('settings.group.information'),
+  t('settings.about.name'),
+  t('settings.about.version'),
+  t('settings.about.desc'),
+  t('settings.about.build'),
+].join(' '))
 
 const { autoSave, autoSaveDelay, locale, theme, models, activeModelId, showKeyIds, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
 const fontFamily = ref('Inter')
@@ -48,6 +103,7 @@ const defaultBranch = ref('main')
 const autoCommit = ref(false)
 const autoPull = ref(false)
 
+const searchFocused = ref(false)
 const langOpen = ref(false)
 const modelDropdownOpen = ref('')
 
@@ -65,7 +121,6 @@ function selectModelCardModel(id: string, value: string) {
 function getModelLabel(model: string): string {
   return SUPPORTED_MODELS.find(m => m.value === model)?.label ?? model
 }
-import type { Locale } from '../i18n'
 
 const locales: { key: Locale; labelKey: string }[] = [
   { key: 'en', labelKey: 'settings.langName.en' },
@@ -87,36 +142,25 @@ async function selectLocale(key: Locale) {
 
 <template>
   <div class="settings">
-    <aside class="settings-nav">
-      <div class="nav-header">
-        <span class="nav-title">{{ t('settings.title') }}</span>
-      </div>
-      <div class="nav-divider" />
-      <div class="nav-list">
-        <button
-          v-for="item in navItems"
-          :key="item.key"
-          class="nav-item"
-          :class="{ active: activeSection === item.key }"
-          @click="activeSection = item.key"
-        >
-          <component :is="item.icon" :size="16" class="nav-item-icon" />
-          <span class="nav-item-text">{{ t(`settings.nav.${item.key}`) }}</span>
-        </button>
-      </div>
-      <div class="nav-spacer" />
-      <div class="nav-back-divider" />
-      <div class="nav-back-wrap">
-        <button class="nav-back" @click="navigateTo('editor')">
-          <ArrowLeft :size="20" />
-        </button>
-      </div>
-    </aside>
-
     <div class="settings-content">
       <div class="content-scroll">
+        <div class="settings-search-box" :class="{ focused: searchFocused }">
+          <Search :size="14" class="settings-search-icon" />
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="settings-search-input"
+            :placeholder="t('settings.searchPlaceholder')"
+            @focus="searchFocused = true"
+            @blur="searchFocused = false"
+          />
+          <button v-if="searchQuery" class="settings-search-clear" @click="searchQuery = ''">
+            <X :size="14" />
+          </button>
+        </div>
+
         <!-- General -->
-        <template v-if="activeSection === 'general'">
+        <div v-show="matchSearch(generalKeywords)" class="settings-section">
           <h1 class="section-title">{{ t('settings.section.general') }}</h1>
 
           <div class="settings-group">
@@ -193,10 +237,10 @@ async function selectLocale(key: Locale) {
               </div>
             </div>
           </div>
-        </template>
+        </div>
 
         <!-- Editor -->
-        <template v-if="activeSection === 'editor'">
+        <div v-show="matchSearch(editorKeywords)" class="settings-section">
           <h1 class="section-title">{{ t('settings.section.editor') }}</h1>
 
           <div class="settings-group">
@@ -256,10 +300,10 @@ async function selectLocale(key: Locale) {
               </button>
             </div>
           </div>
-        </template>
+        </div>
 
         <!-- Model -->
-        <template v-if="activeSection === 'model'">
+        <div v-show="matchSearch(modelKeywords)" class="settings-section">
           <h1 class="section-title">{{ t('settings.section.model') }}</h1>
 
           <div class="settings-group">
@@ -334,10 +378,10 @@ async function selectLocale(key: Locale) {
               <span>{{ t('settings.model.add') }}</span>
             </button>
           </div>
-        </template>
+        </div>
 
         <!-- Git -->
-        <template v-if="activeSection === 'git'">
+        <div v-show="matchSearch(gitKeywords)" class="settings-section">
           <h1 class="section-title">{{ t('settings.section.git') }}</h1>
 
           <div class="settings-group">
@@ -378,10 +422,10 @@ async function selectLocale(key: Locale) {
               </button>
             </div>
           </div>
-        </template>
+        </div>
 
         <!-- About -->
-        <template v-if="activeSection === 'about'">
+        <div v-show="matchSearch(aboutKeywords)" class="settings-section">
           <h1 class="section-title">{{ t('settings.section.about') }}</h1>
 
           <div class="settings-group">
@@ -400,7 +444,7 @@ async function selectLocale(key: Locale) {
               </p>
             </div>
           </div>
-        </template>
+        </div>
       </div>
     </div>
   </div>
@@ -410,110 +454,9 @@ async function selectLocale(key: Locale) {
 .settings {
   flex: 1;
   display: flex;
+  flex-direction: column;
   min-height: 0;
-}
-
-/* Settings Nav */
-.settings-nav {
-  width: 220px;
-  background-color: var(--surface-secondary);
-  border-right: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  user-select: none;
-  flex-shrink: 0;
-}
-
-.nav-header {
-  height: 48px;
-  padding: 0 20px;
-  display: flex;
-  align-items: center;
-}
-
-.nav-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--foreground-primary);
-}
-
-.nav-divider {
-  height: 1px;
-  background-color: var(--border-subtle);
-}
-
-.nav-list {
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.nav-item {
-  height: 32px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--foreground-secondary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-}
-
-.nav-item:hover {
-  background-color: var(--surface-hover);
-}
-
-.nav-item.active {
-  background-color: var(--accent-primary);
-  color: var(--foreground-inverse);
-}
-
-.nav-item.active .nav-item-icon {
-  color: var(--foreground-inverse);
-}
-
-.nav-item-icon {
-  flex-shrink: 0;
-  color: var(--foreground-tertiary);
-}
-
-.nav-item-text {
-  line-height: 1;
-}
-
-.nav-spacer {
-  flex: 1;
-}
-
-.nav-back-divider {
-  height: 1px;
-  background-color: var(--border-subtle);
-}
-
-.nav-back-wrap {
-  padding: 8px;
-}
-
-.nav-back {
-  width: 100%;
-  height: 32px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--foreground-secondary);
-}
-
-.nav-back:hover {
-  background-color: var(--surface-hover);
+  overflow: hidden;
 }
 
 /* Settings Content */
@@ -527,6 +470,67 @@ async function selectLocale(key: Locale) {
   height: 100%;
   overflow-y: auto;
   padding: 32px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.settings-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background-color: var(--surface-secondary);
+  border: 1px solid var(--border-subtle);
+  width: 200px;
+  align-self: flex-end;
+  flex-shrink: 0;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.settings-search-box.focused {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--accent-primary);
+}
+
+.settings-search-icon {
+  color: var(--foreground-tertiary);
+  flex-shrink: 0;
+}
+
+.settings-search-input {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 13px;
+  color: var(--foreground-primary);
+  font-family: var(--font-sans);
+  min-width: 0;
+}
+
+.settings-search-input::placeholder {
+  color: var(--foreground-tertiary);
+}
+
+.settings-search-clear {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--foreground-tertiary);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settings-search-clear:hover {
+  color: var(--foreground-secondary);
+}
+
+.settings-section {
   display: flex;
   flex-direction: column;
   gap: 32px;

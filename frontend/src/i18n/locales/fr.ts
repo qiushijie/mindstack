@@ -72,6 +72,7 @@ export default {
       desc: 'Un éditeur Markdown axé sur les développeurs avec synchronisation Git.',
       build: 'Construit avec Wails, Vue 3 et Go.',
     },
+    searchPlaceholder: 'Rechercher dans les paramètres...',
     model: {
       namePlaceholder: 'Model name',
       apiUrl: 'API URL',
@@ -106,6 +107,8 @@ export default {
     words: 'mots',
     chars: 'caractères',
     encoding: 'UTF-8',
+    settings: 'Paramètres',
+    graph: 'Graphe',
   },
   imageDialog: {
     insertTitle: 'Insérer une image',
@@ -214,5 +217,6 @@ export default {
     outgoing: 'Sortant',
     incoming: 'Entrant',
     openInEditor: 'Ouvrir dans l\'éditeur',
+    noSearchResults: 'Aucun document correspondant trouvé',
   },
 }

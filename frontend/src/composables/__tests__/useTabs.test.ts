@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useTabs } from '../useTabs'
+import { useTabs, isPageTab, openPageTab } from '../useTabs'
 
 // useTabs uses module-level state; reset between tests via clearTabs
 describe('useTabs', () => {
@@ -249,6 +249,87 @@ describe('useTabs', () => {
       const { activeFilePath } = useTabs()
 
       expect(activeFilePath.value).toBe('')
+    })
+  })
+
+  describe('isPageTab', () => {
+    it('returns true for settings page', () => {
+      expect(isPageTab('settings')).toBe(true)
+    })
+
+    it('returns true for relations page', () => {
+      expect(isPageTab('relations')).toBe(true)
+    })
+
+    it('returns false for file paths', () => {
+      expect(isPageTab('/root/doc.md')).toBe(false)
+      expect(isPageTab('editor')).toBe(false)
+    })
+  })
+
+  describe('openPageTab', () => {
+    it('creates a new page tab and sets it active', () => {
+      const { tabs, activeTabIndex } = useTabs()
+
+      const result = openPageTab('settings', 'Settings')
+
+      expect(result).toEqual({ isNew: true, index: 0 })
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0]).toEqual({ path: 'settings', title: 'Settings' })
+      expect(activeTabIndex.value).toBe(0)
+    })
+
+    it('switches to existing page tab instead of creating duplicate', () => {
+      const { tabs, activeTabIndex } = useTabs()
+
+      openPageTab('settings', 'Settings')
+      openPageTab('relations', 'Relations')
+      expect(tabs.value).toHaveLength(2)
+      expect(activeTabIndex.value).toBe(1)
+
+      const result = openPageTab('settings', 'Settings')
+
+      expect(result).toEqual({ isNew: false, index: 0 })
+      expect(tabs.value).toHaveLength(2)
+      expect(activeTabIndex.value).toBe(0)
+    })
+
+    it('creates multiple distinct page tabs', () => {
+      const { tabs, activeTabIndex } = useTabs()
+
+      openPageTab('settings', 'Settings')
+      openPageTab('relations', 'Relations')
+
+      expect(tabs.value).toHaveLength(2)
+      expect(activeTabIndex.value).toBe(1)
+      expect(tabs.value.map(t => t.path)).toEqual(['settings', 'relations'])
+    })
+  })
+
+  describe('activeFilePath with page tabs', () => {
+    it('returns empty string when active tab is a page tab', () => {
+      const { activeFilePath } = useTabs()
+
+      openPageTab('settings', 'Settings')
+
+      expect(activeFilePath.value).toBe('')
+    })
+
+    it('returns empty string when active tab is relations page', () => {
+      const { activeFilePath } = useTabs()
+
+      openPageTab('relations', 'Relations')
+
+      expect(activeFilePath.value).toBe('')
+    })
+
+    it('returns file path after switching from page tab to file tab', () => {
+      const { activeFilePath, openTab } = useTabs()
+
+      openPageTab('settings', 'Settings')
+      openTab('/root/doc.md')
+
+      expect(activeFilePath.value).toBe('/root/doc.md')
     })
   })
 
