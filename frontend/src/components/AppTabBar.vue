@@ -1,5 +1,6 @@
 <script lang="ts" setup>
-import { FileText, X, Settings, Minus, Square } from 'lucide-vue-next'
+import { ref, watch, nextTick } from 'vue'
+import { FileText, X, Settings, Minus, Square, Network } from 'lucide-vue-next'
 import { useTabs, isPageTab } from '../composables/useTabs'
 import { useSettings } from '../composables/useSettings'
 import {
@@ -15,6 +16,20 @@ const emit = defineEmits<{
 
 const { tabs, activeTabIndex } = useTabs()
 const { uiPlatform } = useSettings()
+
+const tabBarRef = ref<HTMLElement | null>(null)
+
+function scrollActiveTabIntoView() {
+  if (!tabBarRef.value) return
+  const el = tabBarRef.value.children[activeTabIndex.value] as HTMLElement | undefined
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+  }
+}
+
+watch(activeTabIndex, () => {
+  nextTick(scrollActiveTabIntoView)
+})
 
 function handleTabClick(index: number) {
   if (index !== activeTabIndex.value) {
@@ -41,7 +56,7 @@ async function onWindowToggleMaximise() {
 </script>
 
 <template>
-  <div class="tab-bar">
+  <div ref="tabBarRef" class="tab-bar">
     <div
       v-for="(tab, index) in tabs"
       :key="tab.path"
@@ -79,7 +94,13 @@ async function onWindowToggleMaximise() {
   background-color: var(--surface-secondary);
   padding: 0 8px;
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
   --wails-draggable: drag;
+}
+
+.tab-bar::-webkit-scrollbar {
+  display: none;
 }
 
 .tab-item {
