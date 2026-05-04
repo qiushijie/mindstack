@@ -28,9 +28,13 @@ export function GetFileServerPort():Promise<number>;
 
 export function GetPendingOpenFile():Promise<string>;
 
+export function GetPlatform():Promise<string>;
+
 export function GetRootPath():Promise<string>;
 
 export function HandleOpenFile(arg1:string):Promise<void>;
+
+export function IsFullscreen():Promise<boolean>;
 
 export function LoadConfig():Promise<string>;
 
@@ -61,3 +65,13 @@ export function SetWorkspaceRoot(arg1:string):Promise<void>;
 export function StreamChat(arg1:string):Promise<string>;
 
 export function SyncWorkspace():Promise<string>;
+
+export function WindowClose():Promise<void>;
+
+export function WindowIsMaximised():Promise<boolean>;
+
+export function WindowMaximise():Promise<void>;
+
+export function WindowMinimise():Promise<void>;
+
+export function WindowToggleMaximise():Promise<void>;

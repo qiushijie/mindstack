@@ -1413,6 +1413,19 @@
                   "iconFontName": "message-square",
                   "iconFontFamily": "lucide",
                   "fill": "$foreground-tertiary"
+                },
+                {
+                  "type": "icon_font",
+                  "id": "QWUYB",
+                  "layoutPosition": "absolute",
+                  "x": 1112,
+                  "y": 8,
+                  "name": "relationBtn",
+                  "width": 20,
+                  "height": 20,
+                  "iconFontName": "network",
+                  "iconFontFamily": "lucide",
+                  "fill": "$foreground-tertiary"
                 }
               ]
             },

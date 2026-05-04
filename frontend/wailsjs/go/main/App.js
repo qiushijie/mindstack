@@ -54,12 +54,20 @@ export function GetPendingOpenFile() {
   return window['go']['main']['App']['GetPendingOpenFile']();
 }
 
+export function GetPlatform() {
+  return window['go']['main']['App']['GetPlatform']();
+}
+
 export function GetRootPath() {
   return window['go']['main']['App']['GetRootPath']();
 }
 
 export function HandleOpenFile(arg1) {
   return window['go']['main']['App']['HandleOpenFile'](arg1);
+}
+
+export function IsFullscreen() {
+  return window['go']['main']['App']['IsFullscreen']();
 }
 
 export function LoadConfig() {
@@ -120,4 +128,24 @@ export function StreamChat(arg1) {
 
 export function SyncWorkspace() {
   return window['go']['main']['App']['SyncWorkspace']();
+}
+
+export function WindowClose() {
+  return window['go']['main']['App']['WindowClose']();
+}
+
+export function WindowIsMaximised() {
+  return window['go']['main']['App']['WindowIsMaximised']();
+}
+
+export function WindowMaximise() {
+  return window['go']['main']['App']['WindowMaximise']();
+}
+
+export function WindowMinimise() {
+  return window['go']['main']['App']['WindowMinimise']();
+}
+
+export function WindowToggleMaximise() {
+  return window['go']['main']['App']['WindowToggleMaximise']();
 }

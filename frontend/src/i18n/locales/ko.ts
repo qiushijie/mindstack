@@ -14,6 +14,7 @@ export default {
       model: '모델',
       git: 'Git',
       about: '정보',
+      debug: 'Debug',
     },
     group: {
       appearance: '외형',
@@ -23,6 +24,7 @@ export default {
       versionControl: '버전 관리',
       aiModels: 'AI 모델',
       information: '정보',
+      debug: 'Developer',
     },
     label: {
       theme: '테마',
@@ -37,6 +39,7 @@ export default {
       defaultBranch: '기본 브랜치',
       autoCommit: '자동 커밋',
       autoPull: '자동 풀',
+      platform: 'UI Platform',
     },
     desc: {
       theme: '라이트 모드와 다크 모드 중 선택',
@@ -51,7 +54,13 @@ export default {
       defaultBranch: '새 저장소의 기본 브랜치 이름',
       autoCommit: '저장 시 변경 사항을 자동으로 커밋',
       autoPull: '시작 시 변경 사항을 자동으로 풀',
+      platform: 'Switch UI style to preview different platforms',
     },
+    platform: {
+      macos: 'macOS',
+      windows: 'Windows',
+    },
+    actualPlatform: 'Actual',
     theme: {
       light: '라이트',
       dark: '다크',

@@ -20,6 +20,7 @@ g.__testCopiedFilePath = null
 
 // Mock vue-i18n
 vi.mock('vue-i18n', () => ({
+  createI18n: () => ({}),
   useI18n: () => ({
     t: vi.fn((key: string) => key),
   }),
@@ -48,6 +49,12 @@ const mockToggleDir = vi.fn()
 const mockOpenFolder = vi.fn()
 const mockRefreshTree = vi.fn().mockResolvedValue(undefined)
 const mockRefreshDir = vi.fn().mockResolvedValue(undefined)
+
+vi.mock('../../composables/useSettings', () => ({
+  useSettings: () => ({
+    uiPlatform: ref('macos'),
+  }),
+}))
 
 vi.mock('../../composables/useFileTree', () => ({
   useFileTree: () => ({
@@ -149,7 +156,7 @@ describe('AppSidebar', () => {
     it('renders expanded by default', () => {
       const wrapper = mountComponent()
       expect(wrapper.find('.sidebar').classes()).not.toContain('collapsed')
-      expect(wrapper.find('.sidebar-logo').exists()).toBe(true)
+      expect(wrapper.find('.sidebar-header').exists()).toBe(true)
       expect(wrapper.find('.sidebar-search').exists()).toBe(true)
       expect(wrapper.find('.sidebar-tree').exists()).toBe(true)
       wrapper.unmount()
@@ -158,7 +165,6 @@ describe('AppSidebar', () => {
     it('renders collapsed when collapsed=true', () => {
       const wrapper = mountComponent({ collapsed: true })
       expect(wrapper.find('.sidebar').classes()).toContain('collapsed')
-      expect(wrapper.find('.sidebar-logo').exists()).toBe(false)
       expect(wrapper.find('.sidebar-search').exists()).toBe(false)
       expect(wrapper.find('.sidebar-tree').exists()).toBe(false)
       wrapper.unmount()
@@ -194,9 +200,10 @@ describe('AppSidebar', () => {
       wrapper.unmount()
     })
 
-    it('hides folderName when collapsed', () => {
+    it('hides search and tree when collapsed', () => {
       const wrapper = mountComponent({ collapsed: true })
-      expect(wrapper.find('.sidebar-logo').exists()).toBe(false)
+      expect(wrapper.find('.sidebar-search').exists()).toBe(false)
+      expect(wrapper.find('.sidebar-tree').exists()).toBe(false)
       wrapper.unmount()
     })
   })

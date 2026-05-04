@@ -14,6 +14,7 @@ export default {
       model: 'Model',
       git: 'Git',
       about: 'About',
+      debug: 'Debug',
     },
     group: {
       appearance: 'Appearance',
@@ -23,6 +24,7 @@ export default {
       versionControl: 'Version Control',
       information: 'Information',
       aiModels: 'AI MODELS',
+      debug: 'Developer',
     },
     label: {
       theme: 'Theme',
@@ -37,6 +39,7 @@ export default {
       defaultBranch: 'Default Branch',
       autoCommit: 'Auto Commit',
       autoPull: 'Auto Pull',
+      platform: 'UI Platform',
     },
     desc: {
       theme: 'Choose between light and dark mode',
@@ -51,7 +54,13 @@ export default {
       defaultBranch: 'Default branch name for new repositories',
       autoCommit: 'Automatically commit changes on save',
       autoPull: 'Automatically pull changes on startup',
+      platform: 'Switch UI style to preview different platforms',
     },
+    platform: {
+      macos: 'macOS',
+      windows: 'Windows',
+    },
+    actualPlatform: 'Actual',
     theme: {
       light: 'Light',
       dark: 'Dark',

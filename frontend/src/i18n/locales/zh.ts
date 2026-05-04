@@ -14,6 +14,7 @@ export default {
       model: '模型',
       git: 'Git',
       about: '关于',
+      debug: '调试',
     },
     group: {
       appearance: '外观',
@@ -23,6 +24,7 @@ export default {
       versionControl: '版本控制',
       information: '信息',
       aiModels: 'AI 模型',
+      debug: '开发者',
     },
     label: {
       theme: '主题',
@@ -37,6 +39,7 @@ export default {
       defaultBranch: '默认分支',
       autoCommit: '自动提交',
       autoPull: '自动拉取',
+      platform: '界面平台',
     },
     desc: {
       theme: '在浅色和深色模式之间切换',
@@ -51,7 +54,13 @@ export default {
       defaultBranch: '新建仓库的默认分支名',
       autoCommit: '保存时自动提交更改',
       autoPull: '启动时自动拉取更改',
+      platform: '切换界面风格以预览不同平台效果',
     },
+    platform: {
+      macos: 'macOS',
+      windows: 'Windows',
+    },
+    actualPlatform: '实际平台',
     theme: {
       light: '浅色',
       dark: '深色',

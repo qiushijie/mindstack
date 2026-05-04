@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	goruntime "runtime"
 	"sync"
 	"sync/atomic"
 
@@ -42,6 +43,7 @@ type App struct {
 	locale           string
 	pendingOpenPath  string
 	frontendReady    bool
+	debugMode        bool
 	llm              *llm.Service
 }
 
@@ -51,6 +53,7 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	setWindowNonOpaque()
 	a.llm = llm.NewService(config.ConfigPath())
 	if err := a.llm.InitFromConfig(); err != nil {
 		fmt.Println("failed to init LLM:", err)
@@ -375,6 +378,10 @@ func (a *App) GetPendingOpenFile() string {
 	return path
 }
 
+func (a *App) IsFullscreen() bool {
+	return isWindowFullscreen()
+}
+
 func (a *App) ConfirmDelete(name string, isDir bool) bool {
 	label := a.dialogText("file")
 	if isDir {
@@ -391,6 +398,36 @@ func (a *App) ConfirmDelete(name string, isDir bool) bool {
 
 func (a *App) DeleteFile(filePath string) error {
 	return MoveToTrash(filePath)
+}
+
+// WindowClose quits the application.
+func (a *App) WindowClose() {
+	runtime.Quit(a.ctx)
+}
+
+// WindowMinimise minimises the application window.
+func (a *App) WindowMinimise() {
+	runtime.WindowMinimise(a.ctx)
+}
+
+// WindowMaximise maximises the application window.
+func (a *App) WindowMaximise() {
+	runtime.WindowMaximise(a.ctx)
+}
+
+// WindowToggleMaximise toggles the maximise state of the application window.
+func (a *App) WindowToggleMaximise() {
+	runtime.WindowToggleMaximise(a.ctx)
+}
+
+// WindowIsMaximised reports whether the window is currently maximised.
+func (a *App) WindowIsMaximised() bool {
+	return runtime.WindowIsMaximised(a.ctx)
+}
+
+// GetPlatform returns the current operating system platform.
+func (a *App) GetPlatform() string {
+	return goruntime.GOOS
 }
 
 func (a *App) ReadFileContent(filePath string) string {
@@ -507,6 +544,9 @@ type AppConfig struct {
 	LastFolderPath string        `json:"lastFolderPath"`
 	LastFilePath   string        `json:"lastFilePath"`
 	RecentEntries  []RecentEntry `json:"recentEntries"`
+	Settings       struct {
+		DebugMode bool `json:"debugMode"`
+	} `json:"settings"`
 }
 
 func (a *App) LoadConfig() string {
@@ -522,6 +562,7 @@ func (a *App) LoadConfig() string {
 		if a.recentEntries == nil {
 			a.recentEntries = []RecentEntry{}
 		}
+		a.debugMode = cfg.Settings.DebugMode
 		a.mu.Unlock()
 	}
 	return string(data)

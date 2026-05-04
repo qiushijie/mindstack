@@ -14,6 +14,7 @@ export default {
       model: 'Модель',
       git: 'Git',
       about: 'О программе',
+      debug: 'Debug',
     },
     group: {
       appearance: 'Внешний вид',
@@ -23,6 +24,7 @@ export default {
       versionControl: 'Управление версиями',
       aiModels: 'ИИ МОДЕЛИ',
       information: 'Информация',
+      debug: 'Developer',
     },
     label: {
       theme: 'Тема',
@@ -37,6 +39,7 @@ export default {
       defaultBranch: 'Ветка по умолчанию',
       autoCommit: 'Авто-коммит',
       autoPull: 'Авто-пулл',
+      platform: 'UI Platform',
     },
     desc: {
       theme: 'Выберите светлый или тёмный режим',
@@ -51,7 +54,13 @@ export default {
       defaultBranch: 'Имя ветки по умолчанию для новых репозиториев',
       autoCommit: 'Автоматически коммитить изменения при сохранении',
       autoPull: 'Автоматически пуллить изменения при запуске',
+      platform: 'Switch UI style to preview different platforms',
     },
+    platform: {
+      macos: 'macOS',
+      windows: 'Windows',
+    },
+    actualPlatform: 'Actual',
     theme: {
       light: 'Светлая',
       dark: 'Тёмная',

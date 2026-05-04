@@ -1,5 +1,5 @@
 import { ref, watch, nextTick } from 'vue'
-import { LoadConfig, SaveConfig, SetLocale, ReloadLLM } from '../../wailsjs/go/main/App'
+import { LoadConfig, SaveConfig, SetLocale, ReloadLLM, GetPlatform } from '../../wailsjs/go/main/App'
 import { WindowSetLightTheme, WindowSetDarkTheme } from '../../wailsjs/runtime/runtime'
 import { setLocale, type Locale } from '../i18n'
 
@@ -9,6 +9,8 @@ export const SUPPORTED_MODELS = [
 ] as const
 
 export type SupportedModel = (typeof SUPPORTED_MODELS)[number]['value']
+
+export type UIPlatform = 'macos' | 'windows'
 
 export interface ModelConfig {
   id: string
@@ -24,6 +26,9 @@ const theme = ref<'light' | 'dark'>('light')
 const models = ref<ModelConfig[]>([])
 const activeModelId = ref('')
 const showKeyIds = ref<Set<string>>(new Set())
+const platform = ref<UIPlatform>('macos')
+const uiPlatform = ref<UIPlatform>('macos')
+const debugMode = ref(false)
 
 let loaded = false
 let skipWatch = false
@@ -69,6 +74,8 @@ async function doSave() {
           theme: theme.value,
           models: models.value,
           activeModelId: activeModelId.value,
+          uiPlatform: uiPlatform.value,
+          debugMode: debugMode.value,
         }
         const result = await SaveConfig(JSON.stringify(config))
         if (result) {
@@ -107,6 +114,16 @@ export function useSettings() {
       }
       if (Array.isArray(s.models)) models.value = s.models.map((m: any) => ({ ...m, model: m.model || 'deepseek-v4-flash', apiUrl: m.apiUrl || '' }))
       if (s.activeModelId) activeModelId.value = s.activeModelId
+      if (typeof s.debugMode === 'boolean') debugMode.value = s.debugMode
+      try {
+        const p = await GetPlatform()
+        const detected = p === 'windows' ? 'windows' : 'macos'
+        platform.value = detected
+        uiPlatform.value = (s.uiPlatform === 'macos' || s.uiPlatform === 'windows') ? s.uiPlatform : detected
+      } catch {
+        platform.value = 'macos'
+        uiPlatform.value = 'macos'
+      }
     } catch (err) {
       console.error('Failed to load settings:', err)
     }
@@ -157,12 +174,13 @@ export function useSettings() {
   return {
     autoSave, autoSaveDelay, locale, theme,
     models, activeModelId, showKeyIds,
+    platform, uiPlatform, debugMode,
     loadSettings, saveSettings,
     addModel, removeModel, activateModel, toggleShowKey,
   }
 }
 
-watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models], async () => {
+watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform, debugMode], async () => {
   if (!loaded || skipWatch) return
   await doSave()
 }, { deep: true })

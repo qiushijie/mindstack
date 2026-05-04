@@ -9,6 +9,12 @@ import {
   Heading,
 } from 'lucide-vue-next'
 import { useFileTree, copiedFilePath, pasteToDirectory } from '../composables/useFileTree'
+import { useSettings } from '../composables/useSettings'
+import {
+  WindowClose,
+  WindowMinimise,
+  WindowToggleMaximise,
+} from '../../wailsjs/go/main/App'
 import { useHeadingTree, setCurrentHeadings } from '../composables/useHeadingTree'
 import { scrollToLine } from '../composables/useEditorState'
 import type { TreeNode } from '../types/file'
@@ -24,7 +30,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { rootPath, treeData, selectedFilePath, selectedFileContent, folderName, selectFile, toggleDir, openFolder, refreshTree, refreshDir } = useFileTree()
+const { rootPath, treeData, selectedFilePath, selectedFileContent, selectFile, toggleDir, openFolder, refreshTree, refreshDir } = useFileTree()
+const { uiPlatform } = useSettings()
 const { headings, selectedHeadingLine } = useHeadingTree()
 
 type ViewMode = 'file' | 'heading'
@@ -53,6 +60,18 @@ function handleHeadingSelect(line: number) {
 
 function toggleCollapse() {
   emit('update:collapsed', !props.collapsed)
+}
+
+async function onWindowClose() {
+  await WindowClose()
+}
+
+async function onWindowMinimise() {
+  await WindowMinimise()
+}
+
+async function onWindowToggleMaximise() {
+  await WindowToggleMaximise()
 }
 
 function handleItemClick(node: TreeNode) {
@@ -110,7 +129,11 @@ async function handleRefresh(dirPath: string) {
 <template>
   <aside class="sidebar" :class="{ collapsed: props.collapsed }">
     <div class="sidebar-header">
-      <span v-if="!props.collapsed" class="sidebar-logo">{{ folderName }}</span>
+      <div v-if="uiPlatform === 'macos'" class="window-controls">
+        <button class="win-btn macos close" title="Close" @click="onWindowClose" />
+        <button class="win-btn macos minimise" title="Minimise" @click="onWindowMinimise" />
+        <button class="win-btn macos maximise" title="Maximise" @click="onWindowToggleMaximise" />
+      </div>
       <button class="sidebar-new-btn" @click="toggleCollapse">
         <PanelLeftClose v-if="!props.collapsed" :size="18" />
         <PanelLeftOpen v-else :size="18" />
@@ -214,15 +237,78 @@ async function handleRefresh(dirPath: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  --wails-draggable: drag;
 }
 
-.sidebar-logo {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--foreground-primary);
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  --wails-draggable: no-drag;
+}
+
+.window-controls.win-style {
+  gap: 0;
+}
+
+.sidebar.collapsed .window-controls {
+  gap: 4px;
+}
+
+.sidebar.collapsed .win-btn.macos.minimise,
+.sidebar.collapsed .win-btn.macos.maximise {
+  display: none;
+}
+
+.win-btn {
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.win-btn.macos {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: opacity 0.15s;
+}
+
+.win-btn.macos.close {
+  background-color: #FF5F57;
+}
+
+.win-btn.macos.minimise {
+  background-color: #FEBC2E;
+}
+
+.win-btn.macos.maximise {
+  background-color: #28C840;
+}
+
+.win-btn.windows {
+  width: 28px;
+  height: 28px;
+  color: var(--foreground-tertiary);
+  background: none;
+  border-radius: 4px;
+}
+
+.win-btn.windows:hover {
+  background-color: var(--surface-hover);
+  color: var(--foreground-secondary);
+}
+
+.win-btn.windows.close:hover {
+  background-color: #e81123;
+  color: #fff;
 }
 
 .sidebar-new-btn {
+  --wails-draggable: no-drag;
   background: none;
   border: none;
   color: var(--foreground-tertiary);
@@ -231,6 +317,7 @@ async function handleRefresh(dirPath: string) {
   display: flex;
   align-items: center;
   border-radius: 4px;
+  margin-left: auto;
 }
 
 .sidebar-new-btn:hover {

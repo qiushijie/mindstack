@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import { useSettings, applyTheme, SUPPORTED_MODELS } from '../composables/useSettings'
-import type { SupportedModel } from '../composables/useSettings'
+import type { SupportedModel, UIPlatform } from '../composables/useSettings'
 import type { Locale } from '../i18n'
 
 const { t } = useI18n()
@@ -93,7 +93,16 @@ const aboutKeywords = computed(() => [
   t('settings.about.build'),
 ].join(' '))
 
-const { autoSave, autoSaveDelay, locale, theme, models, activeModelId, showKeyIds, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
+const debugKeywords = computed(() => [
+  t('settings.section.debug'),
+  t('settings.group.debug'),
+  t('settings.label.platform'),
+  t('settings.desc.platform'),
+  t('settings.platform.macos'),
+  t('settings.platform.windows'),
+].join(' '))
+
+const { autoSave, autoSaveDelay, locale, theme, models, activeModelId, showKeyIds, platform, uiPlatform, debugMode, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
 const fontFamily = ref('Inter')
 const fontSize = ref(16)
 const tabSize = ref(2)
@@ -442,6 +451,37 @@ async function selectLocale(key: Locale) {
               <p class="about-build">
                 {{ t('settings.about.build') }}
               </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Debug -->
+        <div v-if="debugMode" v-show="matchSearch(debugKeywords)" class="settings-section">
+          <h1 class="section-title">{{ t('settings.section.debug') }}</h1>
+
+          <div class="settings-group">
+            <span class="group-label">{{ t('settings.group.debug') }}</span>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">{{ t('settings.label.platform') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.platform') }} ({{ t('settings.actualPlatform') }}: {{ platform }})</span>
+              </div>
+              <div class="theme-selector">
+                <button
+                  class="theme-btn"
+                  :class="{ active: uiPlatform === 'macos' }"
+                  @click="uiPlatform = 'macos'"
+                >
+                  {{ t('settings.platform.macos') }}
+                </button>
+                <button
+                  class="theme-btn"
+                  :class="{ active: uiPlatform === 'windows' }"
+                  @click="uiPlatform = 'windows'"
+                >
+                  {{ t('settings.platform.windows') }}
+                </button>
+              </div>
             </div>
           </div>
         </div>

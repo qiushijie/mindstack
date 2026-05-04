@@ -34,6 +34,7 @@ var menuLabels = map[string]map[string]string{
 		"paste":            "Paste",
 		"view":             "View",
 		"settings":         "Settings",
+		"debug":            "Debug Mode",
 		"toggleFullScreen": "Toggle Full Screen",
 		"openDevTools":     "Open Developer Tools",
 		"help":             "Help",
@@ -56,6 +57,7 @@ var menuLabels = map[string]map[string]string{
 		"paste":            "貼り付け",
 		"view":             "表示",
 		"settings":         "設定",
+		"debug":            "デバッグモード",
 		"toggleFullScreen": "全画面表示の切り替え",
 		"openDevTools":     "開発者ツールを開く",
 		"help":             "ヘルプ",
@@ -78,6 +80,7 @@ var menuLabels = map[string]map[string]string{
 		"paste":            "Coller",
 		"view":             "Affichage",
 		"settings":         "Paramètres",
+		"debug":            "Mode débogage",
 		"toggleFullScreen": "Basculer plein écran",
 		"openDevTools":     "Ouvrir les outils de développement",
 		"help":             "Aide",
@@ -100,6 +103,7 @@ var menuLabels = map[string]map[string]string{
 		"paste":            "Einfügen",
 		"view":             "Ansicht",
 		"settings":         "Einstellungen",
+		"debug":            "Debug-Modus",
 		"toggleFullScreen": "Vollbild umschalten",
 		"openDevTools":     "Entwicklertools öffnen",
 		"help":             "Hilfe",
@@ -122,6 +126,7 @@ var menuLabels = map[string]map[string]string{
 		"paste":            "Pegar",
 		"view":             "Ver",
 		"settings":         "Configuración",
+		"debug":            "Modo depuración",
 		"toggleFullScreen": "Alternar pantalla completa",
 		"openDevTools":     "Abrir herramientas de desarrollo",
 		"help":             "Ayuda",
@@ -144,6 +149,7 @@ var menuLabels = map[string]map[string]string{
 		"paste":            "Вставить",
 		"view":             "Вид",
 		"settings":         "Настройки",
+		"debug":            "Режим отладки",
 		"toggleFullScreen": "Переключить полный экран",
 		"openDevTools":     "Открыть инструменты разработчика",
 		"help":             "Справка",
@@ -166,6 +172,7 @@ var menuLabels = map[string]map[string]string{
 		"paste":            "붙여넣기",
 		"view":             "보기",
 		"settings":         "설정",
+		"debug":            "디버그 모드",
 		"toggleFullScreen": "전체 화면 전환",
 		"openDevTools":     "개발자 도구 열기",
 		"help":             "도움말",
@@ -188,6 +195,7 @@ var menuLabels = map[string]map[string]string{
 		"paste":            "粘贴",
 		"view":             "视图",
 		"settings":         "设置",
+		"debug":            "调试模式",
 		"toggleFullScreen": "切换全屏",
 		"openDevTools":     "打开开发者工具",
 		"help":             "帮助",
@@ -204,16 +212,20 @@ func main() {
 	app.LoadConfig()
 
 	err := wails.Run(&options.App{
-		Title:  "MindStack",
-		Width:  1280,
-		Height: 800,
+		Title:     "MindStack",
+		Width:     1280,
+		Height:    800,
+		Frameless: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
 		OnStartup:        app.startup,
 		Mac: &mac.Options{
-			OnFileOpen: app.HandleOpenFile,
+			TitleBar:             mac.TitleBarHidden(),
+			Appearance:           mac.NSAppearanceNameDarkAqua,
+			WebviewIsTransparent: true,
+			OnFileOpen:           app.HandleOpenFile,
 		},
 		Bind: []interface{}{
 			app,
@@ -294,13 +306,22 @@ func (a *App) buildMenu() *menu.Menu {
 	viewMenu.AddText(a.menuText("settings"), keys.CmdOrCtrl(","), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:navigate", "settings")
 	})
+	a.mu.RLock()
+	debugMode := a.debugMode
+	a.mu.RUnlock()
+	viewMenu.AddCheckbox(a.menuText("debug"), debugMode, nil, func(cd *menu.CallbackData) {
+		a.mu.Lock()
+		a.debugMode = cd.MenuItem.Checked
+		a.mu.Unlock()
+		runtime.EventsEmit(a.ctx, "menu:toggle-debug", cd.MenuItem.Checked)
+	})
 	viewMenu.AddSeparator()
 	viewMenu.AddText(a.menuText("openDevTools"), keys.CmdOrCtrl("shift+i"), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:open-devtools")
 	})
 	viewMenu.AddSeparator()
 	viewMenu.AddText(a.menuText("toggleFullScreen"), keys.Key("f11"), func(_ *menu.CallbackData) {
-		runtime.WindowToggleMaximise(a.ctx)
+		toggleWindowFullscreen()
 	})
 
 	helpMenu := appMenu.AddSubmenu(a.menuText("help"))

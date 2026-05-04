@@ -12,7 +12,7 @@ html, body {
   font-family: var(--font-sans);
   font-size: var(--font-size-lg);
   color: var(--foreground-primary);
-  background-color: var(--surface-primary);
+  background-color: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

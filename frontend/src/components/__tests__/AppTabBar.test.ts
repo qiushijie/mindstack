@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ref, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import AppTabBar from '../AppTabBar.vue'
-import { openPageTab } from '../../composables/useTabs'
 
 vi.mock('vue-i18n', () => ({
+  createI18n: () => ({}),
   useI18n: () => ({ t: (key: string) => key }),
 }))
 
@@ -12,9 +12,16 @@ vi.mock('vue-i18n', () => ({
 vi.mock('lucide-vue-next', () => ({
   FileText: { template: '<span />', props: ['size'] },
   X: { template: '<span />', props: ['size'] },
-  MessageSquare: { template: '<span />', props: ['size'] },
-  Network: { template: '<span />', props: ['size'] },
   Settings: { template: '<span />', props: ['size'] },
+  Minus: { template: '<span />', props: ['size'] },
+  Square: { template: '<span />', props: ['size'] },
+}))
+
+// Mock wailsjs App API
+vi.mock('../../wailsjs/go/main/App', () => ({
+  WindowClose: vi.fn(),
+  WindowMinimise: vi.fn(),
+  WindowToggleMaximise: vi.fn(),
 }))
 
 // Shared reactive state for useTabs mock
@@ -27,7 +34,12 @@ vi.mock('../../composables/useTabs', () => ({
     activeTabIndex: mockActiveTabIndex,
   }),
   isPageTab: (path: string) => path === 'settings' || path === 'relations',
-  openPageTab: vi.fn(),
+}))
+
+vi.mock('../../composables/useSettings', () => ({
+  useSettings: () => ({
+    uiPlatform: ref('windows'),
+  }),
 }))
 
 describe('AppTabBar', () => {
@@ -78,24 +90,6 @@ describe('AppTabBar', () => {
       expect(items[1].classes()).toContain('active')
     })
 
-    it('renders AI button', () => {
-      const wrapper = mountComponent()
-
-      expect(wrapper.find('.ai-btn').exists()).toBe(true)
-    })
-
-    it('marks AI button as active when aiActive prop is true', () => {
-      const wrapper = mountComponent({ aiActive: true })
-
-      expect(wrapper.find('[title="AI Assistant"]').classes()).toContain('active')
-    })
-
-    it('AI button is not active by default', () => {
-      const wrapper = mountComponent()
-
-      expect(wrapper.find('[title="AI Assistant"]').classes()).not.toContain('active')
-    })
-
     it('renders close button for each tab', async () => {
       mockTabs.value = [{ path: '/a.md', title: 'a' }]
       mockActiveTabIndex.value = 0
@@ -106,10 +100,9 @@ describe('AppTabBar', () => {
       expect(wrapper.findAll('.tab-close')).toHaveLength(1)
     })
 
-    it('renders spacer between tabs and AI button', () => {
+    it('renders window controls on windows platform', () => {
       const wrapper = mountComponent()
-
-      expect(wrapper.find('.tab-spacer').exists()).toBe(true)
+      expect(wrapper.find('.window-controls').exists()).toBe(true)
     })
   })
 
@@ -171,22 +164,6 @@ describe('AppTabBar', () => {
       expect(wrapper.emitted('switch')).toBeUndefined()
     })
 
-    it('emits toggle-ai when clicking AI button', async () => {
-      const wrapper = mountComponent()
-
-      await wrapper.find('[title="AI Assistant"]').trigger('click')
-
-      expect(wrapper.emitted('toggle-ai')).toHaveLength(1)
-    })
-
-    it('opens relations page tab when clicking relation graph button', async () => {
-      const wrapper = mountComponent()
-
-      await wrapper.find('[title="Relation Graph"]').trigger('click')
-
-      expect(openPageTab).toHaveBeenCalledTimes(1)
-      expect(openPageTab).toHaveBeenCalledWith('relations', 'relationGraph.title')
-    })
   })
 
   describe('page tabs', () => {

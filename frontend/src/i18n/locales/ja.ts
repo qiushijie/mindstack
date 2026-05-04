@@ -14,6 +14,7 @@ export default {
       model: 'モデル',
       git: 'Git',
       about: 'について',
+      debug: 'Debug',
     },
     group: {
       appearance: '外観',
@@ -23,6 +24,7 @@ export default {
       versionControl: 'バージョン管理',
       aiModels: 'AI モデル',
       information: '情報',
+      debug: 'Developer',
     },
     label: {
       theme: 'テーマ',
@@ -37,6 +39,7 @@ export default {
       defaultBranch: 'デフォルトブランチ',
       autoCommit: '自動コミット',
       autoPull: '自動プル',
+      platform: 'UI Platform',
     },
     desc: {
       theme: 'ライトとダークモードを切り替えます',
@@ -51,7 +54,13 @@ export default {
       defaultBranch: '新しいリポジトリのデフォルトブランチ名',
       autoCommit: '保存時に変更を自動的にコミットします',
       autoPull: '起動時に変更を自動的にプルします',
+      platform: 'Switch UI style to preview different platforms',
     },
+    platform: {
+      macos: 'macOS',
+      windows: 'Windows',
+    },
+    actualPlatform: 'Actual',
     theme: {
       light: 'ライト',
       dark: 'ダーク',

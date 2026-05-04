@@ -14,6 +14,7 @@ export default {
       model: 'Modèle',
       git: 'Git',
       about: 'À propos',
+      debug: 'Debug',
     },
     group: {
       appearance: 'Apparence',
@@ -23,6 +24,7 @@ export default {
       versionControl: 'Contrôle de version',
       aiModels: 'MODÈLES IA',
       information: 'Informations',
+      debug: 'Developer',
     },
     label: {
       theme: 'Thème',
@@ -37,6 +39,7 @@ export default {
       defaultBranch: 'Branche par défaut',
       autoCommit: 'Commit auto',
       autoPull: 'Pull auto',
+      platform: 'UI Platform',
     },
     desc: {
       theme: 'Choisissez entre le mode clair et sombre',
@@ -51,7 +54,13 @@ export default {
       defaultBranch: 'Nom de la branche par défaut pour les nouveaux dépôts',
       autoCommit: 'Commit automatiquement les modifications lors de la sauvegarde',
       autoPull: 'Pull automatiquement les modifications au démarrage',
+      platform: 'Switch UI style to preview different platforms',
     },
+    platform: {
+      macos: 'macOS',
+      windows: 'Windows',
+    },
+    actualPlatform: 'Actual',
     theme: {
       light: 'Clair',
       dark: 'Sombre',

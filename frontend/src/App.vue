@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Network, MessageSquare } from 'lucide-vue-next'
 import { EventsOn, EventsOff, ClipboardGetText } from '../wailsjs/runtime/runtime'
 import { GetPendingOpenFile } from '../wailsjs/go/main/App'
 import AppSidebar from './components/AppSidebar.vue'
@@ -15,20 +16,37 @@ import { provideEditorState } from './composables/useEditorState'
 import { useFileTree } from './composables/useFileTree'
 import { useSettings, applyTheme } from './composables/useSettings'
 import { openPageTab } from './composables/useTabs'
+import { IsFullscreen } from '../wailsjs/go/main/App'
 
 const sidebarCollapsed = ref(false)
 const showAIChat = ref(false)
+const isFullscreen = ref(false)
 
 const { currentPage, navigateTo } = useNavigation()
+const { t } = useI18n()
+
+async function checkFullscreen() {
+  try {
+    isFullscreen.value = await IsFullscreen()
+  } catch {
+    isFullscreen.value = window.outerWidth >= screen.availWidth && window.outerHeight >= screen.availHeight
+  }
+}
+
+function openRelations() {
+  openPageTab('relations', t('relationGraph.title'))
+  navigateTo('relations')
+}
 provideEditorState()
 const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab } = useFileTree()
-const { loadSettings, theme } = useSettings()
-const { t } = useI18n()
+const { loadSettings, theme, debugMode } = useSettings()
 
 onMounted(async () => {
   await loadSettings()
   applyTheme(theme.value)
   await restoreSession()
+  checkFullscreen()
+  window.addEventListener('resize', checkFullscreen)
 
   const pendingPath = await GetPendingOpenFile()
   if (pendingPath) {
@@ -87,6 +105,11 @@ onMounted(async () => {
     }
   })
 
+  EventsOff('menu:toggle-debug')
+  EventsOn('menu:toggle-debug', (checked: boolean) => {
+    debugMode.value = checked
+  })
+
   EventsOff('menu:file:new')
   EventsOn('menu:file:new', () => {
     newFile()
@@ -120,18 +143,36 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="{ fullscreen: isFullscreen }">
     <AppSidebar v-model:collapsed="sidebarCollapsed" />
     <div class="app-content">
       <AppTabBar
-        :ai-active="showAIChat"
         @switch="switchToTab"
         @close="closeFileTab"
-        @toggle-ai="showAIChat = !showAIChat"
       />
-      <AppEditor v-if="currentPage === 'editor'" />
-      <AppSettings v-else-if="currentPage === 'settings'" />
-      <RelationGraph v-else-if="currentPage === 'relations'" />
+      <div class="content-area">
+        <div class="floating-actions">
+          <button
+            class="floating-btn"
+            :class="{ active: currentPage === 'relations' }"
+            title="Relation Graph"
+            @click="openRelations"
+          >
+            <Network :size="18" />
+          </button>
+          <button
+            class="floating-btn"
+            :class="{ active: showAIChat }"
+            title="AI Assistant"
+            @click="showAIChat = !showAIChat"
+          >
+            <MessageSquare :size="18" />
+          </button>
+        </div>
+        <AppEditor v-if="currentPage === 'editor'" />
+        <AppSettings v-else-if="currentPage === 'settings'" />
+        <RelationGraph v-else-if="currentPage === 'relations'" />
+      </div>
       <AppStatusBar />
     </div>
     <AIChatPanel v-if="showAIChat" @close="showAIChat = false" @open-file="selectFile" />
@@ -145,6 +186,12 @@ onMounted(async () => {
   width: 100vw;
   background-color: var(--surface-primary);
   position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.app-layout.fullscreen {
+  border-radius: 0;
 }
 
 .app-content {
@@ -152,5 +199,48 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+.content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.floating-actions {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 10;
+  --wails-draggable: no-drag;
+}
+
+.floating-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--foreground-tertiary);
+  border-radius: 6px;
+  padding: 0;
+}
+
+.floating-btn:hover {
+  color: var(--foreground-secondary);
+  background: var(--surface-hover);
+}
+
+.floating-btn.active {
+  color: var(--accent-primary);
+  background: var(--surface-hover);
 }
 </style>

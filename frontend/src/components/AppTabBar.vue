@@ -1,22 +1,20 @@
 <script lang="ts" setup>
-import { FileText, X, MessageSquare, Network, Settings } from 'lucide-vue-next'
-import { useI18n } from 'vue-i18n'
-import { useTabs, isPageTab, openPageTab } from '../composables/useTabs'
-import { useNavigation } from '../composables/useNavigation'
-
-defineProps<{
-  aiActive?: boolean
-}>()
+import { FileText, X, Settings, Minus, Square } from 'lucide-vue-next'
+import { useTabs, isPageTab } from '../composables/useTabs'
+import { useSettings } from '../composables/useSettings'
+import {
+  WindowClose,
+  WindowMinimise,
+  WindowToggleMaximise,
+} from '../../wailsjs/go/main/App'
 
 const emit = defineEmits<{
   switch: [index: number]
   close: [index: number]
-  'toggle-ai': []
 }>()
 
 const { tabs, activeTabIndex } = useTabs()
-const { navigateTo } = useNavigation()
-const { t } = useI18n()
+const { uiPlatform } = useSettings()
 
 function handleTabClick(index: number) {
   if (index !== activeTabIndex.value) {
@@ -29,9 +27,16 @@ function handleClose(index: number, e: MouseEvent) {
   emit('close', index)
 }
 
-function openRelationsTab() {
-  openPageTab('relations', t('relationGraph.title'))
-  navigateTo('relations')
+async function onWindowClose() {
+  await WindowClose()
+}
+
+async function onWindowMinimise() {
+  await WindowMinimise()
+}
+
+async function onWindowToggleMaximise() {
+  await WindowToggleMaximise()
 }
 </script>
 
@@ -52,14 +57,17 @@ function openRelationsTab() {
         <X :size="14" />
       </button>
     </div>
-
-    <div class="tab-spacer" />
-    <button class="ai-btn" title="Relation Graph" @click="openRelationsTab">
-      <Network :size="18" />
-    </button>
-    <button class="ai-btn" :class="{ active: aiActive }" @click="emit('toggle-ai')" title="AI Assistant">
-      <MessageSquare :size="20" />
-    </button>
+    <div v-if="uiPlatform === 'windows'" class="window-controls">
+      <button class="win-btn" title="Minimise" @click="onWindowMinimise">
+        <Minus :size="10" />
+      </button>
+      <button class="win-btn" title="Maximise" @click="onWindowToggleMaximise">
+        <Square :size="10" />
+      </button>
+      <button class="win-btn close" title="Close" @click="onWindowClose">
+        <X :size="10" />
+      </button>
+    </div>
   </div>
 </template>
 
@@ -71,6 +79,7 @@ function openRelationsTab() {
   background-color: var(--surface-secondary);
   padding: 0 8px;
   flex-shrink: 0;
+  --wails-draggable: drag;
 }
 
 .tab-item {
@@ -80,6 +89,7 @@ function openRelationsTab() {
   height: 100%;
   padding: 0 12px;
   cursor: pointer;
+  --wails-draggable: no-drag;
 }
 
 .tab-item .tab-icon {
@@ -137,31 +147,33 @@ function openRelationsTab() {
   background-color: var(--surface-primary);
 }
 
-.tab-spacer {
-  flex: 1;
+.window-controls {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  margin-left: auto;
+  --wails-draggable: no-drag;
 }
 
-.ai-btn {
+.win-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 100%;
   border: none;
   background: none;
-  cursor: pointer;
   color: var(--foreground-tertiary);
-  border-radius: 6px;
-  padding: 0;
+  cursor: pointer;
 }
 
-.ai-btn:hover {
+.win-btn:hover {
+  background-color: var(--surface-hover);
   color: var(--foreground-secondary);
-  background: var(--surface-hover);
 }
 
-.ai-btn.active {
-  color: var(--accent-primary);
-  background: var(--surface-hover);
+.win-btn.close:hover {
+  background-color: #e81123;
+  color: #fff;
 }
 </style>
