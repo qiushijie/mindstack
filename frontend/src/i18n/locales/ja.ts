@@ -173,6 +173,11 @@ export default {
       addColumnRight: '右に列を追加',
       deleteColumn: '列を削除',
     },
+    tabContextMenu: {
+      closeCurrent: '閉じる',
+      closeOthers: '他を閉じる',
+      closeAll: 'すべて閉じる',
+    },
     toolbar: {
       Bold: '太字',
       Italic: '斜体',

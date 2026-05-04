@@ -1,8 +1,9 @@
 <script lang="ts" setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import { FileText, X, Settings, Minus, Square, Network } from 'lucide-vue-next'
 import { useTabs, isPageTab } from '../composables/useTabs'
 import { useSettings } from '../composables/useSettings'
+import { t } from '../i18n'
 import {
   WindowClose,
   WindowMinimise,
@@ -12,12 +13,66 @@ import {
 const emit = defineEmits<{
   switch: [index: number]
   close: [index: number]
+  closeOtherTabs: [index: number]
+  closeAllTabs: []
 }>()
 
 const { tabs, activeTabIndex } = useTabs()
 const { uiPlatform } = useSettings()
 
 const tabBarRef = ref<HTMLElement | null>(null)
+
+const contextMenuVisible = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuIndex = ref(0)
+
+let escKeyHandler: ((e: KeyboardEvent) => void) | null = null
+
+function showContextMenu(index: number, e: MouseEvent) {
+  e.preventDefault()
+  contextMenuIndex.value = index
+  const menuWidth = 160
+  const menuHeight = 120
+  const x = Math.min(e.clientX, window.innerWidth - menuWidth - 8)
+  const y = Math.min(e.clientY, window.innerHeight - menuHeight - 8)
+  contextMenuX.value = Math.max(8, x)
+  contextMenuY.value = Math.max(8, y)
+  contextMenuVisible.value = true
+  escKeyHandler = (ev: KeyboardEvent) => {
+    if (ev.key === 'Escape') closeContextMenu()
+  }
+  document.addEventListener('keydown', escKeyHandler)
+}
+
+function closeContextMenu() {
+  contextMenuVisible.value = false
+  if (escKeyHandler) {
+    document.removeEventListener('keydown', escKeyHandler)
+    escKeyHandler = null
+  }
+}
+
+function handleContextMenuClose() {
+  emit('close', contextMenuIndex.value)
+  closeContextMenu()
+}
+
+function handleContextMenuCloseOthers() {
+  emit('closeOtherTabs', contextMenuIndex.value)
+  closeContextMenu()
+}
+
+function handleContextMenuCloseAll() {
+  emit('closeAllTabs')
+  closeContextMenu()
+}
+
+function onTabMouseDown(e: MouseEvent) {
+  if (e.button === 2) {
+    e.preventDefault()
+  }
+}
 
 function scrollActiveTabIntoView() {
   if (!tabBarRef.value) return
@@ -53,6 +108,13 @@ async function onWindowMinimise() {
 async function onWindowToggleMaximise() {
   await WindowToggleMaximise()
 }
+
+onBeforeUnmount(() => {
+  if (escKeyHandler) {
+    document.removeEventListener('keydown', escKeyHandler)
+    escKeyHandler = null
+  }
+})
 </script>
 
 <template>
@@ -63,6 +125,9 @@ async function onWindowToggleMaximise() {
       class="tab-item"
       :class="{ active: index === activeTabIndex }"
       @click="handleTabClick(index)"
+      @contextmenu.prevent="showContextMenu(index, $event)"
+      @mousedown="onTabMouseDown($event)"
+      @selectstart.prevent
     >
       <FileText v-if="!isPageTab(tab.path)" :size="14" class="tab-icon" />
       <Settings v-else-if="tab.path === 'settings'" :size="14" class="tab-icon" />
@@ -83,6 +148,30 @@ async function onWindowToggleMaximise() {
         <X :size="10" />
       </button>
     </div>
+    <Teleport to="body">
+      <div
+        v-if="contextMenuVisible"
+        class="context-menu-overlay"
+        @click="closeContextMenu"
+        @contextmenu.prevent="closeContextMenu"
+      >
+        <div
+          class="context-menu"
+          :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
+          @click.stop
+        >
+          <div class="context-menu-item" @click="handleContextMenuClose">
+            {{ t('editor.tabContextMenu.closeCurrent') }}
+          </div>
+          <div class="context-menu-item" @click="handleContextMenuCloseOthers">
+            {{ t('editor.tabContextMenu.closeOthers') }}
+          </div>
+          <div class="context-menu-item" @click="handleContextMenuCloseAll">
+            {{ t('editor.tabContextMenu.closeAll') }}
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -110,6 +199,9 @@ async function onWindowToggleMaximise() {
   height: 100%;
   padding: 0 12px;
   cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   --wails-draggable: no-drag;
 }
 
@@ -126,6 +218,8 @@ async function onWindowToggleMaximise() {
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .tab-item .tab-close {
@@ -196,5 +290,39 @@ async function onWindowToggleMaximise() {
 .win-btn.close:hover {
   background-color: #e81123;
   color: #fff;
+}
+
+.context-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+
+.context-menu {
+  position: fixed;
+  min-width: 140px;
+  background: var(--surface-primary);
+  border: 1px solid var(--border-secondary);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.context-menu-item {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--foreground-primary);
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+}
+
+.context-menu-item:hover {
+  background: var(--accent-primary);
+  color: #fff;
+}
+
+.context-menu-item:active {
+  background: var(--accent-secondary);
 }
 </style>

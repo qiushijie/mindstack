@@ -173,6 +173,11 @@ export default {
       addColumnRight: '오른쪽에 열 추가',
       deleteColumn: '열 삭제',
     },
+    tabContextMenu: {
+      closeCurrent: '닫기',
+      closeOthers: '다른 탭 닫기',
+      closeAll: '모두 닫기',
+    },
     toolbar: {
       Bold: '굵게',
       Italic: '기울임',

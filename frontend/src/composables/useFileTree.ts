@@ -19,7 +19,7 @@ import { useSettings } from './useSettings'
 import { t } from '../i18n'
 import { useEditorState } from './useEditorState'
 import { setCurrentFilePath, setFileServerPort } from '../extensions/currentFilePath'
-import { useTabs, isPageTab } from './useTabs'
+import { useTabs, isPageTab, openPageTab } from './useTabs'
 import { useNavigation, type PageName } from './useNavigation'
 
 export async function resolveUniqueFilePath(
@@ -448,6 +448,58 @@ export function useFileTree() {
     await saveAppConfig()
   }
 
+  async function closeOtherTabs(index: number) {
+    clearAutoSaveTimer()
+    saveCurrentToCache()
+
+    const keepTab = tabs.value[index]
+    const { path: keepPath, title: keepTitle } = keepTab
+
+    for (const tab of tabs.value) {
+      if (tab.path !== keepPath && !isPageTab(tab.path)) {
+        tabContentCache.delete(tab.path)
+        dirtyTabs.delete(tab.path)
+      }
+    }
+
+    clearTabs()
+
+    if (!isPageTab(keepPath)) {
+      openTab(keepPath)
+      const content = await loadTabContent(keepPath)
+      applyContent(keepPath, content)
+      navigateTo('editor')
+    } else {
+      openPageTab(keepPath as PageName, keepTitle)
+      navigateTo(keepPath as PageName)
+    }
+
+    await saveAppConfig()
+  }
+
+  async function closeAllTabs() {
+    clearAutoSaveTimer()
+    saveCurrentToCache()
+
+    for (const tab of tabs.value) {
+      if (!isPageTab(tab.path)) {
+        tabContentCache.delete(tab.path)
+        dirtyTabs.delete(tab.path)
+      }
+    }
+
+    clearTabs()
+
+    selectedFilePath.value = ''
+    selectedFileContent.value = ''
+    isDirty.value = false
+    if (editorAdapter) {
+      editorAdapter.setContent('')
+    }
+
+    await saveAppConfig()
+  }
+
   watch(selectedFilePath, (newPath) => {
     const view = sharedView.value
     if (view) {
@@ -478,5 +530,7 @@ export function useFileTree() {
     openRecentFile,
     switchToTab,
     closeFileTab,
+    closeOtherTabs,
+    closeAllTabs,
   }
 }

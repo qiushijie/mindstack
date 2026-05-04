@@ -173,6 +173,11 @@ export default {
       addColumnRight: 'Spalte rechts einfügen',
       deleteColumn: 'Spalte löschen',
     },
+    tabContextMenu: {
+      closeCurrent: 'Schließen',
+      closeOthers: 'Andere schließen',
+      closeAll: 'Alle schließen',
+    },
     toolbar: {
       Bold: 'Fett',
       Italic: 'Kursiv',

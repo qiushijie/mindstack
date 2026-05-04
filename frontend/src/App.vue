@@ -40,7 +40,7 @@ function openRelations() {
   navigateTo('relations')
 }
 provideEditorState()
-const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab } = useFileTree()
+const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs } = useFileTree()
 const { loadSettings, theme, debugMode } = useSettings()
 
 onMounted(async () => {
@@ -153,6 +153,8 @@ onMounted(async () => {
       <AppTabBar
         @switch="switchToTab"
         @close="closeFileTab"
+        @close-other-tabs="closeOtherTabs"
+        @close-all-tabs="closeAllTabs"
       />
       <div class="content-area">
         <div class="floating-actions">

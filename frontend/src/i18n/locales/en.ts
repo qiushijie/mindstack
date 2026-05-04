@@ -173,6 +173,11 @@ export default {
       addColumnRight: 'Add Column Right',
       deleteColumn: 'Delete Column',
     },
+    tabContextMenu: {
+      closeCurrent: 'Close',
+      closeOthers: 'Close Others',
+      closeAll: 'Close All',
+    },
     toolbar: {
       Bold: 'Bold',
       Italic: 'Italic',

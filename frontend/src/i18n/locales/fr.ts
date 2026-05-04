@@ -173,6 +173,11 @@ export default {
       addColumnRight: 'Ajouter une colonne à droite',
       deleteColumn: 'Supprimer la colonne',
     },
+    tabContextMenu: {
+      closeCurrent: 'Fermer',
+      closeOthers: 'Fermer les autres',
+      closeAll: 'Tout fermer',
+    },
     toolbar: {
       Bold: 'Gras',
       Italic: 'Italique',

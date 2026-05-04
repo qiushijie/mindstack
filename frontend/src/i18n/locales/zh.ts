@@ -173,6 +173,11 @@ export default {
       addColumnRight: '在右侧插入列',
       deleteColumn: '删除列',
     },
+    tabContextMenu: {
+      closeCurrent: '关闭当前',
+      closeOthers: '关闭其他',
+      closeAll: '关闭全部',
+    },
     toolbar: {
       Bold: '加粗',
       Italic: '斜体',

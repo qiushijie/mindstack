@@ -173,6 +173,11 @@ export default {
       addColumnRight: 'Добавить столбец справа',
       deleteColumn: 'Удалить столбец',
     },
+    tabContextMenu: {
+      closeCurrent: 'Закрыть',
+      closeOthers: 'Закрыть другие',
+      closeAll: 'Закрыть все',
+    },
     toolbar: {
       Bold: 'Жирный',
       Italic: 'Курсив',
