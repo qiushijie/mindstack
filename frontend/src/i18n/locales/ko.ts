@@ -178,6 +178,12 @@ export default {
       closeOthers: '다른 탭 닫기',
       closeAll: '모두 닫기',
     },
+    confirmUnsaved: {
+      title: '저장되지 않은 변경사항',
+      message: '변경사항을 저장하고 닫으시겠습니까?',
+      save: '저장',
+      discard: '버리기',
+    },
     toolbar: {
       Bold: '굵게',
       Italic: '기울임',

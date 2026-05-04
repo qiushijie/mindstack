@@ -21,6 +21,7 @@ import { useEditorState } from './useEditorState'
 import { setCurrentFilePath, setFileServerPort } from '../extensions/currentFilePath'
 import { useTabs, isPageTab, openPageTab } from './useTabs'
 import { useNavigation, type PageName } from './useNavigation'
+import { useConfirmDialog } from './useConfirmDialog'
 
 export async function resolveUniqueFilePath(
   dirPath: string,
@@ -96,15 +97,35 @@ const selectedFileContent = ref('')
 const isDirty = ref(false)
 let editorAdapter: EditorAdapter | null = null
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+let suppressDirtyMark = false
 
 const { tabs, activeTabIndex, openTab, closeTab, switchTab, clearTabs } = useTabs()
 const tabContentCache = new Map<string, string>()
-const dirtyTabs = new Set<string>()
+const dirtyTabs = ref<string[]>([])
 
 function clearAutoSaveTimer() {
   if (autoSaveTimer !== null) {
     clearTimeout(autoSaveTimer)
     autoSaveTimer = null
+  }
+}
+
+async function confirmAndSaveDirtyTabs(paths: string[]): Promise<void> {
+  if (paths.length === 0) return
+  const { confirm } = useConfirmDialog()
+  const shouldSave = await confirm({
+    title: t('editor.confirmUnsaved.title'),
+    message: t('editor.confirmUnsaved.message'),
+    confirmText: t('editor.confirmUnsaved.save'),
+    cancelText: t('editor.confirmUnsaved.discard'),
+  })
+  if (shouldSave) {
+    for (const path of paths) {
+      const content = tabContentCache.get(path)
+      if (content !== undefined) {
+        await SaveFileContent(path, content)
+      }
+    }
   }
 }
 
@@ -154,6 +175,9 @@ if (import.meta.env.DEV) {
   }
   ;(window as any).__resetFileTreeState = () => {
     clearAutoSaveTimer()
+    clearTabs()
+    tabContentCache.clear()
+    dirtyTabs.value = []
     rootPath.value = ''
     treeData.value = []
     selectedFilePath.value = ''
@@ -198,9 +222,11 @@ export function useFileTree() {
   function applyContent(path: string, content: string) {
     selectedFilePath.value = path
     selectedFileContent.value = content
-    isDirty.value = dirtyTabs.has(path)
+    isDirty.value = dirtyTabs.value.includes(path)
     if (editorAdapter) {
+      suppressDirtyMark = true
       editorAdapter.setContent(content)
+      suppressDirtyMark = false
     }
   }
 
@@ -244,7 +270,7 @@ export function useFileTree() {
     clearAutoSaveTimer()
     clearTabs()
     tabContentCache.clear()
-    dirtyTabs.clear()
+    dirtyTabs.value = []
     rootPath.value = path
     selectedFilePath.value = ''
     selectedFileContent.value = ''
@@ -314,7 +340,7 @@ export function useFileTree() {
     const err = await SaveFileContent(selectedFilePath.value, content)
     if (!err) {
       isDirty.value = false
-      dirtyTabs.delete(selectedFilePath.value)
+      dirtyTabs.value = dirtyTabs.value.filter(p => p !== selectedFilePath.value)
       tabContentCache.set(selectedFilePath.value, content)
     }
   }
@@ -331,12 +357,27 @@ export function useFileTree() {
   }
 
   function markDirty() {
-    isDirty.value = true
-    if (selectedFilePath.value) {
-      dirtyTabs.add(selectedFilePath.value)
+    if (suppressDirtyMark) return
+
+    const path = selectedFilePath.value
+
+    if (path) {
+      const savedContent = tabContentCache.get(path)
+      if (savedContent !== undefined && selectedFileContent.value === savedContent) {
+        isDirty.value = false
+        dirtyTabs.value = dirtyTabs.value.filter(p => p !== path)
+        return
+      }
     }
 
-    if (autoSave.value && selectedFilePath.value) {
+    isDirty.value = true
+    if (path) {
+      if (!dirtyTabs.value.includes(path)) {
+        dirtyTabs.value.push(path)
+      }
+    }
+
+    if (autoSave.value && path) {
       clearAutoSaveTimer()
       autoSaveTimer = setTimeout(() => {
         saveCurrentFile()
@@ -361,7 +402,7 @@ export function useFileTree() {
     clearAutoSaveTimer()
     clearTabs()
     tabContentCache.clear()
-    dirtyTabs.clear()
+    dirtyTabs.value = []
     rootPath.value = path
     selectedFilePath.value = ''
     selectedFileContent.value = ''
@@ -416,14 +457,20 @@ export function useFileTree() {
   async function closeFileTab(index: number) {
     clearAutoSaveTimer()
 
-    if (index === activeTabIndex.value) {
+    const path = tabs.value[index].path
+
+    if (!isPageTab(path) && dirtyTabs.value.includes(path)) {
+      if (index === activeTabIndex.value) {
+        saveCurrentToCache()
+      }
+      await confirmAndSaveDirtyTabs([path])
+    } else if (index === activeTabIndex.value) {
       saveCurrentToCache()
     }
 
-    const path = tabs.value[index].path
     if (!isPageTab(path)) {
       tabContentCache.delete(path)
-      dirtyTabs.delete(path)
+      dirtyTabs.value = dirtyTabs.value.filter(p => p !== path)
     }
 
     const newPath = closeTab(index)
@@ -452,13 +499,25 @@ export function useFileTree() {
     clearAutoSaveTimer()
     saveCurrentToCache()
 
+    const keepPath = tabs.value[index].path
+
+    // Collect dirty file tabs to be closed
+    const dirtyToClose: string[] = []
+    for (const tab of tabs.value) {
+      if (tab.path !== keepPath && !isPageTab(tab.path) && dirtyTabs.value.includes(tab.path)) {
+        dirtyToClose.push(tab.path)
+      }
+    }
+
+    await confirmAndSaveDirtyTabs(dirtyToClose)
+
     const keepTab = tabs.value[index]
-    const { path: keepPath, title: keepTitle } = keepTab
+    const { title: keepTitle } = keepTab
 
     for (const tab of tabs.value) {
       if (tab.path !== keepPath && !isPageTab(tab.path)) {
         tabContentCache.delete(tab.path)
-        dirtyTabs.delete(tab.path)
+        dirtyTabs.value = dirtyTabs.value.filter(p => p !== tab.path)
       }
     }
 
@@ -481,10 +540,20 @@ export function useFileTree() {
     clearAutoSaveTimer()
     saveCurrentToCache()
 
+    // Collect dirty file tabs to be closed
+    const dirtyToClose: string[] = []
+    for (const tab of tabs.value) {
+      if (!isPageTab(tab.path) && dirtyTabs.value.includes(tab.path)) {
+        dirtyToClose.push(tab.path)
+      }
+    }
+
+    await confirmAndSaveDirtyTabs(dirtyToClose)
+
     for (const tab of tabs.value) {
       if (!isPageTab(tab.path)) {
         tabContentCache.delete(tab.path)
-        dirtyTabs.delete(tab.path)
+        dirtyTabs.value = dirtyTabs.value.filter(p => p !== tab.path)
       }
     }
 
@@ -513,6 +582,7 @@ export function useFileTree() {
     selectedFilePath,
     selectedFileContent,
     isDirty,
+    dirtyTabs,
     folderName,
     setEditorAdapter,
     clearEditorAdapter,

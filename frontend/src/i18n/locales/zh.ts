@@ -178,6 +178,12 @@ export default {
       closeOthers: '关闭其他',
       closeAll: '关闭全部',
     },
+    confirmUnsaved: {
+      title: '未保存的更改',
+      message: '文件有未保存的更改，是否保存后再关闭？',
+      save: '保存',
+      discard: '丢弃',
+    },
     toolbar: {
       Bold: '加粗',
       Italic: '斜体',

@@ -178,6 +178,12 @@ export default {
       closeOthers: 'Cerrar otros',
       closeAll: 'Cerrar todos',
     },
+    confirmUnsaved: {
+      title: 'Cambios sin guardar',
+      message: '¿Desea guardar antes de cerrar?',
+      save: 'Guardar',
+      discard: 'Descartar',
+    },
     toolbar: {
       Bold: 'Negrita',
       Italic: 'Cursiva',

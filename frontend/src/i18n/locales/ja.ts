@@ -178,6 +178,12 @@ export default {
       closeOthers: '他を閉じる',
       closeAll: 'すべて閉じる',
     },
+    confirmUnsaved: {
+      title: '未保存の変更',
+      message: '変更を保存してから閉じますか？',
+      save: '保存',
+      discard: '破棄',
+    },
     toolbar: {
       Bold: '太字',
       Italic: '斜体',

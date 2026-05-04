@@ -74,5 +74,9 @@ export function useTabs() {
     activeTabIndex.value = -1
   }
 
+  if (import.meta.env.DEV) {
+    ;(window as any).__clearTabs = clearTabs
+  }
+
   return { tabs, activeTabIndex, activeTab, activeFilePath, openTab, closeTab, switchTab, clearTabs }
 }

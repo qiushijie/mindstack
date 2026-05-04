@@ -178,6 +178,12 @@ export default {
       closeOthers: 'Andere schließen',
       closeAll: 'Alle schließen',
     },
+    confirmUnsaved: {
+      title: 'Ungespeicherte Änderungen',
+      message: 'Möchten Sie speichern, bevor Sie schließen?',
+      save: 'Speichern',
+      discard: 'Verwerfen',
+    },
     toolbar: {
       Bold: 'Fett',
       Italic: 'Kursiv',

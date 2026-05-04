@@ -10,6 +10,10 @@ import {
   WindowToggleMaximise,
 } from '../../wailsjs/go/main/App'
 
+const props = defineProps<{
+  dirtyPaths?: string[]
+}>()
+
 const emit = defineEmits<{
   switch: [index: number]
   close: [index: number]
@@ -133,6 +137,7 @@ onBeforeUnmount(() => {
       <Settings v-else-if="tab.path === 'settings'" :size="14" class="tab-icon" />
       <Network v-else-if="tab.path === 'relations'" :size="14" class="tab-icon" />
       <span class="tab-title">{{ tab.title }}</span>
+      <span v-if="dirtyPaths?.includes(tab.path)" class="tab-dirty-dot" />
       <button class="tab-close" @click="handleClose(index, $event)">
         <X :size="14" />
       </button>
@@ -234,6 +239,14 @@ onBeforeUnmount(() => {
   border-radius: 3px;
   opacity: 0;
   transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.tab-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--foreground-tertiary);
   flex-shrink: 0;
 }
 

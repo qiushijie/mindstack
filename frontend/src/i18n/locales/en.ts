@@ -178,6 +178,12 @@ export default {
       closeOthers: 'Close Others',
       closeAll: 'Close All',
     },
+    confirmUnsaved: {
+      title: 'Unsaved Changes',
+      message: 'Do you want to save changes before closing?',
+      save: 'Save',
+      discard: 'Discard',
+    },
     toolbar: {
       Bold: 'Bold',
       Italic: 'Italic',

@@ -178,6 +178,12 @@ export default {
       closeOthers: 'Fermer les autres',
       closeAll: 'Tout fermer',
     },
+    confirmUnsaved: {
+      title: 'Modifications non enregistrées',
+      message: 'Voulez-vous enregistrer avant de fermer ?',
+      save: 'Enregistrer',
+      discard: 'Ignorer',
+    },
     toolbar: {
       Bold: 'Gras',
       Italic: 'Italique',

@@ -51,6 +51,21 @@ vi.mock('../../extensions/currentFilePath', () => ({
   setFileServerPort: vi.fn(),
 }))
 
+// Mock useConfirmDialog with controllable confirm result
+const { mockConfirmResult } = vi.hoisted(() => ({
+  mockConfirmResult: { value: true },
+}))
+
+vi.mock('../useConfirmDialog', () => ({
+  useConfirmDialog: () => ({
+    visible: { value: false },
+    options: { value: { title: '', message: '', confirmText: '', cancelText: '' } },
+    confirm: () => Promise.resolve(mockConfirmResult.value),
+    handleConfirm: vi.fn(),
+    handleCancel: vi.fn(),
+  }),
+}))
+
 import {
   OpenFolderDialog,
   OpenFileDialog,
@@ -73,6 +88,7 @@ function resetState() {
   state.selectedFilePath.value = ''
   state.selectedFileContent.value = ''
   state.isDirty.value = false
+  state.dirtyTabs.value = []
   state.setEditorAdapter({
     setContent: () => {},
     getContent: () => state.selectedFileContent.value,
@@ -494,6 +510,33 @@ describe('useFileTree', () => {
       const { isDirty, markDirty } = useFileTree()
       expect(isDirty.value).toBe(false)
 
+      markDirty()
+
+      expect(isDirty.value).toBe(true)
+    })
+
+    it('does not mark dirty when content matches cached version after selectFile', async () => {
+      vi.mocked(ReadFileContent).mockResolvedValue('same content')
+
+      const { isDirty, markDirty, selectFile } = useFileTree()
+
+      await selectFile('/root/file.md')
+      // After selectFile, isDirty is false because dirtyTabs was cleared by resetState
+      expect(isDirty.value).toBe(false)
+
+      // markDirty detects content matches cache, so it stays clean
+      markDirty()
+      expect(isDirty.value).toBe(false)
+    })
+
+    it('marks dirty when content differs from cached version', async () => {
+      vi.mocked(ReadFileContent).mockResolvedValue('original content')
+
+      const { isDirty, selectedFileContent, markDirty, selectFile } = useFileTree()
+
+      await selectFile('/root/file.md')
+
+      selectedFileContent.value = 'modified content'
       markDirty()
 
       expect(isDirty.value).toBe(true)
@@ -1101,6 +1144,47 @@ describe('useFileTree', () => {
 
       expect(mockAdapter.setContent).toHaveBeenLastCalledWith('original-a')
     })
+
+    it('saves dirty file and closes tab when confirm returns true', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('original content')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectFile, closeFileTab, markDirty, selectedFileContent } = useFileTree()
+
+      await selectFile('/root/a.md')
+      // Simulate editing (same pattern as CodeMirrorEditor.onChange)
+      selectedFileContent.value = 'modified content'
+      markDirty()
+
+      mockConfirmResult.value = true
+      await closeFileTab(0)
+
+      expect(SaveFileContent).toHaveBeenCalledWith('/root/a.md', 'modified content')
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(0)
+    })
+
+    it('discards changes and closes tab when confirm returns false', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('original content')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectFile, closeFileTab, markDirty, selectedFileContent } = useFileTree()
+
+      await selectFile('/root/a.md')
+      selectedFileContent.value = 'modified content'
+      markDirty()
+
+      mockConfirmResult.value = false
+      await closeFileTab(0)
+
+      expect(SaveFileContent).not.toHaveBeenCalled()
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(0)
+    })
   })
 
   describe('closeOtherTabs', () => {
@@ -1180,6 +1264,39 @@ describe('useFileTree', () => {
         vi.useRealTimers()
       }
     })
+
+    it('saves dirty files when closing other tabs with confirm', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b')
+        .mockResolvedValueOnce('content-c')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectFile, closeOtherTabs, markDirty, selectedFileContent } = useFileTree()
+
+      await selectFile('/root/a.md')  // tab 0
+      await selectFile('/root/b.md')  // tab 1
+      await selectFile('/root/c.md')  // tab 2, active
+
+      // Make a dirty: switch to it, edit, mark
+      await selectFile('/root/a.md')
+      selectedFileContent.value = 'dirty-a'
+      markDirty()
+
+      // Make b dirty
+      await selectFile('/root/b.md')
+      selectedFileContent.value = 'dirty-b'
+      markDirty()
+
+      // Keep c (idx 2), close others
+      mockConfirmResult.value = true
+      await closeOtherTabs(2)
+
+      expect(SaveFileContent).toHaveBeenCalledWith('/root/a.md', 'dirty-a')
+      expect(SaveFileContent).toHaveBeenCalledWith('/root/b.md', 'dirty-b')
+    })
   })
 
   describe('closeAllTabs', () => {
@@ -1252,6 +1369,49 @@ describe('useFileTree', () => {
       } finally {
         vi.useRealTimers()
       }
+    })
+
+    it('saves all dirty files when closing all tabs with confirm', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectFile, closeAllTabs, markDirty, selectedFileContent } = useFileTree()
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      // Make b.md dirty
+      selectedFileContent.value = 'dirty-b'
+      markDirty()
+
+      mockConfirmResult.value = true
+      await closeAllTabs()
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(0)
+      expect(SaveFileContent).toHaveBeenCalledWith('/root/b.md', 'dirty-b')
+    })
+
+    it('discards all dirty files when closing all tabs with discard', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const { selectFile, closeAllTabs, markDirty, selectedFileContent } = useFileTree()
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      selectedFileContent.value = 'dirty-b'
+      markDirty()
+
+      mockConfirmResult.value = false
+      await closeAllTabs()
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(0)
+      expect(SaveFileContent).not.toHaveBeenCalled()
     })
   })
 })

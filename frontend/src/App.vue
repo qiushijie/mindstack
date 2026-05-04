@@ -11,6 +11,7 @@ import AppSettings from './components/AppSettings.vue'
 import AppTabBar from './components/AppTabBar.vue'
 import AIChatPanel from './components/AIChatPanel.vue'
 import AboutDialog from './components/AboutDialog.vue'
+import ConfirmDialog from './components/ConfirmDialog.vue'
 import RelationGraph from './components/RelationGraph.vue'
 import { useNavigation } from './composables/useNavigation'
 import { provideEditorState } from './composables/useEditorState'
@@ -40,7 +41,7 @@ function openRelations() {
   navigateTo('relations')
 }
 provideEditorState()
-const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs } = useFileTree()
+const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs, dirtyTabs } = useFileTree()
 const { loadSettings, theme, debugMode } = useSettings()
 
 onMounted(async () => {
@@ -101,6 +102,13 @@ onMounted(async () => {
     saveCurrentFile()
   })
 
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault()
+      saveCurrentFile()
+    }
+  })
+
   EventsOff('menu:open-devtools')
   EventsOn('menu:open-devtools', () => {
     const w = window as any
@@ -151,6 +159,7 @@ onMounted(async () => {
     <AppSidebar v-model:collapsed="sidebarCollapsed" />
     <div class="app-content">
       <AppTabBar
+        :dirty-paths="dirtyTabs"
         @switch="switchToTab"
         @close="closeFileTab"
         @close-other-tabs="closeOtherTabs"
@@ -183,6 +192,7 @@ onMounted(async () => {
     </div>
     <AIChatPanel v-if="showAIChat" @close="showAIChat = false" @open-file="selectFile" />
     <AboutDialog :visible="aboutDialogVisible" @close="aboutDialogVisible = false" />
+    <ConfirmDialog />
   </div>
 </template>
 

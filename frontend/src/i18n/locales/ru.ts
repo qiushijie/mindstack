@@ -178,6 +178,12 @@ export default {
       closeOthers: 'Закрыть другие',
       closeAll: 'Закрыть все',
     },
+    confirmUnsaved: {
+      title: 'Несохраненные изменения',
+      message: 'Сохранить изменения перед закрытием?',
+      save: 'Сохранить',
+      discard: 'Отменить',
+    },
     toolbar: {
       Bold: 'Жирный',
       Italic: 'Курсив',
