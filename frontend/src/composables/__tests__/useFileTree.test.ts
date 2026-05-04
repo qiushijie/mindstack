@@ -179,6 +179,78 @@ describe('useFileTree', () => {
       expect(isDirty.value).toBe(false)
       expect(mockAdapter.setContent).toHaveBeenCalledWith('# Hello World')
     })
+
+    it('switches root to file parent and loads tree when no workspace is open', async () => {
+      vi.mocked(OpenFileDialog).mockResolvedValue('/external/docs/spec.md')
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+      vi.mocked(ReadDirEntries).mockResolvedValue([
+        { name: 'spec.md', path: '/external/docs/spec.md', isDir: false },
+        { name: 'notes.md', path: '/external/docs/notes.md', isDir: false },
+      ])
+
+      const { rootPath, treeData, openFile } = useFileTree()
+      await openFile()
+
+      expect(rootPath.value).toBe('/external/docs')
+      expect(treeData.value).toHaveLength(2)
+      expect(treeData.value.map(n => n.name)).toEqual(['spec.md', 'notes.md'])
+      expect(AddRecentEntry).toHaveBeenCalledWith('/external/docs', true)
+    })
+
+    it('keeps root unchanged when file is inside current workspace', async () => {
+      vi.mocked(OpenFileDialog).mockResolvedValue('/workspace/notes/sub/foo.md')
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+
+      const { rootPath, treeData, openFile } = useFileTree()
+      rootPath.value = '/workspace/notes'
+      treeData.value = [
+        { name: 'sub', path: '/workspace/notes/sub', isDir: true, expanded: false, children: [] },
+      ]
+
+      await openFile()
+
+      expect(rootPath.value).toBe('/workspace/notes')
+      expect(treeData.value).toHaveLength(1)
+      expect(treeData.value[0].name).toBe('sub')
+      expect(ReadDirEntries).not.toHaveBeenCalled()
+    })
+
+    it('switches root and reloads tree when file is outside current workspace', async () => {
+      vi.mocked(OpenFileDialog).mockResolvedValue('/external/foo.md')
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+      vi.mocked(ReadDirEntries).mockResolvedValue([
+        { name: 'foo.md', path: '/external/foo.md', isDir: false },
+      ])
+
+      const { rootPath, treeData, openFile } = useFileTree()
+      rootPath.value = '/workspace/notes'
+      treeData.value = [
+        { name: 'old.md', path: '/workspace/notes/old.md', isDir: false, expanded: false, children: [] },
+      ]
+
+      await openFile()
+
+      expect(rootPath.value).toBe('/external')
+      expect(treeData.value).toHaveLength(1)
+      expect(treeData.value[0].name).toBe('foo.md')
+      expect(AddRecentEntry).toHaveBeenCalledWith('/external', true)
+    })
+
+    it('does not match a sibling directory with a shared prefix', async () => {
+      vi.mocked(OpenFileDialog).mockResolvedValue('/workspace/notes2/foo.md')
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+      vi.mocked(ReadDirEntries).mockResolvedValue([
+        { name: 'foo.md', path: '/workspace/notes2/foo.md', isDir: false },
+      ])
+
+      const { rootPath, openFile } = useFileTree()
+      rootPath.value = '/workspace/notes'
+
+      await openFile()
+
+      expect(rootPath.value).toBe('/workspace/notes2')
+      expect(AddRecentEntry).toHaveBeenCalledWith('/workspace/notes2', true)
+    })
   })
 
   describe('selectFile', () => {
@@ -704,6 +776,56 @@ describe('useFileTree', () => {
       expect(selectedFileContent.value).toBe('content')
       expect(AddRecentEntry).toHaveBeenCalledWith('/recent/doc.md', false)
     })
+
+    it('switches root to file parent and loads tree when no workspace is open', async () => {
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+      vi.mocked(ReadDirEntries).mockResolvedValue([
+        { name: 'doc.md', path: '/recent/doc.md', isDir: false },
+      ])
+
+      const { rootPath, treeData, openRecentFile } = useFileTree()
+
+      await openRecentFile('/recent/doc.md')
+
+      expect(rootPath.value).toBe('/recent')
+      expect(treeData.value).toHaveLength(1)
+      expect(treeData.value[0].name).toBe('doc.md')
+      expect(AddRecentEntry).toHaveBeenCalledWith('/recent', true)
+    })
+
+    it('keeps root unchanged when file is inside current workspace', async () => {
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+
+      const { rootPath, treeData, openRecentFile } = useFileTree()
+      rootPath.value = '/workspace/notes'
+      treeData.value = [
+        { name: 'sub', path: '/workspace/notes/sub', isDir: true, expanded: false, children: [] },
+      ]
+
+      await openRecentFile('/workspace/notes/sub/foo.md')
+
+      expect(rootPath.value).toBe('/workspace/notes')
+      expect(treeData.value).toHaveLength(1)
+      expect(treeData.value[0].name).toBe('sub')
+      expect(ReadDirEntries).not.toHaveBeenCalled()
+    })
+
+    it('switches root and reloads tree when file is outside current workspace', async () => {
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+      vi.mocked(ReadDirEntries).mockResolvedValue([
+        { name: 'foo.md', path: '/external/foo.md', isDir: false },
+      ])
+
+      const { rootPath, treeData, openRecentFile } = useFileTree()
+      rootPath.value = '/workspace/notes'
+
+      await openRecentFile('/external/foo.md')
+
+      expect(rootPath.value).toBe('/external')
+      expect(treeData.value).toHaveLength(1)
+      expect(treeData.value[0].name).toBe('foo.md')
+      expect(AddRecentEntry).toHaveBeenCalledWith('/external', true)
+    })
   })
 
   describe('restoreSession', () => {
@@ -982,7 +1104,37 @@ describe('useFileTree', () => {
   })
 })
 
-import { resolveUniqueFilePath, resolvePasteFilePath } from '../useFileTree'
+import { resolveUniqueFilePath, resolvePasteFilePath, isFileInsideRoot } from '../useFileTree'
+
+describe('isFileInsideRoot', () => {
+  it('returns true when file is a direct child of root', () => {
+    expect(isFileInsideRoot('/root/file.md', '/root')).toBe(true)
+  })
+
+  it('returns true when file is in a subdirectory of root', () => {
+    expect(isFileInsideRoot('/root/sub/file.md', '/root')).toBe(true)
+  })
+
+  it('handles trailing slash on root', () => {
+    expect(isFileInsideRoot('/root/file.md', '/root/')).toBe(true)
+  })
+
+  it('returns false when file is outside root', () => {
+    expect(isFileInsideRoot('/other/file.md', '/root')).toBe(false)
+  })
+
+  it('returns false when root is empty', () => {
+    expect(isFileInsideRoot('/anywhere/file.md', '')).toBe(false)
+  })
+
+  it('does not match a sibling directory with shared prefix', () => {
+    expect(isFileInsideRoot('/root2/file.md', '/root')).toBe(false)
+  })
+
+  it('returns false when path equals root exactly', () => {
+    expect(isFileInsideRoot('/root', '/root')).toBe(false)
+  })
+})
 
 describe('resolveUniqueFilePath', () => {
   it('returns original path when no conflict', async () => {

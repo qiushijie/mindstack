@@ -130,6 +130,23 @@ function findNode(nodes: TreeNode[], path: string): TreeNode | null {
   return null
 }
 
+export function isFileInsideRoot(filePath: string, root: string): boolean {
+  if (!root) return false
+  const normalizedRoot = root.replace(/\/$/, '')
+  return filePath.startsWith(normalizedRoot + '/')
+}
+
+async function syncRootToFile(filePath: string) {
+  if (isFileInsideRoot(filePath, rootPath.value)) return
+  const dir = filePath.substring(0, filePath.lastIndexOf('/'))
+  if (!dir) return
+  rootPath.value = dir
+  await SetWorkspaceRoot(dir)
+  const entries = await ReadDirEntries(dir)
+  treeData.value = entriesToNodes(entries)
+  AddRecentEntry(dir, true)
+}
+
 if (import.meta.env.DEV) {
   ;(window as any).__setTestWorkspace = (path: string, nodes: TreeNode[]) => {
     rootPath.value = path
@@ -241,13 +258,10 @@ export function useFileTree() {
     const path = await OpenFileDialog()
     if (!path) return
 
-    if (!rootPath.value) {
-      const dir = path.substring(0, path.lastIndexOf('/'))
-      rootPath.value = dir
-      await SetWorkspaceRoot(dir)
-    }
-
+    clearAutoSaveTimer()
     saveCurrentToCache()
+    await syncRootToFile(path)
+
     const content = await ReadFileContent(path)
     openTab(path)
     tabContentCache.set(path, content)
@@ -360,6 +374,8 @@ export function useFileTree() {
   async function openRecentFile(path: string) {
     clearAutoSaveTimer()
     saveCurrentToCache()
+
+    await syncRootToFile(path)
 
     const { isNew } = openTab(path)
     const content = await loadTabContent(path)
