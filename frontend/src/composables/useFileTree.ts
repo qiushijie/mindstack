@@ -180,6 +180,10 @@ export function useFileTree() {
     editorAdapter = adapter
   }
 
+  function clearEditorAdapter() {
+    editorAdapter = null
+  }
+
   function saveCurrentToCache() {
     if (selectedFilePath.value && editorAdapter) {
       tabContentCache.set(selectedFilePath.value, editorAdapter.getContent())
@@ -459,6 +463,7 @@ export function useFileTree() {
     isDirty,
     folderName,
     setEditorAdapter,
+    clearEditorAdapter,
     openFolder,
     openFile,
     selectFile,

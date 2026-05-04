@@ -29,7 +29,7 @@ const toolbarState = ref({
 })
 const activeLabels = ref<Set<string>>(new Set())
 
-const { markDirty, selectedFileContent } = useFileTree()
+const { markDirty, selectedFileContent, clearEditorAdapter } = useFileTree()
 
 function findNearestHeadingLine(cursorLine: number): number {
   const headings = currentHeadings.value
@@ -396,6 +396,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleDocKeydown)
   containerRef.value?.removeEventListener('editor:insert-image', handleInsertImage)
   containerRef.value?.removeEventListener('editor:edit-image', handleEditImage)
+  clearEditorAdapter()
 })
 </script>
 
