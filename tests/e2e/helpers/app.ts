@@ -3,7 +3,9 @@ import { Page } from '@playwright/test'
 export async function waitForAppReady(page: Page): Promise<void> {
   await page.waitForSelector('#app', { state: 'attached' })
   await page.waitForSelector('.cm-editor', { state: 'visible', timeout: 10000 })
-  await page.waitForLoadState('networkidle')
+  // Wails maintains a persistent WebSocket connection, so networkidle never resolves.
+  // Use 'load' instead, which fires when the initial page is fully loaded.
+  await page.waitForLoadState('load')
 }
 
 export async function resetAppState(page: Page): Promise<void> {

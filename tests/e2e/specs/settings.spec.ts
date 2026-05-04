@@ -10,12 +10,12 @@ test.describe('Settings', () => {
 
   test('should display general section', async ({ page }) => {
     const titles = page.locator('.settings-content .section-title')
-    await expect(titles.first()).toContainText('General')
+    await expect(titles.first()).toContainText('通用')
   })
 
   test('should display editor section', async ({ page }) => {
     const titles = page.locator('.settings-content .section-title')
-    await expect(titles.filter({ hasText: 'Editor' })).toBeVisible()
+    await expect(titles.filter({ hasText: '编辑器' })).toBeVisible()
   })
 
   test('should display git section', async ({ page }) => {
@@ -23,8 +23,8 @@ test.describe('Settings', () => {
     await expect(titles.filter({ hasText: 'Git' })).toBeVisible()
   })
 
-  test('should display about section', async ({ page }) => {
+  test('should display model section', async ({ page }) => {
     const titles = page.locator('.settings-content .section-title')
-    await expect(titles.filter({ hasText: 'About' })).toBeVisible()
+    await expect(titles.filter({ hasText: '模型' })).toBeVisible()
   })
 })

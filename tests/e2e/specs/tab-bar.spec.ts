@@ -72,7 +72,7 @@ test.describe('Tab Bar', () => {
     // Right-click on the first tab and close others
     await page.locator('.tab-item').nth(0).click({ button: 'right' })
     await page.waitForTimeout(200)
-    await page.locator('.context-menu-item').filter({ hasText: 'Close Others' }).click()
+    await page.locator('.context-menu-item').filter({ hasText: '关闭其他' }).click()
     await page.waitForTimeout(500)
 
     // Only the first tab should remain
@@ -87,7 +87,7 @@ test.describe('Tab Bar', () => {
 
     await page.locator('.tab-item').nth(0).click({ button: 'right' })
     await page.waitForTimeout(200)
-    await page.locator('.context-menu-item').filter({ hasText: 'Close All' }).click()
+    await page.locator('.context-menu-item').filter({ hasText: '关闭全部' }).click()
     await page.waitForTimeout(500)
 
     await expect(page.locator('.tab-item')).toHaveCount(0)
@@ -109,9 +109,9 @@ test.describe('Tab Bar', () => {
 
     // Confirm dialog should appear
     await expect(page.locator('.confirm-dialog-overlay')).toBeVisible()
-    await expect(page.locator('.confirm-dialog-header')).toContainText('Unsaved')
-    await expect(page.locator('.btn-confirm')).toContainText('Save')
-    await expect(page.locator('.btn-cancel')).toContainText('Discard')
+    await expect(page.locator('.confirm-dialog-header')).toContainText('未保存的更改')
+    await expect(page.locator('.btn-confirm')).toContainText('保存')
+    await expect(page.locator('.btn-cancel')).toContainText('丢弃')
   })
 
   test('should discard changes and close tab', async ({ page }) => {
@@ -161,7 +161,7 @@ test.describe('Tab Bar', () => {
     // Right-click on readme.md tab and close others
     await page.locator('.tab-item').nth(0).click({ button: 'right' })
     await page.waitForTimeout(200)
-    await page.locator('.context-menu-item').filter({ hasText: 'Close Others' }).click()
+    await page.locator('.context-menu-item').filter({ hasText: '关闭其他' }).click()
     await page.waitForTimeout(300)
 
     // Confirm dialog should appear
@@ -186,11 +186,11 @@ test.describe('Tab Bar', () => {
     // Close all via context menu
     await page.locator('.tab-item').nth(0).click({ button: 'right' })
     await page.waitForTimeout(200)
-    await page.locator('.context-menu-item').filter({ hasText: 'Close All' }).click()
+    await page.locator('.context-menu-item').filter({ hasText: '关闭全部' }).click()
     await page.waitForTimeout(300)
 
     await expect(page.locator('.confirm-dialog-overlay')).toBeVisible()
-    await expect(page.locator('.confirm-dialog-header')).toContainText('Unsaved')
+    await expect(page.locator('.confirm-dialog-header')).toContainText('未保存的更改')
 
     // Discard all
     await page.locator('.btn-cancel').click()

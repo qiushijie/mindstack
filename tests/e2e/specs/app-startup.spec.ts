@@ -25,8 +25,8 @@ test.describe('App Startup', () => {
     const bar = page.locator('.status-bar')
     await expect(bar).toBeVisible()
     await expect(bar).toContainText('Markdown')
-    await expect(bar).toContainText('Ln 1, Col 1')
-    await expect(bar).toContainText('0 words')
+    await expect(bar).toContainText('行 1, 列 1')
+    await expect(bar).toContainText('0 词')
   })
 
   test('should show sidebar with workspace or empty prompt', async ({ page }) => {

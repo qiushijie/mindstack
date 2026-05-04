@@ -9,26 +9,26 @@ test.describe('Settings Interactions', () => {
   })
 
   test('should show theme buttons in General section', async ({ page }) => {
-    const lightBtn = page.locator('button.theme-btn').filter({ hasText: 'Light' })
-    const darkBtn = page.locator('button.theme-btn').filter({ hasText: 'Dark' })
+    const lightBtn = page.locator('button.theme-btn').filter({ hasText: '浅色' })
+    const darkBtn = page.locator('button.theme-btn').filter({ hasText: '深色' })
     await expect(lightBtn).toBeVisible()
     await expect(darkBtn).toBeVisible()
   })
 
   test('should toggle theme from Light to Dark', async ({ page }) => {
-    const darkBtn = page.locator('button.theme-btn').filter({ hasText: 'Dark' })
+    const darkBtn = page.locator('button.theme-btn').filter({ hasText: '深色' })
     await darkBtn.click()
     await expect(darkBtn).toHaveClass(/active/)
   })
 
   test('should show Auto Save toggle in General section', async ({ page }) => {
-    const autoSaveRow = page.locator('.setting-row').filter({ hasText: 'Auto Save' })
+    const autoSaveRow = page.locator('.setting-row').filter({ hasText: '自动保存' })
     const toggle = autoSaveRow.locator('.toggle')
     await expect(toggle).toBeVisible()
   })
 
   test('should toggle Auto Save on and off', async ({ page }) => {
-    const autoSaveRow = page.locator('.setting-row').filter({ hasText: 'Auto Save' })
+    const autoSaveRow = page.locator('.setting-row').filter({ hasText: '自动保存' })
     const toggle = autoSaveRow.locator('.toggle')
     const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
 
@@ -41,7 +41,7 @@ test.describe('Settings Interactions', () => {
   })
 
   test('should toggle Line Numbers', async ({ page }) => {
-    const row = page.locator('.setting-row').filter({ hasText: 'Line Numbers' })
+    const row = page.locator('.setting-row').filter({ hasText: '行号' })
     const toggle = row.locator('.toggle')
     const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
 
@@ -54,7 +54,7 @@ test.describe('Settings Interactions', () => {
   })
 
   test('should toggle Word Wrap', async ({ page }) => {
-    const row = page.locator('.setting-row').filter({ hasText: 'Word Wrap' })
+    const row = page.locator('.setting-row').filter({ hasText: '自动换行' })
     const toggle = row.locator('.toggle')
     const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
 
@@ -67,13 +67,13 @@ test.describe('Settings Interactions', () => {
   })
 
   test('should show Auto Commit toggle in Git section', async ({ page }) => {
-    const autoCommitRow = page.locator('.setting-row').filter({ hasText: 'Auto Commit' })
+    const autoCommitRow = page.locator('.setting-row').filter({ hasText: '自动提交' })
     const toggle = autoCommitRow.locator('.toggle')
     await expect(toggle).toBeVisible()
   })
 
   test('should toggle Auto Commit', async ({ page }) => {
-    const row = page.locator('.setting-row').filter({ hasText: 'Auto Commit' })
+    const row = page.locator('.setting-row').filter({ hasText: '自动提交' })
     const toggle = row.locator('.toggle')
     const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
 
@@ -85,10 +85,8 @@ test.describe('Settings Interactions', () => {
     }
   })
 
-  test('should show app info in About section', async ({ page }) => {
-    const content = page.locator('.settings-content')
-    await expect(content).not.toBeEmpty()
-    const aboutName = page.locator('.about-name')
-    await expect(aboutName).toBeVisible()
+  test('should show model section', async ({ page }) => {
+    const titles = page.locator('.settings-content .section-title')
+    await expect(titles.filter({ hasText: '模型' })).toBeVisible()
   })
 })

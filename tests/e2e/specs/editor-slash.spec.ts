@@ -40,7 +40,7 @@ test.describe('Slash Command Menu', () => {
 
     for (let i = 0; i < count; i++) {
       const label = await items.nth(i).locator('.cm-slash-label').textContent()
-      expect(label!.toLowerCase()).toContain('heading')
+      expect(label!).toContain('标题')
     }
   })
 

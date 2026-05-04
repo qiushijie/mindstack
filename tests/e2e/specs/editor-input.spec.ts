@@ -45,9 +45,9 @@ test.describe('Editor Input', () => {
     await page.waitForTimeout(300)
 
     const statusTexts = await getStatusText(page)
-    const wordsText = statusTexts.find((t) => t.includes('words'))
+    const wordsText = statusTexts.find((t) => t.includes('词'))
     expect(wordsText).toBeTruthy()
-    expect(wordsText!).toContain('2 words')
+    expect(wordsText!).toContain('2 词')
   })
 
   test('should update cursor position in status bar', async ({ page }) => {
@@ -57,9 +57,9 @@ test.describe('Editor Input', () => {
     await page.waitForTimeout(300)
 
     const statusTexts = await getStatusText(page)
-    const posText = statusTexts.find((t) => t.includes('Ln'))
+    const posText = statusTexts.find((t) => t.includes('行'))
     expect(posText).toBeTruthy()
-    expect(posText!).toContain('Ln 2')
+    expect(posText!).toContain('行 2')
   })
 
   test('should select all text', async ({ page }) => {

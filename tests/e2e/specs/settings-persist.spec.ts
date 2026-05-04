@@ -11,7 +11,7 @@ test.describe('Settings Persistence', () => {
   test('should preserve model settings after file tree operations', async ({ page }) => {
     // 1. Navigate to Settings
     await navigateTo(page, 'settings')
-    await expect(page.locator('.settings-content .section-title').filter({ hasText: 'Model' })).toBeVisible()
+    await expect(page.locator('.settings-content .section-title').filter({ hasText: '模型' })).toBeVisible()
 
     // 2. Clean up existing models from previous test runs
     const deleteButtons = page.locator('.model-card .icon-btn.delete')
@@ -52,7 +52,7 @@ test.describe('Settings Persistence', () => {
 
     // 7. Go back to Settings
     await navigateTo(page, 'settings')
-    await expect(page.locator('.settings-content .section-title').filter({ hasText: 'Model' })).toBeVisible()
+    await expect(page.locator('.settings-content .section-title').filter({ hasText: '模型' })).toBeVisible()
 
     // 8. Verify model settings survived the file tree operation
     const persistedCard = page.locator('.model-card').first()

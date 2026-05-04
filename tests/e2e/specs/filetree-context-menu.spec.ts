@@ -31,11 +31,11 @@ test.describe('File Tree Context Menu', () => {
     const menu = getTreeContextMenu(page)
     await expect(menu).toBeVisible()
 
-    await expect(getTreeMenuItem(page, 'Copy')).toBeVisible()
-    await expect(getTreeMenuItem(page, 'Paste')).toBeVisible()
-    await expect(getTreeMenuItem(page, 'Copy Path')).toBeVisible()
-    await expect(getTreeMenuItem(page, 'Copy Relative Path')).toBeVisible()
-    await expect(getTreeMenuItem(page, 'Delete')).toBeVisible()
+    await expect(getTreeMenuItem(page, '复制')).toBeVisible()
+    await expect(getTreeMenuItem(page, '粘贴')).toBeVisible()
+    await expect(getTreeMenuItem(page, '复制路径')).toBeVisible()
+    await expect(getTreeMenuItem(page, '复制相对路径')).toBeVisible()
+    await expect(getTreeMenuItem(page, '删除')).toBeVisible()
   })
 
   test('should show context menu on directory right-click', async ({ page }) => {
@@ -44,11 +44,11 @@ test.describe('File Tree Context Menu', () => {
     const menu = getTreeContextMenu(page)
     await expect(menu).toBeVisible()
 
-    await expect(getTreeMenuItem(page, 'Copy')).toBeVisible()
-    await expect(getTreeMenuItem(page, 'Paste')).toBeVisible()
-    await expect(getTreeMenuItem(page, 'Copy Path')).toBeVisible()
-    await expect(getTreeMenuItem(page, 'Copy Relative Path')).toBeVisible()
-    await expect(getTreeMenuItem(page, 'Delete')).toBeVisible()
+    await expect(getTreeMenuItem(page, '复制')).toBeVisible()
+    await expect(getTreeMenuItem(page, '粘贴')).toBeVisible()
+    await expect(getTreeMenuItem(page, '复制路径')).toBeVisible()
+    await expect(getTreeMenuItem(page, '复制相对路径')).toBeVisible()
+    await expect(getTreeMenuItem(page, '删除')).toBeVisible()
   })
 
   test('should close context menu when clicking elsewhere', async ({ page }) => {
@@ -65,7 +65,7 @@ test.describe('File Tree Context Menu', () => {
     // Skipped because ConfirmDelete uses Wails runtime.MessageDialog,
     // a native modal dialog that Playwright cannot automate in e2e tests.
     await openTreeContextMenu(page, 'readme.md')
-    await clickTreeMenuItem(page, 'Delete')
+    await clickTreeMenuItem(page, '删除')
     // After confirming deletion, the file should disappear from the tree.
     await expect(getTreeItem(page, 'readme.md')).toBeHidden()
   })
@@ -74,7 +74,7 @@ test.describe('File Tree Context Menu', () => {
     // Skipped because ConfirmDelete uses Wails runtime.MessageDialog,
     // a native modal dialog that Playwright cannot automate in e2e tests.
     await openTreeContextMenu(page, 'notes')
-    await clickTreeMenuItem(page, 'Delete')
+    await clickTreeMenuItem(page, '删除')
     // After confirming deletion, the directory should disappear from the tree.
     await expect(getTreeItem(page, 'notes')).toBeHidden()
   })

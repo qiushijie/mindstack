@@ -91,10 +91,9 @@ const MOCK_RELATIONS = {
 }
 
 async function setupRelationGraphMocks(page: import('@playwright/test').Page) {
-  await page.addInitScript((data) => {
-    ;(window as any).go = (window as any).go || {}
-    ;(window as any).go.main = (window as any).go.main || {}
-    ;(window as any).go.main.App = (window as any).go.main.App || {}
+  // Wails runtime overwrites window.go.main.App after page load, so mocks must
+  // be applied after the page is fully loaded (not via addInitScript).
+  await page.evaluate((data) => {
     ;(window as any).go.main.App.GetDocumentMetas = () =>
       Promise.resolve(JSON.stringify(data.metas))
     ;(window as any).go.main.App.GetDocumentRelations = () =>
@@ -106,9 +105,9 @@ async function setupRelationGraphMocks(page: import('@playwright/test').Page) {
 
 test.describe('Relation Graph', () => {
   test.beforeEach(async ({ page }) => {
-    await setupRelationGraphMocks(page)
     await page.goto('/')
     await waitForAppReady(page)
+    await setupRelationGraphMocks(page)
     await navigateTo(page, 'relations')
   })
 
@@ -161,7 +160,7 @@ test.describe('Relation Graph', () => {
     const statLabels = page.locator('.stat-label')
     const count = await statLabels.count()
     if (count > 0) {
-      expect(await statLabels.first().textContent()).toContain('Documents')
+      expect(await statLabels.first().textContent()).toContain('文档')
     }
   })
 
@@ -177,8 +176,8 @@ test.describe('Relation Graph', () => {
     const count = await legendItems.count()
     if (count > 0) {
       expect(count).toBe(2)
-      expect(await legendItems.nth(0).textContent()).toContain('Outgoing')
-      expect(await legendItems.nth(1).textContent()).toContain('Incoming')
+      expect(await legendItems.nth(0).textContent()).toContain('出向')
+      expect(await legendItems.nth(1).textContent()).toContain('入向')
     }
   })
 
@@ -206,7 +205,7 @@ test.describe('Relation Graph', () => {
     // Should show no results overlay
     await expect(page.locator('.graph-empty-overlay')).toBeVisible()
     const text = await page.locator('.graph-empty-overlay').textContent()
-    expect(text).toContain('No matching documents')
+    expect(text).toContain('未找到匹配的文档')
   })
 
   test('should restore all nodes when search is cleared', async ({ page }) => {
@@ -239,6 +238,6 @@ test.describe('Relation Graph', () => {
   test('should have search input functional', async ({ page }) => {
     const searchInput = page.locator('.graph-search-input')
     await expect(searchInput).toBeVisible()
-    await expect(searchInput).toHaveAttribute('placeholder', 'Search documents...')
+    await expect(searchInput).toHaveAttribute('placeholder', '搜索文档...')
   })
 })

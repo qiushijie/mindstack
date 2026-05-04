@@ -14,10 +14,11 @@ test.describe('Sidebar Collapse', () => {
     const sidebar = page.locator('.sidebar')
     await expect(sidebar).not.toHaveClass(/collapsed/)
 
-    await expect(page.locator('.sidebar-logo')).toBeVisible()
+    // sidebar-header is always rendered; search/tree are only visible when expanded
+    await expect(page.locator('.sidebar-header')).toBeVisible()
     await expect(page.locator('.sidebar-search')).toBeVisible()
     await expect(page.locator('.sidebar-tree')).toBeVisible()
-    await expect(page.locator('.section-label')).toHaveText('Workspace')
+    await expect(page.locator('.section-label')).toHaveText('工作区')
   })
 
   test('should collapse when toggle button is clicked', async ({ page }) => {
@@ -27,7 +28,6 @@ test.describe('Sidebar Collapse', () => {
     const sidebar = page.locator('.sidebar')
     await expect(sidebar).toHaveClass(/collapsed/)
 
-    await expect(page.locator('.sidebar-logo')).toBeHidden()
     await expect(page.locator('.sidebar-search')).toBeHidden()
     await expect(page.locator('.sidebar-tree')).toBeHidden()
   })
@@ -45,7 +45,7 @@ test.describe('Sidebar Collapse', () => {
     const sidebar = page.locator('.sidebar')
     await expect(sidebar).not.toHaveClass(/collapsed/)
 
-    await expect(page.locator('.sidebar-logo')).toBeVisible()
+    await expect(page.locator('.sidebar-header')).toBeVisible()
     await expect(page.locator('.sidebar-search')).toBeVisible()
     await expect(page.locator('.sidebar-tree')).toBeVisible()
   })

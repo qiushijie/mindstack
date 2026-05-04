@@ -89,7 +89,7 @@ test.describe('Editor Formatting', () => {
     await page.locator('.editor-container').click({ button: 'right' })
 
     await expect(page.locator('.context-menu')).toBeVisible()
-    await expect(page.locator('.context-menu .ctx-item').first()).toContainText('Cut')
+    await expect(page.locator('.context-menu .ctx-item').first()).toContainText('剪切')
   })
 
   test('should apply strikethrough via toolbar', async ({ page }) => {

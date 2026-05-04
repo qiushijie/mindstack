@@ -21,7 +21,7 @@ test.describe('Editor Context Menu', () => {
     const menu = page.locator('.context-menu')
     await expect(menu).toBeVisible()
 
-    const cutItem = menu.locator('.ctx-item', { hasText: 'Cut' })
+    const cutItem = menu.locator('.ctx-item', { hasText: '剪切' })
     await expect(cutItem).toBeVisible()
   })
 
@@ -32,7 +32,7 @@ test.describe('Editor Context Menu', () => {
     const menu = page.locator('.context-menu')
     await expect(menu).toBeVisible()
 
-    const copyItem = menu.locator('.ctx-item', { hasText: 'Copy' })
+    const copyItem = menu.locator('.ctx-item', { hasText: '复制' })
     await expect(copyItem).toBeVisible()
   })
 
@@ -43,7 +43,7 @@ test.describe('Editor Context Menu', () => {
     const menu = page.locator('.context-menu')
     await expect(menu).toBeVisible()
 
-    const pasteItem = menu.locator('.ctx-item', { hasText: 'Paste' })
+    const pasteItem = menu.locator('.ctx-item', { hasText: '粘贴' })
     await expect(pasteItem).toBeVisible()
   })
 
@@ -54,7 +54,7 @@ test.describe('Editor Context Menu', () => {
     const menu = page.locator('.context-menu')
     await expect(menu).toBeVisible()
 
-    const refreshItem = menu.locator('.ctx-item', { hasText: 'Refresh' })
+    const refreshItem = menu.locator('.ctx-item', { hasText: '刷新' })
     await expect(refreshItem).toBeVisible()
   })
 
@@ -89,12 +89,12 @@ test.describe('Editor Context Menu', () => {
     const menu = page.locator('.context-menu')
     await expect(menu).toBeVisible()
 
-    const addRowAbove = menu.locator('.ctx-item', { hasText: /Add Row Above/i })
-    const addRowBelow = menu.locator('.ctx-item', { hasText: /Add Row Below/i })
-    const deleteRow = menu.locator('.ctx-item', { hasText: /Delete Row/i })
-    const addColLeft = menu.locator('.ctx-item', { hasText: /Add Column Left/i })
-    const addColRight = menu.locator('.ctx-item', { hasText: /Add Column Right/i })
-    const deleteCol = menu.locator('.ctx-item', { hasText: /Delete Column/i })
+    const addRowAbove = menu.locator('.ctx-item', { hasText: '在上方插入行' })
+    const addRowBelow = menu.locator('.ctx-item', { hasText: '在下方插入行' })
+    const deleteRow = menu.locator('.ctx-item', { hasText: '删除行' })
+    const addColLeft = menu.locator('.ctx-item', { hasText: '在左侧插入列' })
+    const addColRight = menu.locator('.ctx-item', { hasText: '在右侧插入列' })
+    const deleteCol = menu.locator('.ctx-item', { hasText: '删除列' })
 
     await expect(addRowAbove.or(addRowBelow).or(deleteRow).first()).toBeVisible()
     await expect(addColLeft.or(addColRight).or(deleteCol).first()).toBeVisible()
