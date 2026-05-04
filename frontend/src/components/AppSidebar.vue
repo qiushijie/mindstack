@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   PanelLeftClose,
@@ -53,6 +53,45 @@ watch(viewMode, (mode) => {
 function toggleViewMode() {
   viewMode.value = viewMode.value === 'file' ? 'heading' : 'file'
 }
+
+const searchQuery = ref('')
+
+function matchesQuery(node: TreeNode, query: string): boolean {
+  const lowerQuery = query.toLowerCase()
+  if (node.name.toLowerCase().includes(lowerQuery)) return true
+  if (node.isDir && node.children.length > 0) {
+    return node.children.some(child => matchesQuery(child, query))
+  }
+  return false
+}
+
+const filteredHeadings = computed(() => {
+  if (!searchQuery.value.trim()) return headings.value
+  const query = searchQuery.value.trim().toLowerCase()
+  return headings.value.filter(h => h.text.toLowerCase().includes(query))
+})
+
+const filteredTreeData = computed(() => {
+  if (!searchQuery.value.trim()) return treeData.value
+  const query = searchQuery.value.trim()
+  function filter(nodes: TreeNode[]): TreeNode[] {
+    const result: TreeNode[] = []
+    for (const node of nodes) {
+      if (matchesQuery(node, query)) {
+        if (node.isDir) {
+          result.push({ ...node, children: filter(node.children) })
+        } else {
+          result.push(node)
+        }
+      } else if (node.isDir && node.children.length === 0) {
+        // Unexpanded directory: keep visible since children aren't loaded yet
+        result.push(node)
+      }
+    }
+    return result
+  }
+  return filter(treeData.value)
+})
 
 function handleHeadingSelect(line: number) {
   scrollToLine(line)
@@ -144,7 +183,11 @@ async function handleRefresh(dirPath: string) {
       <div class="sidebar-search">
         <div class="search-box">
           <Search :size="14" class="search-icon" />
-          <span class="search-placeholder">{{ t('sidebar.searchPlaceholder') }}</span>
+          <input
+            v-model="searchQuery"
+            class="search-input"
+            :placeholder="t('sidebar.searchPlaceholder')"
+          />
         </div>
       </div>
 
@@ -159,7 +202,7 @@ async function handleRefresh(dirPath: string) {
           <div class="file-tree-content" @contextmenu.prevent="onTreeContextMenu">
             <span class="section-label">{{ t('sidebar.workspace') }}</span>
             <SidebarTreeNode
-              v-for="node in treeData"
+              v-for="node in filteredTreeData"
               :key="node.path"
               :node="node"
               :selected-path="selectedFilePath"
@@ -172,7 +215,7 @@ async function handleRefresh(dirPath: string) {
         </template>
         <template v-else>
           <HeadingOutline
-            :headings="headings"
+            :headings="filteredHeadings"
             :selected-line="selectedHeadingLine"
             @select="handleHeadingSelect"
           />
@@ -344,8 +387,17 @@ async function handleRefresh(dirPath: string) {
   flex-shrink: 0;
 }
 
-.search-placeholder {
+.search-input {
+  flex: 1;
   font-size: 13px;
+  color: var(--foreground-primary);
+  background: none;
+  border: none;
+  outline: none;
+  caret-color: var(--accent-color);
+}
+
+.search-input::placeholder {
   color: var(--foreground-tertiary);
 }
 

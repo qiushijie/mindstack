@@ -80,10 +80,12 @@ vi.mock('../../composables/useFileTree', () => ({
   }),
 }))
 
-// Mock useHeadingTree
+// Mutable mock headings state
+const mockHeadings = ref<{ text: string; level: number; line: number }[]>([])
+
 vi.mock('../../composables/useHeadingTree', () => ({
   useHeadingTree: () => ({
-    headings: computed(() => []),
+    headings: computed(() => mockHeadings.value),
     selectedHeadingLine: computed(() => 1),
   }),
   setCurrentHeadings: vi.fn(),
@@ -111,7 +113,10 @@ const HeadingOutlineStub = {
   props: ['headings', 'selectedLine'],
   emits: ['select'],
   render() {
-    return h('div', { class: 'heading-outline-stub' })
+    const headings = (this as any).headings as { text: string; level: number; line: number }[] || []
+    return h('div', { class: 'heading-outline-stub' }, headings.map(hd =>
+      h('div', { class: 'heading-item-stub', 'data-text': hd.text })
+    ))
   },
 }
 
@@ -135,6 +140,7 @@ describe('AppSidebar', () => {
     mockSelectedFilePath.value = ''
     mockSelectedFileContent.value = ''
     g.__testCopiedFilePath = null
+    mockHeadings.value = []
     // Clean up any leftover menu elements from previous tests
     document.querySelectorAll('.tree-context-menu').forEach(el => el.remove())
   })
@@ -222,6 +228,76 @@ describe('AppSidebar', () => {
       expect(stubs).toHaveLength(2)
       expect(stubs[0].attributes('data-path')).toBe('/test/project/src')
       expect(stubs[1].attributes('data-path')).toBe('/test/project/README.md')
+      wrapper.unmount()
+    })
+
+    it('filters tree when search query is entered', async () => {
+      const wrapper = mountComponent()
+      const input = wrapper.find('.search-input')
+      expect(input.exists()).toBe(true)
+
+      await input.setValue('README')
+      await nextTick()
+
+      const stubs = wrapper.findAll('.sidebar-tree-node-stub')
+      expect(stubs).toHaveLength(2)
+      expect(stubs[0].attributes('data-path')).toBe('/test/project/src')
+      expect(stubs[1].attributes('data-path')).toBe('/test/project/README.md')
+      wrapper.unmount()
+    })
+
+    it('shows all nodes when search query is cleared', async () => {
+      const wrapper = mountComponent()
+      const input = wrapper.find('.search-input')
+
+      await input.setValue('README')
+      await nextTick()
+
+      let stubs = wrapper.findAll('.sidebar-tree-node-stub')
+      expect(stubs).toHaveLength(2)
+
+      await input.setValue('')
+      await nextTick()
+
+      stubs = wrapper.findAll('.sidebar-tree-node-stub')
+      expect(stubs).toHaveLength(2)
+      wrapper.unmount()
+    })
+
+    it('shows matching directory when searching by dir name', async () => {
+      const wrapper = mountComponent()
+      const input = wrapper.find('.search-input')
+
+      await input.setValue('src')
+      await nextTick()
+
+      const stubs = wrapper.findAll('.sidebar-tree-node-stub')
+      expect(stubs).toHaveLength(1)
+      expect(stubs[0].attributes('data-path')).toBe('/test/project/src')
+      wrapper.unmount()
+    })
+
+    it('hides non-matching expanded directory when children are loaded', async () => {
+      const wrapper = mountComponent()
+      mockTreeData.value = [
+        {
+          name: 'src', path: '/test/project/src', isDir: true, expanded: true,
+          children: [
+            { name: 'main.ts', path: '/test/project/src/main.ts', isDir: false, expanded: false, children: [] },
+            { name: 'utils.ts', path: '/test/project/src/utils.ts', isDir: false, expanded: false, children: [] },
+          ],
+        },
+        { name: 'README.md', path: '/test/project/README.md', isDir: false, expanded: false, children: [] },
+      ]
+      await nextTick()
+
+      const input = wrapper.find('.search-input')
+      await input.setValue('README')
+      await nextTick()
+
+      const stubs = wrapper.findAll('.sidebar-tree-node-stub')
+      expect(stubs).toHaveLength(1)
+      expect(stubs[0].attributes('data-path')).toBe('/test/project/README.md')
       wrapper.unmount()
     })
   })
@@ -377,6 +453,85 @@ describe('AppSidebar', () => {
       const treeNode = wrapper.findAllComponents(SidebarTreeNodeStub)[0]
       treeNode.vm.$emit('refresh', '/test/project/src')
       expect(mockRefreshDir).toHaveBeenCalledWith('/test/project/src')
+      wrapper.unmount()
+    })
+  })
+
+  describe('heading search', () => {
+    async function switchToHeadingView(wrapper: ReturnType<typeof mountComponent>) {
+      const toggleBtn = wrapper.find('.view-toggle-btn')
+      await toggleBtn.trigger('click')
+      await nextTick()
+    }
+
+    it('renders all headings when no search query', async () => {
+      mockHeadings.value = [
+        { text: 'Installation', level: 1, line: 1 },
+        { text: 'Usage', level: 2, line: 10 },
+        { text: 'API Reference', level: 2, line: 20 },
+      ]
+      const wrapper = mountComponent()
+      await switchToHeadingView(wrapper)
+
+      const items = wrapper.findAll('.heading-item-stub')
+      expect(items).toHaveLength(3)
+      wrapper.unmount()
+    })
+
+    it('filters headings by search query', async () => {
+      mockHeadings.value = [
+        { text: 'Installation', level: 1, line: 1 },
+        { text: 'Usage', level: 2, line: 10 },
+        { text: 'API Reference', level: 2, line: 20 },
+      ]
+      const wrapper = mountComponent()
+      await switchToHeadingView(wrapper)
+
+      const input = wrapper.find('.search-input')
+      await input.setValue('API')
+      await nextTick()
+
+      const items = wrapper.findAll('.heading-item-stub')
+      expect(items).toHaveLength(1)
+      expect(items[0].attributes('data-text')).toBe('API Reference')
+      wrapper.unmount()
+    })
+
+    it('shows no headings when query does not match any heading', async () => {
+      mockHeadings.value = [
+        { text: 'Installation', level: 1, line: 1 },
+        { text: 'Usage', level: 2, line: 10 },
+      ]
+      const wrapper = mountComponent()
+      await switchToHeadingView(wrapper)
+
+      const input = wrapper.find('.search-input')
+      await input.setValue('Nonexistent')
+      await nextTick()
+
+      const items = wrapper.findAll('.heading-item-stub')
+      expect(items).toHaveLength(0)
+      wrapper.unmount()
+    })
+
+    it('shows all headings when search is cleared', async () => {
+      mockHeadings.value = [
+        { text: 'Installation', level: 1, line: 1 },
+        { text: 'Usage', level: 2, line: 10 },
+      ]
+      const wrapper = mountComponent()
+      await switchToHeadingView(wrapper)
+
+      const input = wrapper.find('.search-input')
+      await input.setValue('Usage')
+      await nextTick()
+
+      expect(wrapper.findAll('.heading-item-stub')).toHaveLength(1)
+
+      await input.setValue('')
+      await nextTick()
+
+      expect(wrapper.findAll('.heading-item-stub')).toHaveLength(2)
       wrapper.unmount()
     })
   })
