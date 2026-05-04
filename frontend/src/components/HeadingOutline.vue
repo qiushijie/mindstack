@@ -64,6 +64,7 @@ function getFontWeight(level: number): string {
 
 .heading-item {
   height: 28px;
+  flex-shrink: 0;
   border-radius: 4px;
   display: flex;
   align-items: center;

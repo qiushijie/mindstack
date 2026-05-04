@@ -212,7 +212,7 @@ async function handleRefresh(dirPath: string) {
 <style scoped>
 .sidebar {
   width: var(--sidebar-width);
-  height: 100%;
+  height: 100vh;
   background-color: var(--surface-sidebar);
   border-right: 1px solid var(--border-subtle);
   display: flex;
@@ -370,17 +370,21 @@ async function handleRefresh(dirPath: string) {
 
 .sidebar-tree {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .file-tree-content {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--spacing-sm);
   display: flex;
   flex-direction: column;
   gap: 2px;
+  scrollbar-width: none;
 }
 
 .section-label {
@@ -415,3 +419,11 @@ async function handleRefresh(dirPath: string) {
   color: var(--foreground-secondary);
 }
 </style>
+
+<style>
+.file-tree-content::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+}
+</style>
+

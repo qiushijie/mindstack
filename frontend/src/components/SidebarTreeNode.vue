@@ -144,6 +144,7 @@ async function pasteHere() {
 <style scoped>
 .tree-item {
   height: 30px;
+  flex-shrink: 0;
   border-radius: 4px;
   display: flex;
   align-items: center;
