@@ -6,7 +6,6 @@ import {
   Type,
   Sparkles,
   GitBranch,
-  Info,
   ChevronDown,
   Eye,
   EyeOff,
@@ -82,15 +81,6 @@ const gitKeywords = computed(() => [
   t('settings.desc.autoCommit'),
   t('settings.label.autoPull'),
   t('settings.desc.autoPull'),
-].join(' '))
-
-const aboutKeywords = computed(() => [
-  t('settings.section.about'),
-  t('settings.group.information'),
-  t('settings.about.name'),
-  t('settings.about.version'),
-  t('settings.about.desc'),
-  t('settings.about.build'),
 ].join(' '))
 
 const debugKeywords = computed(() => [
@@ -433,28 +423,6 @@ async function selectLocale(key: Locale) {
           </div>
         </div>
 
-        <!-- About -->
-        <div v-show="matchSearch(aboutKeywords)" class="settings-section">
-          <h1 class="section-title">{{ t('settings.section.about') }}</h1>
-
-          <div class="settings-group">
-            <span class="group-label">{{ t('settings.group.information') }}</span>
-            <div class="about-card">
-              <div class="about-header">
-                <span class="about-name">{{ t('settings.about.name') }}</span>
-                <span class="about-version">{{ t('settings.about.version') }}</span>
-              </div>
-              <div class="about-sep" />
-              <p class="about-desc">
-                {{ t('settings.about.desc') }}
-              </p>
-              <p class="about-build">
-                {{ t('settings.about.build') }}
-              </p>
-            </div>
-          </div>
-        </div>
-
         <!-- Debug -->
         <div v-if="debugMode" v-show="matchSearch(debugKeywords)" class="settings-section">
           <h1 class="section-title">{{ t('settings.section.debug') }}</h1>
@@ -772,52 +740,6 @@ async function selectLocale(key: Locale) {
 .dropdown-item.active {
   color: var(--accent-primary);
   font-weight: 500;
-}
-
-/* About Card */
-.about-card {
-  padding: 20px;
-  background-color: var(--surface-secondary);
-  border-radius: 8px;
-  border: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.about-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.about-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--foreground-primary);
-}
-
-.about-version {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--foreground-tertiary);
-}
-
-.about-sep {
-  height: 1px;
-  background-color: var(--border-subtle);
-}
-
-.about-desc {
-  font-size: 13px;
-  color: var(--foreground-secondary);
-  line-height: 1.5;
-}
-
-.about-build {
-  font-size: 12px;
-  color: var(--foreground-tertiary);
-  line-height: 1.5;
 }
 
 /* Model Card */

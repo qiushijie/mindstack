@@ -10,6 +10,7 @@ import AppStatusBar from './components/AppStatusBar.vue'
 import AppSettings from './components/AppSettings.vue'
 import AppTabBar from './components/AppTabBar.vue'
 import AIChatPanel from './components/AIChatPanel.vue'
+import AboutDialog from './components/AboutDialog.vue'
 import RelationGraph from './components/RelationGraph.vue'
 import { useNavigation } from './composables/useNavigation'
 import { provideEditorState } from './composables/useEditorState'
@@ -21,6 +22,7 @@ import { IsFullscreen } from '../wailsjs/go/main/App'
 const sidebarCollapsed = ref(false)
 const showAIChat = ref(false)
 const isFullscreen = ref(false)
+const aboutDialogVisible = ref(false)
 
 const { currentPage, navigateTo } = useNavigation()
 const { t } = useI18n()
@@ -61,6 +63,8 @@ onMounted(async () => {
     } else if (page === 'relations') {
       openPageTab('relations', t('relationGraph.title'))
       navigateTo('relations')
+    } else if (page === 'about') {
+      aboutDialogVisible.value = true
     } else if (page === 'editor') {
       navigateTo('editor')
     }
@@ -176,6 +180,7 @@ onMounted(async () => {
       <AppStatusBar />
     </div>
     <AIChatPanel v-if="showAIChat" @close="showAIChat = false" @open-file="selectFile" />
+    <AboutDialog :visible="aboutDialogVisible" @close="aboutDialogVisible = false" />
   </div>
 </template>
 

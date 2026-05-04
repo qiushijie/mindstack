@@ -34,9 +34,11 @@ vi.mock('../../../wailsjs/go/main/App', () => ({
   FileExists: vi.fn().mockResolvedValue(false),
 }))
 
+import type { TreeNode } from '../../types/file'
+
 // Mutable mock state using Vue refs
 const mockRootPath = ref('/test/project')
-const mockTreeData = ref([
+const mockTreeData = ref<TreeNode[]>([
   { name: 'src', path: '/test/project/src', isDir: true, expanded: false, children: [] },
   { name: 'README.md', path: '/test/project/README.md', isDir: false, expanded: false, children: [] },
 ])

@@ -241,6 +241,10 @@ func (a *App) buildMenu() *menu.Menu {
 	appMenu := menu.NewMenu()
 
 	fileMenu := appMenu.AddSubmenu(a.menuText("file"))
+	fileMenu.AddText(a.menuText("about"), nil, func(_ *menu.CallbackData) {
+		runtime.EventsEmit(a.ctx, "menu:navigate", "about")
+	})
+	fileMenu.AddSeparator()
 	fileMenu.AddText(a.menuText("new"), keys.CmdOrCtrl("n"), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:file:new")
 	})
@@ -322,11 +326,6 @@ func (a *App) buildMenu() *menu.Menu {
 	viewMenu.AddSeparator()
 	viewMenu.AddText(a.menuText("toggleFullScreen"), keys.Key("f11"), func(_ *menu.CallbackData) {
 		toggleWindowFullscreen()
-	})
-
-	helpMenu := appMenu.AddSubmenu(a.menuText("help"))
-	helpMenu.AddText(a.menuText("about"), nil, func(_ *menu.CallbackData) {
-		runtime.EventsEmit(a.ctx, "menu:navigate", "about")
 	})
 
 	return appMenu
