@@ -173,6 +173,13 @@ export default {
       addColumnRight: 'Добавить столбец справа',
       deleteColumn: 'Удалить столбец',
     },
+    find: {
+      placeholder: 'Поиск в документе...',
+      noResults: 'Нет результатов',
+      previous: 'Предыдущее совпадение',
+      next: 'Следующее совпадение',
+      close: 'Закрыть',
+    },
     tabContextMenu: {
       closeCurrent: 'Закрыть',
       closeOthers: 'Закрыть другие',

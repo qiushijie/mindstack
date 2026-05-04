@@ -173,6 +173,13 @@ export default {
       addColumnRight: '右に列を追加',
       deleteColumn: '列を削除',
     },
+    find: {
+      placeholder: 'ドキュメントを検索...',
+      noResults: '見つかりません',
+      previous: '前の一致',
+      next: '次の一致',
+      close: '閉じる',
+    },
     tabContextMenu: {
       closeCurrent: '閉じる',
       closeOthers: '他を閉じる',

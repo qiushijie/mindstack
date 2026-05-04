@@ -173,6 +173,13 @@ export default {
       addColumnRight: '在右侧插入列',
       deleteColumn: '删除列',
     },
+    find: {
+      placeholder: '在文档中搜索...',
+      noResults: '无结果',
+      previous: '上一个匹配',
+      next: '下一个匹配',
+      close: '关闭',
+    },
     tabContextMenu: {
       closeCurrent: '关闭当前',
       closeOthers: '关闭其他',

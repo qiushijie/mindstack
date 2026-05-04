@@ -173,6 +173,13 @@ export default {
       addColumnRight: 'Add Column Right',
       deleteColumn: 'Delete Column',
     },
+    find: {
+      placeholder: 'Find in document...',
+      noResults: 'No results',
+      previous: 'Previous match',
+      next: 'Next match',
+      close: 'Close',
+    },
     tabContextMenu: {
       closeCurrent: 'Close',
       closeOthers: 'Close Others',

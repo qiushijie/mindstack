@@ -173,6 +173,13 @@ export default {
       addColumnRight: 'Añadir columna a la derecha',
       deleteColumn: 'Eliminar columna',
     },
+    find: {
+      placeholder: 'Buscar en el documento...',
+      noResults: 'Sin resultados',
+      previous: 'Coincidencia anterior',
+      next: 'Siguiente coincidencia',
+      close: 'Cerrar',
+    },
     tabContextMenu: {
       closeCurrent: 'Cerrar',
       closeOthers: 'Cerrar otros',

@@ -173,6 +173,13 @@ export default {
       addColumnRight: 'Ajouter une colonne à droite',
       deleteColumn: 'Supprimer la colonne',
     },
+    find: {
+      placeholder: 'Rechercher dans le document...',
+      noResults: 'Aucun résultat',
+      previous: 'Correspondance précédente',
+      next: 'Correspondance suivante',
+      close: 'Fermer',
+    },
     tabContextMenu: {
       closeCurrent: 'Fermer',
       closeOthers: 'Fermer les autres',

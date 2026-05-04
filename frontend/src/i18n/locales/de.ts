@@ -173,6 +173,13 @@ export default {
       addColumnRight: 'Spalte rechts einfügen',
       deleteColumn: 'Spalte löschen',
     },
+    find: {
+      placeholder: 'Im Dokument suchen...',
+      noResults: 'Keine Ergebnisse',
+      previous: 'Vorheriger Treffer',
+      next: 'Nächster Treffer',
+      close: 'Schließen',
+    },
     tabContextMenu: {
       closeCurrent: 'Schließen',
       closeOthers: 'Andere schließen',

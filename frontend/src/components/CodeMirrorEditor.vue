@@ -5,6 +5,7 @@ import { syntaxTree } from '@codemirror/language'
 import { useCodeMirror } from '../composables/useCodeMirror'
 import SelectionToolbar from './SelectionToolbar.vue'
 import ImageDialog from './ImageDialog.vue'
+import FindPanel from './FindPanel.vue'
 import { wrapInline, toggleBlockType, insertLink } from '../utils/markdownUtils'
 import { setSelectedHeadingLine, currentHeadings } from '../composables/useHeadingTree'
 import { BlockType, getBlockTypeAtLine, isFullBlockSelection, blockTypeToLabel } from '../utils/syntaxUtils'
@@ -44,6 +45,9 @@ function findNearestHeadingLine(cursorLine: number): number {
   return nearest
 }
 
+const searchVisible = ref(false)
+const searchRecalcKey = ref(0)
+
 const { view, focus, setContent } = useCodeMirror({
   container: containerRef,
   initialDoc: '',
@@ -61,6 +65,8 @@ const { view, focus, setContent } = useCodeMirror({
     const nearest = findNearestHeadingLine(topLine)
     setSelectedHeadingLine(nearest)
   },
+  onSearchToggle: () => { searchVisible.value = !searchVisible.value },
+  onTransaction: () => { if (searchVisible.value) searchRecalcKey.value++ },
 })
 
 const { setEditorAdapter } = useFileTree()
@@ -199,6 +205,10 @@ function handleDocKeydown(e: KeyboardEvent) {
       e.stopPropagation()
     } else if (toolbarState.value.visible) {
       toolbarState.value.visible = false
+      e.preventDefault()
+      e.stopPropagation()
+    } else if (searchVisible.value) {
+      searchVisible.value = false
       e.preventDefault()
       e.stopPropagation()
     }
@@ -403,6 +413,11 @@ onUnmounted(() => {
 <template>
   <div class="editor-container" @contextmenu="handleContextMenu">
     <div ref="containerRef" class="cm-container" @pointerup="handleCmPointerup" />
+    <FindPanel
+      :visible="searchVisible"
+      :recalc-key="searchRecalcKey"
+      @close="searchVisible = false"
+    />
     <SelectionToolbar
       v-if="toolbarState.visible"
       :active-labels="activeLabels"

@@ -7,6 +7,8 @@ function buildEditorTheme(dark: boolean) {
   return EditorView.theme({
     '&': {
       height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
       fontSize: 'var(--font-size-lg)',
       color: 'var(--foreground-secondary)',
       backgroundColor: 'var(--surface-primary)',
@@ -15,6 +17,8 @@ function buildEditorTheme(dark: boolean) {
     '.cm-scroller': {
       overflow: 'auto',
       fontFamily: 'inherit',
+      flex: '1',
+      minHeight: '0',
     },
     '.cm-content': {
       padding: '48px 120px 120px 12px',
@@ -527,6 +531,17 @@ function buildEditorTheme(dark: boolean) {
       lineHeight: '1.6',
       color: 'var(--foreground-secondary)',
       padding: '0 20px',
+    },
+
+    // Search panel (hidden — using custom FindPanel.vue instead)
+    '.cm-panels': {
+      display: 'none',
+    },
+    '.cm-selectionMatch': {
+      backgroundColor: dark ? 'rgba(255, 200, 0, 0.25)' : 'rgba(255, 200, 0, 0.3)',
+    },
+    '.cm-searchMatch-selected': {
+      backgroundColor: dark ? 'rgba(255, 150, 0, 0.4)' : 'rgba(255, 150, 0, 0.5)',
     },
   }, { dark })
 }

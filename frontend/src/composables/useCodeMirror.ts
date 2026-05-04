@@ -5,6 +5,7 @@ import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
 import { languages } from '@codemirror/language-data'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { search, searchKeymap } from '@codemirror/search'
 import { keymap } from '@codemirror/view'
 import { createEditorTheme } from '../extensions/theme'
 import { createKeymapExtension } from '../extensions/keymap'
@@ -28,6 +29,8 @@ interface UseCodeMirrorOptions {
   onChange?: (doc: string) => void
   onSelectionChange?: (state: EditorState) => void
   onScroll?: (topLine: number) => void
+  onSearchToggle?: () => void
+  onTransaction?: () => void
 }
 
 interface UseCodeMirrorReturn {
@@ -59,8 +62,14 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       themeCompartment.of(createEditorTheme(isDarkTheme())),
       markdown({ extensions: GFM, codeLanguages: languages }),
       history(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      keymap.of([
+        { key: 'Mod-f', run: () => { options.onSearchToggle?.(); return true } },
+        ...defaultKeymap,
+        ...historyKeymap,
+        ...searchKeymap,
+      ]),
       createKeymapExtension(),
+      search(),
       markdownStyles,
       currentFilePathExtension(),
       checkboxClickHandler,
@@ -85,6 +94,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
         if (update.selectionSet || update.docChanged) {
           options.onSelectionChange?.(update.state)
         }
+        options.onTransaction?.()
       }),
       EditorView.domEventHandlers({
         scroll: (_e, v) => {

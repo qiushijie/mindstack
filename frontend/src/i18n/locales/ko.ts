@@ -173,6 +173,13 @@ export default {
       addColumnRight: '오른쪽에 열 추가',
       deleteColumn: '열 삭제',
     },
+    find: {
+      placeholder: '문서에서 검색...',
+      noResults: '결과 없음',
+      previous: '이전 일치',
+      next: '다음 일치',
+      close: '닫기',
+    },
     tabContextMenu: {
       closeCurrent: '닫기',
       closeOthers: '다른 탭 닫기',
