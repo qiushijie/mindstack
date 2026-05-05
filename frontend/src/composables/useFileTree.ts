@@ -169,7 +169,8 @@ async function syncRootToFile(filePath: string) {
 }
 
 if (import.meta.env.DEV) {
-  ;(window as any).__setTestWorkspace = (path: string, nodes: TreeNode[]) => {
+  ;(window as any).__setTestWorkspace = async (path: string, nodes: TreeNode[]) => {
+    await SetWorkspaceRoot(path)
     rootPath.value = path
     treeData.value = nodes
   }

@@ -66,6 +66,34 @@ export function GetRootPath() {
   return window['go']['main']['App']['GetRootPath']();
 }
 
+export function GitAutoCommit() {
+  return window['go']['main']['App']['GitAutoCommit']();
+}
+
+export function GitCheckInit() {
+  return window['go']['main']['App']['GitCheckInit']();
+}
+
+export function GitCommit(arg1) {
+  return window['go']['main']['App']['GitCommit'](arg1);
+}
+
+export function GitInit(arg1) {
+  return window['go']['main']['App']['GitInit'](arg1);
+}
+
+export function GitPull() {
+  return window['go']['main']['App']['GitPull']();
+}
+
+export function GitPush() {
+  return window['go']['main']['App']['GitPush']();
+}
+
+export function GitStatus() {
+  return window['go']['main']['App']['GitStatus']();
+}
+
 export function HandleOpenFile(arg1) {
   return window['go']['main']['App']['HandleOpenFile'](arg1);
 }

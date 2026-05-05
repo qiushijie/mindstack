@@ -29,7 +29,9 @@ const showKeyIds = ref<Set<string>>(new Set())
 const platform = ref<UIPlatform>('macos')
 const uiPlatform = ref<UIPlatform>('macos')
 const debugMode = ref(false)
-const rawMode = ref(false)
+const defaultBranch = ref('main')
+const autoCommit = ref(false)
+const autoPull = ref(false)
 
 let loaded = false
 let skipWatch = false
@@ -75,7 +77,9 @@ async function doSave() {
           activeModelId: activeModelId.value,
           uiPlatform: uiPlatform.value,
           debugMode: debugMode.value,
-          rawMode: rawMode.value,
+          defaultBranch: defaultBranch.value,
+          autoCommit: autoCommit.value,
+          autoPull: autoPull.value,
         }
         const result = await SaveConfig(JSON.stringify(config))
         if (result) {
@@ -115,7 +119,9 @@ export function useSettings() {
       if (Array.isArray(s.models)) models.value = s.models.map((m: any) => ({ ...m, model: m.model || 'deepseek-v4-flash', apiUrl: m.apiUrl || '' }))
       if (s.activeModelId) activeModelId.value = s.activeModelId
       if (typeof s.debugMode === 'boolean') debugMode.value = s.debugMode
-      if (typeof s.rawMode === 'boolean') rawMode.value = s.rawMode
+      if (s.defaultBranch) defaultBranch.value = s.defaultBranch
+      if (typeof s.autoCommit === 'boolean') autoCommit.value = s.autoCommit
+      if (typeof s.autoPull === 'boolean') autoPull.value = s.autoPull
       try {
         const p = await GetPlatform()
         const detected = p === 'windows' ? 'windows' : 'macos'
@@ -175,13 +181,14 @@ export function useSettings() {
   return {
     autoSave, autoSaveDelay, locale, theme,
     models, activeModelId, showKeyIds,
-    platform, uiPlatform, debugMode, rawMode,
+    platform, uiPlatform, debugMode,
+    defaultBranch, autoCommit, autoPull,
     loadSettings, saveSettings,
     addModel, removeModel, activateModel, toggleShowKey,
   }
 }
 
-watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform, debugMode, rawMode], async () => {
+watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull], async () => {
   if (!loaded || skipWatch) return
   await doSave()
 }, { deep: true })

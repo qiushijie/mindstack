@@ -92,15 +92,12 @@ const debugKeywords = computed(() => [
   t('settings.platform.windows'),
 ].join(' '))
 
-const { autoSave, autoSaveDelay, locale, theme, models, activeModelId, showKeyIds, platform, uiPlatform, debugMode, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
+const { autoSave, autoSaveDelay, locale, theme, models, activeModelId, showKeyIds, platform, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
 const fontFamily = ref('Inter')
 const fontSize = ref(16)
 const tabSize = ref(2)
 const lineNumbers = ref(true)
 const wordWrap = ref(true)
-const defaultBranch = ref('main')
-const autoCommit = ref(false)
-const autoPull = ref(false)
 
 const searchFocused = ref(false)
 const langOpen = ref(false)

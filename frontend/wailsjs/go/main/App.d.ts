@@ -34,6 +34,20 @@ export function GetPlatform():Promise<string>;
 
 export function GetRootPath():Promise<string>;
 
+export function GitAutoCommit():Promise<string>;
+
+export function GitCheckInit():Promise<boolean>;
+
+export function GitCommit(arg1:string):Promise<string>;
+
+export function GitInit(arg1:string):Promise<string>;
+
+export function GitPull():Promise<string>;
+
+export function GitPush():Promise<string>;
+
+export function GitStatus():Promise<string>;
+
 export function HandleOpenFile(arg1:string):Promise<void>;
 
 export function IsFullscreen():Promise<boolean>;

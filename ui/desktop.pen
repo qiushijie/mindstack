@@ -755,7 +755,7 @@
                   "width": 280,
                   "name": "findLight",
                   "layoutPosition": "absolute",
-                  "x": 824,
+                  "x": 796,
                   "y": 8
                 },
                 {
@@ -1437,6 +1437,121 @@
                   "iconFontName": "network",
                   "iconFontFamily": "lucide",
                   "fill": "$foreground-tertiary"
+                },
+                {
+                  "type": "icon_font",
+                  "id": "OJNen",
+                  "layoutPosition": "absolute",
+                  "x": 1084,
+                  "y": 20,
+                  "name": "syncBtn",
+                  "width": 20,
+                  "height": 20,
+                  "iconFontName": "git-branch",
+                  "iconFontFamily": "lucide",
+                  "fill": "$foreground-tertiary"
+                },
+                {
+                  "type": "frame",
+                  "id": "PZwgu",
+                  "layoutPosition": "absolute",
+                  "x": 1084,
+                  "y": 44,
+                  "name": "syncDropdown",
+                  "width": 140,
+                  "fill": "$surface-primary",
+                  "cornerRadius": 6,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "$border-subtle"
+                  },
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "color": "#0000001A",
+                    "offset": {
+                      "x": 0,
+                      "y": 4
+                    },
+                    "blur": 12
+                  },
+                  "layout": "vertical",
+                  "padding": 4,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "V2BtCG",
+                      "name": "wPullItem",
+                      "width": "fill_container",
+                      "height": 32,
+                      "cornerRadius": 6,
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "CcYWk",
+                          "name": "wPullIcon",
+                          "width": 14,
+                          "height": 14,
+                          "iconFontName": "refresh-cw",
+                          "iconFontFamily": "lucide",
+                          "fill": "$foreground-secondary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "AdnSC",
+                          "name": "wPullLabel",
+                          "fill": "$foreground-primary",
+                          "content": "Pull",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "xmPPd",
+                      "name": "wCommitItem",
+                      "width": "fill_container",
+                      "height": 32,
+                      "cornerRadius": 6,
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "VHRpZ",
+                          "name": "wCommitIcon",
+                          "fill": "$foreground-secondary",
+                          "content": "○",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "Oi5GC",
+                          "name": "wCommitLabel",
+                          "fill": "$foreground-primary",
+                          "content": "Commit",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
                 }
               ]
             },
@@ -2316,7 +2431,7 @@
                   },
                   "name": "findDark",
                   "layoutPosition": "absolute",
-                  "x": 824,
+                  "x": 796,
                   "y": 8,
                   "descendants": {
                     "elzNH": {
@@ -2945,6 +3060,134 @@
                   "width": 20,
                   "height": 20,
                   "iconFontName": "message-square",
+                  "iconFontFamily": "lucide",
+                  "fill": "#777777"
+                },
+                {
+                  "type": "icon_font",
+                  "id": "Shzzn",
+                  "layoutPosition": "absolute",
+                  "x": 1084,
+                  "y": 20,
+                  "name": "darkSyncBtn",
+                  "width": 20,
+                  "height": 20,
+                  "iconFontName": "git-branch",
+                  "iconFontFamily": "lucide",
+                  "fill": "#777777"
+                },
+                {
+                  "type": "frame",
+                  "id": "xhX4V",
+                  "layoutPosition": "absolute",
+                  "x": 1084,
+                  "y": 44,
+                  "name": "darkSyncDropdown",
+                  "width": 140,
+                  "fill": "#1A1A1A",
+                  "cornerRadius": 6,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#333333"
+                  },
+                  "effect": {
+                    "type": "shadow",
+                    "shadowType": "outer",
+                    "color": "#0000004D",
+                    "offset": {
+                      "x": 0,
+                      "y": 4
+                    },
+                    "blur": 12
+                  },
+                  "layout": "vertical",
+                  "padding": 4,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "y5yYb4",
+                      "name": "dPullItem",
+                      "width": "fill_container",
+                      "height": 32,
+                      "cornerRadius": 6,
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "BpoaE",
+                          "name": "dPullIcon",
+                          "width": 14,
+                          "height": 14,
+                          "iconFontName": "refresh-cw",
+                          "iconFontFamily": "lucide",
+                          "fill": "#777777"
+                        },
+                        {
+                          "type": "text",
+                          "id": "nwzhC",
+                          "name": "dPullLabel",
+                          "fill": "#CCCCCC",
+                          "content": "Pull",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "VoKFr",
+                      "name": "dCommitItem",
+                      "width": "fill_container",
+                      "height": 32,
+                      "cornerRadius": 6,
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "DIffD",
+                          "name": "dCommitIcon",
+                          "fill": "#777777",
+                          "content": "○",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "iF3PZ",
+                          "name": "dCommitLabel",
+                          "fill": "#CCCCCC",
+                          "content": "Commit",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "icon_font",
+                  "id": "Mwpya",
+                  "layoutPosition": "absolute",
+                  "x": 1112,
+                  "y": 20,
+                  "name": "darkRelationBtn",
+                  "width": 20,
+                  "height": 20,
+                  "iconFontName": "network",
                   "iconFontFamily": "lucide",
                   "fill": "#777777"
                 }
@@ -16558,7 +16801,7 @@
                   "id": "M3YEA",
                   "name": "relatedLabel",
                   "fill": "$foreground-primary",
-                  "content": "Related",
+                  "content": "Git Sync",
                   "fontFamily": "Inter",
                   "fontSize": 13,
                   "fontWeight": "normal"

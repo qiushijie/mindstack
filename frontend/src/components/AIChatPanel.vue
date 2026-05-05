@@ -5,6 +5,7 @@ import { useSync } from '../composables/useSync'
 import { useSearch } from '../composables/useSearch'
 import { useAck, type AckSnippet } from '../composables/useAck'
 import { EventsOff } from '../../wailsjs/runtime/runtime'
+import { GitCheckInit, GitInit, GitPull, GitCommit, GitAutoCommit, GitPush } from '../../wailsjs/go/main/App'
 
 interface MessageLink {
   path: string
@@ -34,6 +35,7 @@ const isStreaming = ref(false)
 const activeStreamIdx = ref(-1)
 const panelEl = ref<HTMLElement>()
 const showToolMenu = ref(false)
+const gitSyncTimer = ref<ReturnType<typeof setTimeout>>()
 
 const PANEL_W = 380
 const PANEL_H = 600
@@ -95,6 +97,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
   EventsOff('sync:progress')
+  if (gitSyncTimer.value) clearTimeout(gitSyncTimer.value)
   stopStreaming()
 })
 
@@ -107,8 +110,8 @@ function sendMessage() {
     runSearch(text)
     return
   }
-  if (selectedTool.value?.command === '/ack') {
-    runAck(text)
+  if (selectedTool.value?.command === '/git') {
+    runGitSync(text)
     return
   }
   const fullText = selectedTool.value
@@ -206,8 +209,7 @@ interface ToolMenuItem {
 }
 
 const toolMenuItems: ToolMenuItem[] = [
-  { command: '/search', label: 'Search', icon: 'search', placeholder: 'Enter tags to search...' },
-  { command: '/ack', label: 'Ask', icon: 'help-circle', placeholder: 'Ask a question...' },
+  { command: '/git', label: 'Git Sync', icon: 'git-branch', placeholder: 'Enter "push" or "pull"...' },
   { command: '/sync', label: 'Sync', icon: 'refresh-cw', placeholder: '' },
 ]
 
@@ -222,6 +224,11 @@ function selectToolItem(item: ToolMenuItem) {
   selectedTool.value = item
   if (item.command === '/sync') {
     runSync()
+    return
+  }
+  if (item.command === '/git') {
+    inputText.value = ''
+    textareaEl.value?.focus()
     return
   }
   if (item.command === '/search') {
@@ -339,44 +346,106 @@ function runSearch(query: string) {
   scrollToBottom()
 }
 
-function runAck(query: string) {
-  if (!query.trim()) return
+async function runGitSync(action: string) {
+  const trimmed = action.trim().toLowerCase()
   inputText.value = ''
   selectedTool.value = null
-  isStreaming.value = true
 
-  messages.value.push({ role: 'user', content: `/ack ${query}` })
+  messages.value.push({ role: 'user', content: `/git ${trimmed}` })
+
+  if (trimmed !== 'push' && trimmed !== 'pull' && trimmed !== 'init') {
+    messages.value.push({ role: 'assistant', content: `Invalid action "${trimmed}". Please enter "push", "pull", or "init".` })
+    scrollToBottom()
+    return
+  }
 
   const idx = messages.value.length
-  messages.value.push({ role: 'assistant', content: 'Searching knowledge base...', isStreaming: true })
+  messages.value.push({ role: 'assistant', content: `Git ${trimmed} in progress...`, isStreaming: true })
   activeStreamIdx.value = idx
+  isStreaming.value = true
 
-  ackQuery(query).then((result) => {
-    if (activeStreamIdx.value !== idx) return
-    if (!result) {
-      messages.value[idx].content = ackError.value ? `Error: ${ackError.value}` : 'No results found.'
-      finishStream(idx)
-      return
+  try {
+    if (trimmed === 'init') {
+      const result = await GitInit()
+      const data = JSON.parse(result)
+      if (activeStreamIdx.value === idx && messages.value[idx]) {
+        if (data.error) {
+          messages.value[idx].content = `Init failed: ${data.error}`
+        } else {
+          messages.value[idx].content = 'Git repository initialized successfully.'
+        }
+        messages.value[idx].isStreaming = false
+      }
+    } else if (trimmed === 'pull') {
+      const gitInit = await GitCheckInit()
+      if (!gitInit) {
+        if (activeStreamIdx.value === idx && messages.value[idx]) {
+          messages.value[idx].content = 'This workspace is not a git repository. Use `/git init` to initialize first.'
+          messages.value[idx].isStreaming = false
+        }
+        finishStream(idx)
+        scrollToBottom()
+        return
+      }
+      const result = await GitPull()
+      const data = JSON.parse(result)
+      if (activeStreamIdx.value === idx && messages.value[idx]) {
+        if (data.error) {
+          messages.value[idx].content = `Pull failed: ${data.error}`
+        } else {
+          messages.value[idx].content = 'Pull completed successfully.'
+        }
+        messages.value[idx].isStreaming = false
+      }
+    } else if (trimmed === 'push') {
+      const gitInit = await GitCheckInit()
+      if (!gitInit) {
+        if (activeStreamIdx.value === idx && messages.value[idx]) {
+          messages.value[idx].content = 'This workspace is not a git repository. Use `/git init` to initialize first.'
+          messages.value[idx].isStreaming = false
+        }
+        finishStream(idx)
+        scrollToBottom()
+        return
+      }
+      // Try auto-commit first (will silently pass if nothing to commit)
+      const commitResult = await GitAutoCommit()
+      const commitData = JSON.parse(commitResult)
+      if (commitData.error && commitData.error !== 'nothing to commit') {
+        if (activeStreamIdx.value === idx && messages.value[idx]) {
+          messages.value[idx].content = `Auto-commit failed: ${commitData.error}`
+          messages.value[idx].isStreaming = false
+        }
+        finishStream(idx)
+        scrollToBottom()
+        return
+      }
+
+      const result = await GitPush()
+      const data = JSON.parse(result)
+      if (activeStreamIdx.value === idx && messages.value[idx]) {
+        if (data.error) {
+          messages.value[idx].content = `Push failed: ${data.error}`
+        } else {
+          const commitInfo = commitData.message && commitData.message !== 'nothing to commit'
+            ? ` Committed: "${commitData.message}".`
+            : ''
+          messages.value[idx].content = `Push completed successfully.${commitInfo}`
+        }
+        messages.value[idx].isStreaming = false
+      }
     }
-    if (result.snippets && result.snippets.length > 0) {
-      const tagPart = result.tags && result.tags.length ? ` (tags: ${result.tags.join(', ')})` : ''
-      const header = `Sources${tagPart}:`
-      messages.value[idx].content = result.summary
-        ? `${result.summary}\n\n${header}`
-        : `Found ${result.snippets.length} snippet(s)${tagPart}:`
-      messages.value[idx].snippets = result.snippets
-    } else {
-      messages.value[idx].content = `No relevant snippets found for "${query}".`
-    }
-    finishStream(idx)
-    scrollToBottom()
-  }).catch((err: any) => {
+  } catch (err) {
     if (activeStreamIdx.value === idx && messages.value[idx]) {
-      messages.value[idx].content = `Error: ${String(err)}`
+      messages.value[idx].content = `Git error: ${String(err)}`
+      messages.value[idx].isStreaming = false
     }
-    finishStream(idx)
-  })
+  }
 
+  if (activeStreamIdx.value === idx) {
+    activeStreamIdx.value = -1
+    isStreaming.value = false
+  }
   scrollToBottom()
 }
 
