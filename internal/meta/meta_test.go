@@ -161,6 +161,57 @@ func TestFindByTag(t *testing.T) {
 	}
 }
 
+func TestFindByTag_MultipleTags(t *testing.T) {
+	metas := []*DocumentMeta{
+		{Path: "a.md", Tags: []string{"api", "rest"}},
+		{Path: "b.md", Tags: []string{"api", "graphql"}},
+		{Path: "c.md", Tags: []string{"design"}},
+		{Path: "d.md", Tags: []string{}},
+	}
+
+	t.Run("and_semantics", func(t *testing.T) {
+		docs := FindByTag(metas, "api,rest", false)
+		if len(docs) != 1 {
+			t.Fatalf("expected 1 (api AND rest), got %d", len(docs))
+		}
+	})
+
+	t.Run("single_tag", func(t *testing.T) {
+		docs := FindByTag(metas, "graphql", false)
+		if len(docs) != 1 {
+			t.Fatalf("expected 1, got %d", len(docs))
+		}
+	})
+
+	t.Run("with_spaces", func(t *testing.T) {
+		docs := FindByTag(metas, "api , graphql", false)
+		if len(docs) != 1 {
+			t.Fatalf("expected 1 (api AND graphql), got %d", len(docs))
+		}
+	})
+
+	t.Run("no_match", func(t *testing.T) {
+		docs := FindByTag(metas, "nonexistent1,nonexistent2", false)
+		if len(docs) != 0 {
+			t.Fatalf("expected 0, got %d", len(docs))
+		}
+	})
+
+	t.Run("case_insensitive", func(t *testing.T) {
+		docs := FindByTag(metas, "API,Rest", true)
+		if len(docs) != 1 {
+			t.Fatalf("expected 1 (case-insensitive api AND rest), got %d", len(docs))
+		}
+	})
+
+	t.Run("empty_tags_returns_nil", func(t *testing.T) {
+		docs := FindByTag(metas, " , ", false)
+		if len(docs) != 0 {
+			t.Fatalf("expected 0, got %d", len(docs))
+		}
+	})
+}
+
 func TestFindByTag_IgnoreCase(t *testing.T) {
 	metas := []*DocumentMeta{
 		{Path: "a.md", Tags: []string{"API"}},

@@ -8,6 +8,7 @@ import { EventsOff } from '../../wailsjs/runtime/runtime'
 interface MessageLink {
   path: string
   title: string
+  summary?: string
 }
 
 interface DisplayMessage {
@@ -306,12 +307,12 @@ function runSearch(query: string) {
       return
     }
     if (result.items && result.items.length > 0) {
-      messages.value[idx].content = `Found ${result.total} document(s) for tag "${result.tag}":`
+      messages.value[idx].content = `Found ${result.total} document(s) for tag(s) "${result.tag}":`
       messages.value[idx].links = result.items.map(
-        (item: { path: string; abs_path: string; title: string }) => ({ path: item.abs_path || item.path, title: item.title || item.path }),
+        (item: { path: string; abs_path: string; title: string; summary?: string }) => ({ path: item.abs_path || item.path, title: item.title || item.path, summary: item.summary }),
       )
     } else {
-      messages.value[idx].content = `No documents found for tag "${query}".`
+      messages.value[idx].content = `No documents found for tag(s) "${query}".`
     }
     finishStream(idx)
     scrollToBottom()
@@ -349,13 +350,14 @@ function runSearch(query: string) {
           <span class="bubble-text">{{ msg.content }}</span>
           <template v-if="msg.links && msg.links.length">
             <div class="link-list">
-              <a
-                v-for="link in msg.links"
-                :key="link.path"
-                class="doc-link"
-                href="#"
-                @click.prevent="emit('openFile', link.path)"
-              >{{ link.title }}</a>
+              <template v-for="link in msg.links" :key="link.path">
+                <a
+                  class="doc-link"
+                  href="#"
+                  @click.prevent="emit('openFile', link.path)"
+                >{{ link.title }}</a>
+                <div v-if="link.summary" class="doc-summary">{{ link.summary }}</div>
+              </template>
             </div>
           </template>
           <span v-if="msg.isStreaming" class="cursor" />
@@ -553,6 +555,13 @@ function runSearch(query: string) {
 
 .doc-link:hover {
   text-decoration: underline;
+}
+
+.doc-summary {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: -2px 0 4px 0;
+  line-height: 1.4;
 }
 
 .cursor {

@@ -414,6 +414,43 @@ func TestCmdSearchByTag(t *testing.T) {
 	}
 }
 
+func TestCmdSearchByMultiTag(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "doc1.md", "# Doc1")
+	createTestFile(t, dir, "doc2.md", "# Doc2")
+	createTestFile(t, dir, "doc3.md", "# Doc3")
+	writeTestMeta(t, dir, map[string]interface{}{
+		"doc1.md": map[string]interface{}{"title": "Doc1", "tags": []string{"api", "design"}},
+		"doc2.md": map[string]interface{}{"title": "Doc2", "tags": []string{"api"}},
+		"doc3.md": map[string]interface{}{"title": "Doc3", "tags": []string{"design"}},
+	})
+
+	t.Run("and_semantics", func(t *testing.T) {
+		stdout, _, code := runCmd(t, "search", "api,design")
+		if code != 0 {
+			t.Fatalf("exit code %d", code)
+		}
+		result := cmdParseJSON(stdout)
+		if result["mode"] != "tag" {
+			t.Errorf("mode = %v", result["mode"])
+		}
+		if result["total"].(float64) != 1 {
+			t.Errorf("total = %v, want 1 (api AND design)", result["total"])
+		}
+	})
+
+	t.Run("with_spaces", func(t *testing.T) {
+		stdout, _, code := runCmd(t, "search", "api , design")
+		if code != 0 {
+			t.Fatalf("exit code %d", code)
+		}
+		result := cmdParseJSON(stdout)
+		if result["total"].(float64) != 1 {
+			t.Errorf("total = %v, want 1", result["total"])
+		}
+	})
+}
+
 func TestCmdSearchNoResults(t *testing.T) {
 	setupTestKB(t)
 	stdout, _, code := runCmd(t, "search", "nonexistent_xyz")

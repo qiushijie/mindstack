@@ -129,24 +129,46 @@ func RemoveStale(kbRoot string, existingFiles map[string]bool) ([]string, error)
 	return removed, nil
 }
 
-// FindByTag filters meta list by tag.
+// FindByTag filters meta list by tag(s). Multiple tags can be separated by ",".
 // If ignoreCase is true, matching is case-insensitive.
+// A document matches only if it has ALL of the specified tags (AND semantics).
 func FindByTag(metas []*DocumentMeta, tag string, ignoreCase bool) []*DocumentMeta {
-	var matched []*DocumentMeta
-	searchTag := tag
-	if ignoreCase {
-		searchTag = strings.ToLower(tag)
+	searchTags := strings.Split(tag, ",")
+	var cleanTags []string
+	for _, t := range searchTags {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		if ignoreCase {
+			cleanTags = append(cleanTags, strings.ToLower(t))
+		} else {
+			cleanTags = append(cleanTags, t)
+		}
 	}
+	if len(cleanTags) == 0 {
+		return nil
+	}
+
+	var matched []*DocumentMeta
 	for _, m := range metas {
+		docTags := make(map[string]struct{}, len(m.Tags))
 		for _, t := range m.Tags {
-			docTag := t
+			dt := t
 			if ignoreCase {
-				docTag = strings.ToLower(t)
+				dt = strings.ToLower(t)
 			}
-			if docTag == searchTag {
-				matched = append(matched, m)
+			docTags[dt] = struct{}{}
+		}
+		allMatch := true
+		for _, searchTag := range cleanTags {
+			if _, ok := docTags[searchTag]; !ok {
+				allMatch = false
 				break
 			}
+		}
+		if allMatch {
+			matched = append(matched, m)
 		}
 	}
 	return matched

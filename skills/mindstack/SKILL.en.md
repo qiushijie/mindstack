@@ -104,11 +104,14 @@ Success output:
 
 #### `mindstack search <query>`
 
-Tag search by default; pass `--fulltext` for full-text search.
+Tag search by default (comma-separate multiple tags for AND filtering); pass `--fulltext` for full-text search.
 
 ```bash
 # Tag search (default, case-insensitive)
 mindstack search "tutorial"
+
+# Multi-tag search (AND: doc must have ALL tags)
+mindstack search "api,rest"
 
 # Full-text search (case-insensitive, substring match)
 mindstack search "keyword" --fulltext
@@ -120,7 +123,7 @@ Tag search output:
   "query": "tutorial",
   "mode": "tag",
   "results": [
-    {"path": "/path/to/kb/docs/guide.md", "title": "Tutorial"}
+    {"path": "/path/to/kb/docs/guide.md", "title": "Tutorial", "summary": "Guide summary"}
   ],
   "total": 1
 }
@@ -263,6 +266,7 @@ mindstack relation /path/to/kb/docs/interesting.md  # View relations (absolute p
 
 ```bash
 mindstack search "api"                              # Tag search, returns absolute paths
+mindstack search "api,rest"                         # Multi-tag AND search
 mindstack search "keyword" --fulltext               # Full-text search
 # Call the Read tool on result paths to read content
 mindstack relation /path/to/kb/docs/api/auth.md     # Explore related docs (absolute path)

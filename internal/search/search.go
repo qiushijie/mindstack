@@ -8,8 +8,9 @@ import (
 
 // SearchItem is a single search result.
 type SearchItem struct {
-	Path  string `json:"path"`
-	Title string `json:"title"`
+	Path    string `json:"path"`
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
 }
 
 // SearchResult holds tag search results.
@@ -32,8 +33,9 @@ func SearchByTag(kbRoot, tag, subdir string, ignoreCase bool) (*SearchResult, er
 	items := make([]SearchItem, 0, len(matched))
 	for _, m := range matched {
 		items = append(items, SearchItem{
-			Path:  filepath.Join(kbRoot, m.Path),
-			Title: m.Title,
+			Path:    filepath.Join(kbRoot, m.Path),
+			Title:   m.Title,
+			Summary: m.Summary,
 		})
 	}
 

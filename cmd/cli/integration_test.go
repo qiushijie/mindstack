@@ -422,6 +422,46 @@ func TestSearchByTag(t *testing.T) {
 	}
 }
 
+func TestSearchByMultiTag(t *testing.T) {
+	dir := setupKB(t)
+	createFile(t, dir, "doc1.md", "# Doc1")
+	createFile(t, dir, "doc2.md", "# Doc2")
+	createFile(t, dir, "doc3.md", "# Doc3")
+
+	meta := map[string]interface{}{
+		"doc1.md": map[string]interface{}{"title": "Doc1", "tags": []string{"api", "design"}},
+		"doc2.md": map[string]interface{}{"title": "Doc2", "tags": []string{"api"}},
+		"doc3.md": map[string]interface{}{"title": "Doc3", "tags": []string{"design"}},
+	}
+	metaData, _ := json.Marshal(meta)
+	os.WriteFile(filepath.Join(dir, ".mindstack", "meta.json"), metaData, 0644)
+
+	t.Run("and_semantics", func(t *testing.T) {
+		stdout, _, code := runCLI(dir, "", "search", "api,design")
+		if code != 0 {
+			t.Fatalf("exit code %d", code)
+		}
+		result := parseJSON(stdout)
+		if result["mode"] != "tag" {
+			t.Errorf("mode = %v", result["mode"])
+		}
+		if result["total"].(float64) != 1 {
+			t.Errorf("total = %v, want 1 (api AND design)", result["total"])
+		}
+	})
+
+	t.Run("with_spaces", func(t *testing.T) {
+		stdout, _, code := runCLI(dir, "", "search", "api , design")
+		if code != 0 {
+			t.Fatalf("exit code %d", code)
+		}
+		result := parseJSON(stdout)
+		if result["total"].(float64) != 1 {
+			t.Errorf("total = %v, want 1", result["total"])
+		}
+	})
+}
+
 func TestSearchNoResults(t *testing.T) {
 	dir := setupKB(t)
 	createFile(t, dir, "doc.md", "# Doc")

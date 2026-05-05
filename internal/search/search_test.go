@@ -63,6 +63,40 @@ func TestSearchByTag_MultipleMatch(t *testing.T) {
 	}
 }
 
+func TestSearchByTag_MultipleTags(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	t.Run("and_semantics", func(t *testing.T) {
+		result, err := SearchByTag(kbRoot, "rest,frontend", "", false)
+		if err != nil {
+			t.Fatalf("search error: %v", err)
+		}
+		if result.Total != 1 {
+			t.Fatalf("expected 1 (rest AND frontend), got %d", result.Total)
+		}
+	})
+
+	t.Run("with_spaces", func(t *testing.T) {
+		result, err := SearchByTag(kbRoot, "rest , frontend", "", false)
+		if err != nil {
+			t.Fatalf("search error: %v", err)
+		}
+		if result.Total != 1 {
+			t.Fatalf("expected 1, got %d", result.Total)
+		}
+	})
+
+	t.Run("partial_match_no_results", func(t *testing.T) {
+		result, err := SearchByTag(kbRoot, "rest,nonexistent", "", false)
+		if err != nil {
+			t.Fatalf("search error: %v", err)
+		}
+		if result.Total != 0 {
+			t.Fatalf("expected 0 (rest AND nonexistent), got %d", result.Total)
+		}
+	})
+}
+
 func TestSearchByTag_NoMatch(t *testing.T) {
 	kbRoot := setupTestKB(t)
 
