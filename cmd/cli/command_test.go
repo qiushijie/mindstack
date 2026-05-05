@@ -619,6 +619,93 @@ func TestCmdWithKBFlagNotFound(t *testing.T) {
 	}
 }
 
+// --- ack command ---
+
+func TestCmdAckNotInitialized(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(oldDir) })
+
+	_, stderr, code := runCmd(t, "ack", "test query")
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_INITIALIZED")) {
+		t.Errorf("expected NOT_INITIALIZED, got: %s", stderr)
+	}
+}
+
+func TestCmdAckNoLLM(t *testing.T) {
+	setupTestKB(t)
+	t.Setenv("MINDSTACK_CONFIG_DIR", t.TempDir())
+	_, stderr, code := runCmd(t, "ack", "test query")
+	if code != 3 {
+		t.Fatalf("expected exit code 3, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("LLM_UNAVAILABLE")) {
+		t.Errorf("expected LLM_UNAVAILABLE, got: %s", stderr)
+	}
+}
+
+func TestCmdAckEmptyResult(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "doc.md", "# Hello\nworld")
+	writeTestMeta(t, dir, map[string]interface{}{
+		"doc.md": map[string]interface{}{"title": "Doc", "tags": []string{}},
+	})
+
+	configDir := t.TempDir()
+	fakeConfig := map[string]interface{}{
+		"settings": map[string]interface{}{
+			"activeModelId": "test",
+			"models": []map[string]interface{}{
+				{"id": "test", "apiUrl": "http://localhost:9999", "apiKey": "fake"},
+			},
+		},
+	}
+	data, _ := json.Marshal(fakeConfig)
+	os.WriteFile(filepath.Join(configDir, "config.json"), data, 0644)
+	t.Setenv("MINDSTACK_CONFIG_DIR", configDir)
+
+	stdout, _, code := runCmd(t, "ack", "nonexistent_xyz")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["query"] != "nonexistent_xyz" {
+		t.Errorf("query = %v", result["query"])
+	}
+	snippets, ok := result["snippets"].([]interface{})
+	if !ok || len(snippets) != 0 {
+		t.Errorf("expected empty snippets, got %v", result["snippets"])
+	}
+}
+
+func TestCmdAckEmptyQuery(t *testing.T) {
+	setupTestKB(t)
+	configDir := t.TempDir()
+	fakeConfig := map[string]interface{}{
+		"settings": map[string]interface{}{
+			"activeModelId": "test",
+			"models": []map[string]interface{}{
+				{"id": "test", "apiUrl": "http://localhost:9999", "apiKey": "fake"},
+			},
+		},
+	}
+	data, _ := json.Marshal(fakeConfig)
+	os.WriteFile(filepath.Join(configDir, "config.json"), data, 0644)
+	t.Setenv("MINDSTACK_CONFIG_DIR", configDir)
+
+	_, stderr, code := runCmd(t, "ack", "")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("ACK_FAILED")) {
+		t.Errorf("expected ACK_FAILED, got: %s", stderr)
+	}
+}
+
 func TestCmdKBAmbiguous(t *testing.T) {
 	tmpDir := t.TempDir()
 

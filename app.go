@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"mindstack/internal/ack"
 	"mindstack/internal/config"
 	"mindstack/internal/llm"
 	"mindstack/internal/meta"
@@ -669,6 +670,25 @@ func (a *App) SearchDocs(tag string) string {
 	}
 
 	result, err := search.SearchByTag(root, tag, "", true)
+	if err != nil {
+		out, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(out)
+	}
+	out, _ := json.Marshal(result)
+	return string(out)
+}
+
+func (a *App) Ack(query string) string {
+	a.mu.RLock()
+	root := a.rootPath
+	locale := a.locale
+	a.mu.RUnlock()
+
+	if root == "" {
+		return `{"error":"no workspace open"}`
+	}
+
+	result, err := ack.Ack(a.ctx, a.llm, root, query, locale)
 	if err != nil {
 		out, _ := json.Marshal(map[string]string{"error": err.Error()})
 		return string(out)

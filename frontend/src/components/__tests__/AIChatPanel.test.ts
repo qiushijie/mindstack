@@ -38,6 +38,15 @@ vi.mock('../../composables/useSearch', () => ({
   }),
 }))
 
+const mockAckQuery = vi.fn()
+vi.mock('../../composables/useAck', () => ({
+  useAck: () => ({
+    ackQuery: mockAckQuery,
+    ackLoading: { value: false },
+    ackError: { value: '' },
+  }),
+}))
+
 describe('AIChatPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -288,9 +297,10 @@ describe('AIChatPanel', () => {
       await nextTick()
 
       const items = wrapper.findAll('.tool-menu-item')
-      expect(items).toHaveLength(2)
+      expect(items).toHaveLength(3)
       expect(items[0].text()).toContain('Search')
-      expect(items[1].text()).toContain('Sync')
+      expect(items[1].text()).toContain('Ask')
+      expect(items[2].text()).toContain('Sync')
     })
 
     it('selects search tool and focuses input', async () => {
@@ -316,7 +326,7 @@ describe('AIChatPanel', () => {
       await wrapper.find('.tool-btn').trigger('click')
       await nextTick()
 
-      await wrapper.findAll('.tool-menu-item')[1].trigger('click')
+      await wrapper.findAll('.tool-menu-item')[2].trigger('click')
       await nextTick()
 
       expect(mockSyncWorkspace).toHaveBeenCalledOnce()
@@ -437,6 +447,96 @@ describe('AIChatPanel', () => {
     })
   })
 
+  describe('ack', () => {
+    it('renders snippets and overall summary when ack returns results', async () => {
+      mockAckQuery.mockResolvedValue({
+        query: 'retry policy',
+        tags: ['api', 'retry'],
+        summary: 'API retry uses exponential backoff with 3 attempts.',
+        snippets: [
+          {
+            path: '/kb/api.md',
+            startLine: 3,
+            endLine: 5,
+            content: 'Retry uses exponential backoff.',
+            score: 0.9,
+          },
+        ],
+      })
+
+      const wrapper = mountComponent()
+
+      await wrapper.find('.tool-btn').trigger('click')
+      await nextTick()
+      await wrapper.findAll('.tool-menu-item')[1].trigger('click')
+      await nextTick()
+
+      expect((wrapper.find('.chat-input').element as HTMLTextAreaElement).placeholder).toBe('Ask a question...')
+
+      await wrapper.find('.chat-input').setValue('retry policy')
+      await wrapper.find('.send-btn').trigger('click')
+      await nextTick()
+
+      expect(mockAckQuery).toHaveBeenCalledWith('retry policy')
+
+      await vi.waitFor(() => {
+        expect(wrapper.findAll('.snippet-card')).toHaveLength(1)
+      })
+
+      const assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
+      expect(assistantBubble.text()).toContain('API retry uses exponential backoff with 3 attempts.')
+
+      const card = wrapper.find('.snippet-card')
+      expect(card.find('.snippet-link').text()).toBe('/kb/api.md:3-5')
+      expect(card.find('.snippet-content').text()).toContain('exponential backoff')
+    })
+
+    it('shows empty message when no snippets are found', async () => {
+      mockAckQuery.mockResolvedValue({ query: 'x', tags: [], summary: '', snippets: [] })
+
+      const wrapper = mountComponent()
+      await wrapper.find('.tool-btn').trigger('click')
+      await nextTick()
+      await wrapper.findAll('.tool-menu-item')[1].trigger('click')
+      await nextTick()
+      await wrapper.find('.chat-input').setValue('nothing matches')
+      await wrapper.find('.send-btn').trigger('click')
+
+      await vi.waitFor(() => {
+        const txt = wrapper.findAll('.message')[1].find('.bubble').text()
+        return txt.includes('No relevant snippets')
+      })
+    })
+
+    it('emits openFile when clicking a snippet link', async () => {
+      mockAckQuery.mockResolvedValue({
+        query: 'q',
+        tags: [],
+        summary: 'short answer',
+        snippets: [
+          { path: '/kb/x.md', startLine: 1, endLine: 2, content: 'x', score: 1 },
+        ],
+      })
+
+      const wrapper = mountComponent()
+      await wrapper.find('.tool-btn').trigger('click')
+      await nextTick()
+      await wrapper.findAll('.tool-menu-item')[1].trigger('click')
+      await nextTick()
+      await wrapper.find('.chat-input').setValue('q')
+      await wrapper.find('.send-btn').trigger('click')
+
+      await vi.waitFor(() => {
+        expect(wrapper.findAll('.snippet-link')).toHaveLength(1)
+      })
+
+      await wrapper.find('.snippet-link').trigger('click')
+      const events = wrapper.emitted('openFile')
+      expect(events).toBeTruthy()
+      expect(events![0]).toEqual(['/kb/x.md'])
+    })
+  })
+
   describe('sync progress', () => {
     it('updates message with sync progress', async () => {
       const wrapper = mountComponent()
@@ -444,7 +544,7 @@ describe('AIChatPanel', () => {
       // Trigger sync via tool menu
       await wrapper.find('.tool-btn').trigger('click')
       await nextTick()
-      await wrapper.findAll('.tool-menu-item')[1].trigger('click')
+      await wrapper.findAll('.tool-menu-item')[2].trigger('click')
       await nextTick()
 
       expect(mockSyncWorkspace).toHaveBeenCalledOnce()
@@ -470,7 +570,7 @@ describe('AIChatPanel', () => {
 
       await wrapper.find('.tool-btn').trigger('click')
       await nextTick()
-      await wrapper.findAll('.tool-menu-item')[1].trigger('click')
+      await wrapper.findAll('.tool-menu-item')[2].trigger('click')
       await nextTick()
 
       const onProgress = mockSyncWorkspace.mock.calls[0][0]
@@ -491,7 +591,7 @@ describe('AIChatPanel', () => {
 
       await wrapper.find('.tool-btn').trigger('click')
       await nextTick()
-      await wrapper.findAll('.tool-menu-item')[1].trigger('click')
+      await wrapper.findAll('.tool-menu-item')[2].trigger('click')
       await nextTick()
 
       const onProgress = mockSyncWorkspace.mock.calls[0][0]

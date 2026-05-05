@@ -10,6 +10,7 @@ description: MindStack CLI 工具使用，用于 AI codegen 工具操作 markdow
 当用户需要操作知识库时触发此 skill：
 
 - 搜索文档内容或标签
+- 用自然语言提问，从知识库检索片段并合成回答
 - 查看文档元数据（标题、摘要、标签、状态）
 - 查看文档关联关系
 - 同步工作区（LLM 生成元数据和关联）
@@ -143,6 +144,43 @@ mindstack search "keyword" --fulltext
 
 错误码：`SEARCH_FAILED`、`SCAN_FAILED`。
 
+### 问答
+
+#### `mindstack ack <query>`
+
+通过 LLM 在知识库中检索相关片段并综合证据回答问题。流程：LLM 把问题映射到现有标签 → 标签 + 全文联合召回 → 在每篇候选文档中由 LLM 抽取行区间 → 按相关性取 Top 5 → LLM 综合所有片段输出一段总结。需要已配置 LLM(参见 `mindstack info`)。
+
+`<query>` 必须作为单个参数传入,多词请加引号。
+
+```bash
+mindstack ack "what is the api retry policy"
+```
+
+输出：
+```json
+{
+  "query": "what is the api retry policy",
+  "tags": ["api", "retry"],
+  "summary": "API 调用使用指数退避,默认 3 次重试,超时 30 秒。",
+  "snippets": [
+    {
+      "path": "/path/to/kb/docs/api.md",
+      "startLine": 3,
+      "endLine": 5,
+      "content": "Retry uses exponential backoff.\nDefault 3 attempts.\nTimeout 30s.",
+      "score": 0.9
+    }
+  ]
+}
+```
+
+字段说明：
+- `tags`：LLM 从知识库现有标签集合中挑选出的相关标签(可能为空)
+- `summary`：综合所有片段后的整体回答(无片段时为空字符串)
+- `snippets`：按相关性降序的片段列表,最多 5 条,每条含绝对路径、1-indexed 起止行号、原文与 0-1 之间的相关性得分
+
+错误码：`LLM_UNAVAILABLE`(exit 3,LLM 未配置)、`ACK_FAILED`(exit 1,执行失败)。
+
 ### 元数据
 
 #### `mindstack meta <path>`
@@ -272,6 +310,14 @@ mindstack search "keyword" --fulltext               # 全文搜索
 mindstack relation /path/to/kb/docs/api/auth.md     # 探索关联文档（输入绝对路径）
 ```
 
+### 用自然语言提问
+
+```bash
+mindstack ack "what is the api retry policy"        # 检索片段并合成回答（需要 LLM）
+# 输出包含 summary 与 snippets，每个片段含绝对路径与起止行号
+# 可对 snippets[*].path 调用 Read 工具读取上下文
+```
+
 ### 创建和编辑
 
 创建/编辑文档：直接对绝对路径使用 Write/Edit 工具。
@@ -292,6 +338,7 @@ mindstack tags       # 查看标签分布
 | `KB_AMBIGUOUS` | 多知识库未指定目标 | 添加 `--kb <name>` |
 | `KB_NOT_FOUND` | `--kb` 名称不存在 | 用 `info` 查看可用知识库列表 |
 | `LLM_UNAVAILABLE` (exit 3) | LLM 未配置 | 提示用户配置 LLM 服务 |
+| `ACK_FAILED` (exit 1) | `ack` 执行失败 | 检查 LLM 是否可用、知识库是否已 sync |
 
 ## 注意事项
 

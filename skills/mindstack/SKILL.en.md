@@ -10,6 +10,7 @@ description: MindStack CLI usage for AI codegen tools to operate on a markdown k
 Activate this skill when the user wants to operate on a knowledge base:
 
 - Search document content or tags
+- Ask a natural-language question and get retrieved snippets plus a synthesized answer
 - View document metadata (title, summary, tags, status)
 - View document relations
 - Sync the workspace (LLM-generated metadata and relations)
@@ -143,6 +144,43 @@ Full-text search output:
 
 Error codes: `SEARCH_FAILED`, `SCAN_FAILED`.
 
+### Q&A
+
+#### `mindstack ack <query>`
+
+Use the LLM to retrieve relevant snippets from the knowledge base and synthesize an answer. Pipeline: LLM maps the question to existing tags → joint tag + full-text recall → LLM extracts line ranges from each candidate doc → top 5 snippets by relevance → LLM produces a single summary across all kept snippets. Requires a configured LLM (see `mindstack info`).
+
+`<query>` must be passed as a single argument; quote multi-word queries.
+
+```bash
+mindstack ack "what is the api retry policy"
+```
+
+Output:
+```json
+{
+  "query": "what is the api retry policy",
+  "tags": ["api", "retry"],
+  "summary": "API calls use exponential backoff with up to 3 attempts and a 30s timeout.",
+  "snippets": [
+    {
+      "path": "/path/to/kb/docs/api.md",
+      "startLine": 3,
+      "endLine": 5,
+      "content": "Retry uses exponential backoff.\nDefault 3 attempts.\nTimeout 30s.",
+      "score": 0.9
+    }
+  ]
+}
+```
+
+Field notes:
+- `tags`: tags the LLM selected from the existing knowledge-base tag set (may be empty)
+- `summary`: a single overall answer synthesized from all kept snippets (empty string when there are no snippets)
+- `snippets`: ranked by relevance descending, capped at 5; each item carries an absolute path, 1-indexed start/end lines, the original lines, and a 0-1 relevance score
+
+Error codes: `LLM_UNAVAILABLE` (exit 3, LLM not configured), `ACK_FAILED` (exit 1, execution failed).
+
 ### Metadata
 
 #### `mindstack meta <path>`
@@ -272,6 +310,14 @@ mindstack search "keyword" --fulltext               # Full-text search
 mindstack relation /path/to/kb/docs/api/auth.md     # Explore related docs (absolute path)
 ```
 
+### Ask a Question
+
+```bash
+mindstack ack "what is the api retry policy"        # Retrieve snippets and synthesize an answer (requires LLM)
+# Output contains a `summary` and `snippets`; each snippet has an absolute path and line range
+# Call the Read tool on snippets[*].path for surrounding context
+```
+
 ### Create and Edit
 
 To create or edit a document, call the Write/Edit tool directly on the absolute path.
@@ -292,6 +338,7 @@ mindstack tags       # Inspect the tag distribution
 | `KB_AMBIGUOUS` | Multiple KBs without a target | Add `--kb <name>` |
 | `KB_NOT_FOUND` | `--kb` name does not exist | Use `info` to see the list of available KBs |
 | `LLM_UNAVAILABLE` (exit 3) | LLM not configured | Tell the user to configure the LLM service |
+| `ACK_FAILED` (exit 1) | `ack` execution failed | Check that the LLM is reachable and the KB has been synced |
 
 ## Notes
 

@@ -3,6 +3,7 @@ import { ref, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useLLM, type ChatMessage } from '../composables/useLLM'
 import { useSync } from '../composables/useSync'
 import { useSearch } from '../composables/useSearch'
+import { useAck, type AckSnippet } from '../composables/useAck'
 import { EventsOff } from '../../wailsjs/runtime/runtime'
 
 interface MessageLink {
@@ -16,6 +17,7 @@ interface DisplayMessage {
   content: string
   isStreaming?: boolean
   links?: MessageLink[]
+  snippets?: AckSnippet[]
 }
 
 const emit = defineEmits<{ close: []; openFile: [path: string] }>()
@@ -23,6 +25,7 @@ const emit = defineEmits<{ close: []; openFile: [path: string] }>()
 const { streamChat, cancelStream } = useLLM()
 const { syncWorkspace } = useSync()
 const { searchDocs } = useSearch()
+const { ackQuery, ackError } = useAck()
 const messages = ref<DisplayMessage[]>([])
 const inputText = ref('')
 const messageAreaEl = ref<HTMLElement>()
@@ -102,6 +105,10 @@ function sendMessage() {
 
   if (selectedTool.value?.command === '/search') {
     runSearch(text)
+    return
+  }
+  if (selectedTool.value?.command === '/ack') {
+    runAck(text)
     return
   }
   const fullText = selectedTool.value
@@ -200,6 +207,7 @@ interface ToolMenuItem {
 
 const toolMenuItems: ToolMenuItem[] = [
   { command: '/search', label: 'Search', icon: 'search', placeholder: 'Enter tags to search...' },
+  { command: '/ack', label: 'Ask', icon: 'help-circle', placeholder: 'Ask a question...' },
   { command: '/sync', label: 'Sync', icon: 'refresh-cw', placeholder: '' },
 ]
 
@@ -217,6 +225,11 @@ function selectToolItem(item: ToolMenuItem) {
     return
   }
   if (item.command === '/search') {
+    inputText.value = ''
+    textareaEl.value?.focus()
+    return
+  }
+  if (item.command === '/ack') {
     inputText.value = ''
     textareaEl.value?.focus()
     return
@@ -326,6 +339,47 @@ function runSearch(query: string) {
   scrollToBottom()
 }
 
+function runAck(query: string) {
+  if (!query.trim()) return
+  inputText.value = ''
+  selectedTool.value = null
+  isStreaming.value = true
+
+  messages.value.push({ role: 'user', content: `/ack ${query}` })
+
+  const idx = messages.value.length
+  messages.value.push({ role: 'assistant', content: 'Searching knowledge base...', isStreaming: true })
+  activeStreamIdx.value = idx
+
+  ackQuery(query).then((result) => {
+    if (activeStreamIdx.value !== idx) return
+    if (!result) {
+      messages.value[idx].content = ackError.value ? `Error: ${ackError.value}` : 'No results found.'
+      finishStream(idx)
+      return
+    }
+    if (result.snippets && result.snippets.length > 0) {
+      const tagPart = result.tags && result.tags.length ? ` (tags: ${result.tags.join(', ')})` : ''
+      const header = `Sources${tagPart}:`
+      messages.value[idx].content = result.summary
+        ? `${result.summary}\n\n${header}`
+        : `Found ${result.snippets.length} snippet(s)${tagPart}:`
+      messages.value[idx].snippets = result.snippets
+    } else {
+      messages.value[idx].content = `No relevant snippets found for "${query}".`
+    }
+    finishStream(idx)
+    scrollToBottom()
+  }).catch((err: any) => {
+    if (activeStreamIdx.value === idx && messages.value[idx]) {
+      messages.value[idx].content = `Error: ${String(err)}`
+    }
+    finishStream(idx)
+  })
+
+  scrollToBottom()
+}
+
 </script>
 
 <template>
@@ -360,6 +414,22 @@ function runSearch(query: string) {
               </template>
             </div>
           </template>
+          <template v-if="msg.snippets && msg.snippets.length">
+            <div class="snippet-list">
+              <div
+                v-for="(snippet, sIdx) in msg.snippets"
+                :key="`${snippet.path}-${snippet.startLine}-${sIdx}`"
+                class="snippet-card"
+              >
+                <a
+                  class="snippet-link"
+                  href="#"
+                  @click.prevent="emit('openFile', snippet.path)"
+                >{{ snippet.path }}:{{ snippet.startLine }}-{{ snippet.endLine }}</a>
+                <pre class="snippet-content">{{ snippet.content }}</pre>
+              </div>
+            </div>
+          </template>
           <span v-if="msg.isStreaming" class="cursor" />
         </div>
       </div>
@@ -370,6 +440,9 @@ function runSearch(query: string) {
         <button class="tool-btn" :class="{ active: showToolMenu || selectedTool }" @click="selectedTool ? clearToolSelection() : toggleToolMenu()" :title="selectedTool ? selectedTool.label : 'Tools'">
           <svg v-if="selectedTool?.icon === 'search'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+          </svg>
+          <svg v-else-if="selectedTool?.icon === 'help-circle'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" x2="12.01" y1="17" y2="17" />
           </svg>
           <svg v-else-if="selectedTool?.icon === 'git-branch'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="6" x2="6" y1="3" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" />
@@ -385,6 +458,9 @@ function runSearch(query: string) {
           <button v-for="item in toolMenuItems" :key="item.command" class="tool-menu-item" @click="selectToolItem(item)">
             <svg v-if="item.icon === 'search'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <svg v-else-if="item.icon === 'help-circle'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" x2="12.01" y1="17" y2="17" />
             </svg>
             <svg v-else-if="item.icon === 'git-branch'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="6" x2="6" y1="3" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" />
@@ -562,6 +638,50 @@ function runSearch(query: string) {
   color: var(--text-muted);
   margin: -2px 0 4px 0;
   line-height: 1.4;
+}
+
+.snippet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.snippet-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--surface-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.snippet-link {
+  font-size: 11px;
+  color: var(--accent-primary);
+  text-decoration: none;
+  word-break: break-all;
+  font-family: var(--font-mono, monospace);
+}
+
+.snippet-link:hover {
+  text-decoration: underline;
+}
+
+.snippet-content {
+  font-size: 11px;
+  color: var(--foreground-primary);
+  background: var(--surface-secondary);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.5;
+  max-height: 240px;
+  overflow-y: auto;
 }
 
 .cursor {
