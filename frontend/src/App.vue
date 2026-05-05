@@ -37,7 +37,7 @@ async function checkFullscreen() {
 }
 
 provideEditorState()
-const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs, dirtyTabs } = useFileTree()
+const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs, dirtyTabs, handleExternalChange } = useFileTree()
 const { loadSettings, theme, debugMode } = useSettings()
 
 onMounted(async () => {
@@ -96,6 +96,16 @@ onMounted(async () => {
   EventsOff('menu:file:save')
   EventsOn('menu:file:save', () => {
     saveCurrentFile()
+  })
+
+  // Listen for external file changes detected by the backend watcher
+  let fsChangeTimer: ReturnType<typeof setTimeout> | null = null
+  EventsOff('fs:change')
+  EventsOn('fs:change', () => {
+    if (fsChangeTimer) clearTimeout(fsChangeTimer)
+    fsChangeTimer = setTimeout(() => {
+      handleExternalChange()
+    }, 300)
   })
 
   document.addEventListener('keydown', (e: KeyboardEvent) => {

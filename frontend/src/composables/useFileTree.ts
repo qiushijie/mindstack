@@ -385,17 +385,77 @@ export function useFileTree() {
     }
   }
 
+  // Recursively merges new tree nodes into old ones, preserving expanded state
+  // and refreshing children of expanded directories from disk.
+  async function mergePreserveExpanded(
+    oldNodes: TreeNode[],
+    newNodes: TreeNode[],
+  ): Promise<TreeNode[]> {
+    const oldMap = new Map<string, TreeNode>()
+    for (const n of oldNodes) {
+      if (n.isDir) oldMap.set(n.path, n)
+    }
+    const result: TreeNode[] = []
+    for (const node of newNodes) {
+      if (!node.isDir) {
+        result.push(node)
+        continue
+      }
+      const old = oldMap.get(node.path)
+      if (!old || !old.expanded) {
+        result.push(node)
+        continue
+      }
+      const entries = await ReadDirEntries(node.path)
+      const freshChildren = entriesToNodes(entries)
+      node.children = await mergePreserveExpanded(old.children, freshChildren)
+      node.expanded = true
+      result.push(node)
+    }
+    return result
+  }
+
   async function refreshTree() {
     if (!rootPath.value) return
+    const oldTree = treeData.value
     const entries = await ReadDirEntries(rootPath.value)
-    treeData.value = entriesToNodes(entries)
+    treeData.value = await mergePreserveExpanded(oldTree, entriesToNodes(entries))
   }
 
   async function refreshDir(path: string) {
     const node = findNode(treeData.value, path)
     if (!node || !node.isDir || !node.expanded) return
     const entries = await ReadDirEntries(path)
-    node.children = entriesToNodes(entries)
+    node.children = await mergePreserveExpanded(node.children, entriesToNodes(entries))
+  }
+
+  async function handleExternalChange() {
+    if (!rootPath.value) return
+    await refreshTree()
+
+    const currentPath = selectedFilePath.value
+
+    // Invalidate cache for unmodified background tabs so they reload from disk on switch
+    for (const tab of tabs.value) {
+      if (isPageTab(tab.path)) continue
+      if (tab.path === currentPath) continue
+      if (dirtyTabs.value.includes(tab.path)) continue
+      tabContentCache.delete(tab.path)
+    }
+
+    if (currentPath && !isDirty.value) {
+      try {
+        const diskContent = await ReadFileContent(currentPath)
+        const cached = tabContentCache.get(currentPath)
+        if (diskContent !== cached) {
+          tabContentCache.set(currentPath, diskContent)
+          applyContent(currentPath, diskContent)
+        }
+      } catch {
+        tabContentCache.set(currentPath, '')
+        applyContent(currentPath, '')
+      }
+    }
   }
 
   async function openRecentFolder(path: string) {
@@ -597,6 +657,7 @@ export function useFileTree() {
     markDirty,
     refreshTree,
     refreshDir,
+    handleExternalChange,
     restoreSession,
     openRecentFolder,
     openRecentFile,

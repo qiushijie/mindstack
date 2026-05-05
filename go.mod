@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/cloudwego/eino v0.8.9
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.12
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	github.com/wailsapp/wails/v2 v2.12.0

@@ -21,6 +21,7 @@ import (
 	"mindstack/internal/relation"
 	"mindstack/internal/search"
 	syncpkg "mindstack/internal/sync"
+	"mindstack/internal/watcher"
 
 	einoschema "github.com/cloudwego/eino/schema"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -46,6 +47,7 @@ type App struct {
 	frontendReady    bool
 	debugMode        bool
 	llm              *llm.Service
+	watcher          *watcher.Watcher
 }
 
 func NewApp() *App {
@@ -240,6 +242,42 @@ func (a *App) GetRootPath() string {
 
 func (a *App) SetWorkspaceRoot(p string) {
 	a.SetRootPath(p)
+	a.startWatching(p)
+}
+
+func (a *App) startWatching(root string) {
+	a.mu.Lock()
+	if a.watcher != nil {
+		a.watcher.Stop()
+		a.watcher = nil
+	}
+	a.mu.Unlock()
+
+	if root == "" {
+		return
+	}
+
+	w := watcher.New(func(path string) {
+		runtime.EventsEmit(a.ctx, "fs:change", path)
+	})
+	if err := w.Start(root); err != nil {
+		fmt.Println("failed to start file watcher:", err)
+		return
+	}
+
+	a.mu.Lock()
+	a.watcher = w
+	a.mu.Unlock()
+}
+
+// Shutdown cleans up resources when the app exits.
+func (a *App) Shutdown(ctx context.Context) {
+	a.mu.Lock()
+	if a.watcher != nil {
+		a.watcher.Stop()
+		a.watcher = nil
+	}
+	a.mu.Unlock()
 }
 
 func (a *App) GetFileServerPort() int {

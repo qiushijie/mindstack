@@ -221,6 +221,7 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
 		OnStartup:        app.startup,
+		OnShutdown:       app.Shutdown,
 		Mac: &mac.Options{
 			TitleBar:             mac.TitleBarHidden(),
 			Appearance:           mac.NSAppearanceNameDarkAqua,

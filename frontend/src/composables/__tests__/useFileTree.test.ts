@@ -1414,6 +1414,216 @@ describe('useFileTree', () => {
       expect(SaveFileContent).not.toHaveBeenCalled()
     })
   })
+
+  describe('handleExternalChange', () => {
+    async function cleanOpen() {
+      vi.mocked(OpenFolderDialog).mockResolvedValueOnce('/__tabtest__')
+      vi.mocked(ReadDirEntries).mockResolvedValueOnce([])
+      const { openFolder } = useFileTree()
+      await openFolder()
+    }
+
+    it('does nothing when rootPath is empty', async () => {
+      const { handleExternalChange } = useFileTree()
+
+      await handleExternalChange()
+
+      expect(ReadDirEntries).not.toHaveBeenCalled()
+      expect(ReadFileContent).not.toHaveBeenCalled()
+    })
+
+    it('refreshes tree when rootPath is set', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadDirEntries).mockResolvedValue([])
+
+      const { handleExternalChange } = useFileTree()
+      await handleExternalChange()
+
+      expect(ReadDirEntries).toHaveBeenCalledWith('/__tabtest__')
+    })
+
+    it('updates editor content when current file changed on disk', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+
+      // selectFile reads 'old' for file a
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('old')
+        // refreshTree reads root dir (no files, so no extra ReadFileContent)
+        // handleExternalChange reads current file again -> 'new'
+        .mockResolvedValueOnce('new')
+
+      const { selectedFilePath, selectedFileContent, selectFile, handleExternalChange, setEditorAdapter } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      setEditorAdapter(mockAdapter)
+
+      await selectFile('/root/a.md')
+      expect(selectedFileContent.value).toBe('old')
+      expect(mockAdapter.setContent).toHaveBeenCalledWith('old')
+
+      await handleExternalChange()
+
+      expect(selectedFileContent.value).toBe('new')
+      expect(mockAdapter.setContent).toHaveBeenCalledWith('new')
+    })
+
+    it('does not modify editor when current file is dirty', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('original')
+        .mockResolvedValueOnce('disk-changed')
+
+      const { selectedFileContent, selectFile, markDirty, handleExternalChange, setEditorAdapter } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      setEditorAdapter(mockAdapter)
+
+      await selectFile('/root/a.md')
+      expect(selectedFileContent.value).toBe('original')
+
+      // Modify content and mark dirty so handleExternalChange skips current file update
+      selectedFileContent.value = 'modified'
+      markDirty()
+
+      await handleExternalChange()
+
+      // Should still be modified, not disk-changed
+      expect(selectedFileContent.value).toBe('modified')
+      // setContent should not be called with disk-changed
+      expect(mockAdapter.setContent).not.toHaveBeenCalledWith('disk-changed')
+    })
+
+    it('does not change editor when disk content equals cache', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('same')
+        .mockResolvedValueOnce('same')
+
+      const { selectedFileContent, selectFile, handleExternalChange, setEditorAdapter } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      setEditorAdapter(mockAdapter)
+
+      await selectFile('/root/a.md')
+      expect(selectedFileContent.value).toBe('same')
+      const callCountAfterSelect = mockAdapter.setContent.mock.calls.length
+
+      await handleExternalChange()
+
+      // Content unchanged, setContent should not be called again
+      expect(selectedFileContent.value).toBe('same')
+      expect(mockAdapter.setContent.mock.calls.length).toBe(callCountAfterSelect)
+    })
+
+    it('clears editor and cache when current file was externally deleted', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content')
+        .mockRejectedValueOnce(new Error('file not found'))
+
+      const { selectedFileContent, selectFile, handleExternalChange, setEditorAdapter } = useFileTree()
+      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      setEditorAdapter(mockAdapter)
+
+      await selectFile('/root/a.md')
+      expect(selectedFileContent.value).toBe('content')
+
+      await handleExternalChange()
+
+      expect(selectedFileContent.value).toBe('')
+      expect(mockAdapter.setContent).toHaveBeenCalledWith('')
+    })
+
+    it('invalidates cache for unmodified background tabs', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+
+      // selectFile a -> b -> c: each reads content
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b')
+        .mockResolvedValueOnce('content-c')
+
+      const { selectFile, switchToTab, handleExternalChange, setEditorAdapter } = useFileTree()
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      await selectFile('/root/c.md')
+      // Now active is c, a and b are background tabs
+
+      // handleExternalChange: refreshTree reads root dir
+      vi.mocked(ReadDirEntries).mockResolvedValue([])
+      // handleExternalChange reads current file c -> 'new-c'
+      vi.mocked(ReadFileContent).mockResolvedValueOnce('new-c')
+
+      await handleExternalChange()
+
+      // Switch back to a: since cache was invalidated, it should read from disk
+      vi.mocked(ReadFileContent).mockResolvedValueOnce('fresh-a')
+      await switchToTab(0)
+
+      // The fact that ReadFileContent was called for a proves cache was invalidated
+      expect(ReadFileContent).toHaveBeenLastCalledWith('/root/a.md')
+    })
+
+    it('keeps cache for dirty background tabs', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b')
+        .mockResolvedValueOnce('content-c')
+
+      const { selectFile, switchToTab, handleExternalChange, markDirty, setEditorAdapter, selectedFileContent } = useFileTree()
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      await selectFile('/root/c.md')
+      // Now active is c
+
+      // Switch to b and mark dirty
+      await switchToTab(1)
+      selectedFileContent.value = 'dirty-b'
+      editorContent = 'dirty-b'
+      markDirty()
+
+      // Switch back to c
+      await switchToTab(2)
+
+      // handleExternalChange
+      vi.mocked(ReadDirEntries).mockResolvedValue([])
+      vi.mocked(ReadFileContent).mockResolvedValueOnce('new-c')
+
+      await handleExternalChange()
+
+      // Switch back to b: since b is dirty, cache should be preserved
+      // No new ReadFileContent call for b expected
+      const callCountBeforeSwitch = vi.mocked(ReadFileContent).mock.calls.length
+      await switchToTab(1)
+      const callCountAfterSwitch = vi.mocked(ReadFileContent).mock.calls.length
+
+      // No additional ReadFileContent call for b
+      expect(callCountAfterSwitch).toBe(callCountBeforeSwitch)
+      // Content should come from cache, not disk
+      expect(editorContent).toBe('dirty-b')
+    })
+  })
 })
 
 import { resolveUniqueFilePath, resolvePasteFilePath, isFileInsideRoot } from '../useFileTree'
