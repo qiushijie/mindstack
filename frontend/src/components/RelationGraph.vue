@@ -79,7 +79,7 @@ const selectedNode = computed<DocNode | null>(() => {
 
 const selectedRelations = computed(() => {
   if (!selectedPath.value) return []
-  return getRelationsForDoc(selectedPath.value)
+  return getRelationsForDoc(selectedPath.value).sort((a, b) => b.score - a.score)
 })
 
 const selectedSharedTags = computed(() => {
