@@ -1,6 +1,6 @@
 # MindStack
 
-[中文](docs/README_CN.md)
+[中文](docs/README_zh.md)
 
 A developer-focused markdown editor with git repository sync, designed for developers and AI codegen tools to maintain knowledge bases.
 

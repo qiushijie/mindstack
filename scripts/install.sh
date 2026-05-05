@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BINARY_NAME="mindstack"
 
-# Skill language: en (default) or cn
+# Skill language: en (default) or zh
 SKILL_LANG="en"
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -19,7 +19,7 @@ while [[ $# -gt 0 ]]; do
 			;;
 		-h|--help)
 			echo "Usage: $0 [--lang <code>]"
-			echo "  --lang   Skill language (en|cn), default: en"
+			echo "  --lang   Skill language (en|zh), default: en"
 			exit 0
 			;;
 		*)
