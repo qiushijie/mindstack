@@ -18,6 +18,7 @@ import { useFileTree } from './composables/useFileTree'
 import { useSettings, applyTheme } from './composables/useSettings'
 import { openPageTab } from './composables/useTabs'
 import { IsFullscreen } from '../wailsjs/go/main/App'
+import { setLocale } from './i18n'
 
 const sidebarCollapsed = ref(false)
 const showAIChat = ref(false)
@@ -43,11 +44,34 @@ const { loadSettings, theme, debugMode } = useSettings()
 onMounted(async () => {
   await loadSettings()
   applyTheme(theme.value)
+
+  // __localeReady signals that the initial mount is complete,
+  // regardless of whether Wails runtime is connected.
+  // E2E tests that need Wails bindings mock them after this flag.
+  ;(window as any).__localeReady = true
+  // Expose setLocale for E2E tests to switch locale without Wails bindings
+  ;(window as any).__setLocale = setLocale
+
+  // HMR dev mode: Wails runtime may not be ready yet (window.go undefined),
+  // causing LoadConfig() to fail silently. Retry when the runtime connects
+  // so the UI picks up correct settings.
+  if (!(window as any).go?.main?.App) {
+    const timer = setInterval(() => {
+      if ((window as any).go?.main?.App) {
+        clearInterval(timer)
+        loadSettings().then(() => {
+          applyTheme(theme.value)
+        })
+      }
+    }, 200)
+    setTimeout(() => clearInterval(timer), 30000)
+  }
+
   await restoreSession()
   checkFullscreen()
   window.addEventListener('resize', checkFullscreen)
 
-  const pendingPath = await GetPendingOpenFile()
+  const pendingPath = await GetPendingOpenFile().catch(() => '')
   if (pendingPath) {
     await openRecentFile(pendingPath)
   }

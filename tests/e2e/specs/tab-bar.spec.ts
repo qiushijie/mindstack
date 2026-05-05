@@ -131,7 +131,9 @@ test.describe('Tab Bar', () => {
     await expect(page.locator('.tab-item')).toHaveCount(0)
   })
 
-  test('should save and close tab', async ({ page }) => {
+  // Skip: save requires Wails Go backend (SaveFileContent binding), which is
+  // unavailable when Playwright connects to the Vite dev server directly.
+  test.skip('should save and close tab', async ({ page }) => {
     await openFileFromTree(page, 'readme.md')
     await page.waitForTimeout(500)
 

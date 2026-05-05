@@ -91,9 +91,13 @@ const MOCK_RELATIONS = {
 }
 
 async function setupRelationGraphMocks(page: import('@playwright/test').Page) {
-  // Wails runtime overwrites window.go.main.App after page load, so mocks must
-  // be applied after the page is fully loaded (not via addInitScript).
+  // In wails dev mode, Playwright connects directly to the Vite dev server,
+  // so window.go is never populated by the Wails runtime (only the native
+  // Wails window receives the runtime injection). Create mock bindings instead.
   await page.evaluate((data) => {
+    if (!(window as any).go) {
+      (window as any).go = { main: { App: {} } }
+    }
     ;(window as any).go.main.App.GetDocumentMetas = () =>
       Promise.resolve(JSON.stringify(data.metas))
     ;(window as any).go.main.App.GetDocumentRelations = () =>

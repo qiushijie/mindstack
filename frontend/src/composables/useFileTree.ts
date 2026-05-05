@@ -231,11 +231,15 @@ export function useFileTree() {
   }
 
   async function saveAppConfig() {
-    const raw = await LoadConfig()
-    const config = JSON.parse(raw || '{}')
-    config.lastFolderPath = rootPath.value
-    config.lastFilePath = selectedFilePath.value
-    await SaveConfig(JSON.stringify(config))
+    try {
+      const raw = await LoadConfig()
+      const config = JSON.parse(raw || '{}')
+      config.lastFolderPath = rootPath.value
+      config.lastFilePath = selectedFilePath.value
+      await SaveConfig(JSON.stringify(config))
+    } catch {
+      // Wails bindings unavailable (e.g. dev mode without Go backend)
+    }
   }
 
   async function restoreSession() {
@@ -308,7 +312,13 @@ export function useFileTree() {
     saveCurrentToCache()
 
     const { isNew } = openTab(path)
-    const content = await loadTabContent(path)
+    let content = ''
+    try {
+      content = await loadTabContent(path)
+    } catch {
+      // Wails bindings (ReadFileContent) unavailable in dev mode.
+      // Open the tab with empty content so file selection still works.
+    }
     if (isNew) {
       tabContentCache.set(path, content)
     }

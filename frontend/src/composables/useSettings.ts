@@ -62,8 +62,6 @@ async function doSave() {
   savePromise = (async () => {
     while (true) {
       needsSave = false
-      setLocale(locale.value)
-      SetLocale(locale.value).catch(() => {})
       try {
         const raw = await LoadConfig()
         const config = JSON.parse(raw || '{}')
@@ -96,9 +94,9 @@ export function useSettings() {
   async function loadSettings() {
     if (loaded) return
     skipWatch = true
-    loaded = true
     try {
       const raw = await LoadConfig()
+      loaded = true
       const config = JSON.parse(raw || '{}')
       const s = config.settings || {}
       if (s.autoSave !== undefined) autoSave.value = s.autoSave
@@ -184,3 +182,12 @@ watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform
   if (!loaded || skipWatch) return
   await doSave()
 }, { deep: true })
+
+// Apply locale to i18n and notify Go backend when locale ref changes.
+// This is separate from doSave so that model-only operations (addModel,
+// removeModel) don't re-apply locale and potentially reset it in E2E tests.
+watch(locale, (newLocale) => {
+  if (!loaded) return
+  setLocale(newLocale)
+  SetLocale(newLocale).catch(() => {})
+})

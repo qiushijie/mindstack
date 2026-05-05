@@ -2,10 +2,26 @@ const { spawn } = require('child_process')
 const waitOn = require('wait-on')
 const fs = require('fs')
 const path = require('path')
+const os = require('os')
+const crypto = require('crypto')
 
 const ROOT_DIR = path.join(__dirname, '..', '..', '..')
 const LOG_FILE = path.join(__dirname, '..', 'wails-dev.log')
 const PID_FILE = path.join(__dirname, '..', 'wails-dev.pid')
+
+// Ensure common Go binary paths are in PATH for wails CLI
+const GOPATH = process.env.GOPATH || path.join(os.homedir(), 'go')
+const goBinPath = path.join(GOPATH, 'bin')
+const PATH = process.env.PATH || ''
+if (!PATH.split(path.delimiter).includes(goBinPath)) {
+  process.env.PATH = [goBinPath, PATH].join(path.delimiter)
+}
+
+function createTempDir() {
+  const dir = path.join(os.tmpdir(), `mindstack-e2e-${crypto.randomBytes(4).toString('hex')}`)
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
 
 function extractUrl(log) {
   const match = log.match(/http:\/\/localhost:\d+/)
@@ -19,11 +35,25 @@ async function sleep(ms) {
 async function startWailsDev() {
   if (fs.existsSync(LOG_FILE)) fs.unlinkSync(LOG_FILE)
 
+  const configDir = createTempDir()
+  console.log('[e2e] Using isolated config dir:', configDir)
+
+  // Write seed config with Chinese locale so all locale-dependent tests pass
+  const seedConfig = JSON.stringify({
+    settings: { locale: 'zh', theme: 'light', autoSave: true, autoSaveDelay: 5 },
+  })
+  fs.writeFileSync(path.join(configDir, 'config.json'), seedConfig)
+  console.log('[e2e] Wrote seed config with locale=zh')
+
   console.log('[e2e] Starting wails dev...')
   const child = spawn('wails', ['dev'], {
     cwd: ROOT_DIR,
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: true,
+    env: {
+      ...process.env,
+      MINDSTACK_CONFIG_DIR: configDir,
+    },
   })
 
   const logStream = fs.createWriteStream(LOG_FILE)
@@ -31,6 +61,8 @@ async function startWailsDev() {
   child.stderr.pipe(logStream)
 
   fs.writeFileSync(PID_FILE, child.pid.toString())
+  // Store configDir path for cleanup later
+  fs.writeFileSync(PID_FILE + '.configdir', configDir)
 
   // Wait for URL in log output
   let url = null
@@ -71,7 +103,7 @@ async function checkExisting() {
   try {
     process.kill(pid, 0)
   } catch {
-    fs.unlinkSync(PID_FILE)
+    cleanupPidFiles()
     return null
   }
 
@@ -81,11 +113,16 @@ async function checkExisting() {
     const url = extractUrl(log)
     if (url) {
       process.env.WAILS_DEV_URL = url
-      console.log(`[e2e] Wails dev already running at ${url}`)
+      console.log('[e2e] Wails dev already running at', url)
       return 'existing'
     }
   }
   return null
+}
+
+function cleanupPidFiles() {
+  try { fs.unlinkSync(PID_FILE) } catch {}
+  try { fs.unlinkSync(PID_FILE + '.configdir') } catch {}
 }
 
 async function main() {
@@ -95,6 +132,8 @@ async function main() {
 
   if (!existing) {
     wailsProcess = await startWailsDev()
+  } else {
+    console.log('[e2e] Using existing wails dev process — config isolation not guaranteed')
   }
 
   // Run Playwright
@@ -112,8 +151,17 @@ async function main() {
   // Cleanup
   if (wailsProcess && !args.includes('--watch')) {
     console.log('[e2e] Shutting down Wails dev...')
+
+    // Read configDir before killing so we can clean it up
+    let configDir = null
+    try { configDir = fs.readFileSync(PID_FILE + '.configdir', 'utf8') } catch {}
+
     wailsProcess.kill('SIGTERM')
-    if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE)
+    cleanupPidFiles()
+
+    if (configDir) {
+      try { fs.rmSync(configDir, { recursive: true, force: true }) } catch {}
+    }
   }
 
   process.exit(exitCode)

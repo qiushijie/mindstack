@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "playwright test",
-    "test:headed": "playwright test --headed",
-    "test:ui": "playwright test --ui",
-    "test:debug": "playwright test --debug",
+    "test": "node scripts/run-e2e.js",
+    "test:headed": "node scripts/run-e2e.js --headed",
+    "test:ui": "node scripts/run-e2e.js --ui",
+    "test:debug": "node scripts/run-e2e.js --debug",
+    "playwright": "playwright test",
     "report": "playwright show-report"
   },
   "devDependencies": {
