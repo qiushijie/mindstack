@@ -1,8 +1,11 @@
 <script lang="ts" setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, inject, onMounted, onUnmounted, nextTick, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Network, MessageSquare } from 'lucide-vue-next'
 import { syntaxTree } from '@codemirror/language'
 import { useCodeMirror } from '../composables/useCodeMirror'
+import { useNavigation } from '../composables/useNavigation'
+import { openPageTab } from '../composables/useTabs'
 import SelectionToolbar from './SelectionToolbar.vue'
 import ImageDialog from './ImageDialog.vue'
 import FindPanel from './FindPanel.vue'
@@ -47,6 +50,17 @@ function findNearestHeadingLine(cursorLine: number): number {
 
 const searchVisible = ref(false)
 const searchRecalcKey = ref(0)
+const showAIChat = inject<Ref<boolean>>('showAIChat', ref(false))
+const { navigateTo } = useNavigation()
+
+function openRelations() {
+  openPageTab('relations', t('relationGraph.title'))
+  navigateTo('relations')
+}
+
+function toggleAIChat() {
+  showAIChat.value = !showAIChat.value
+}
 
 const { view, focus, setContent } = useCodeMirror({
   container: containerRef,
@@ -418,6 +432,23 @@ onUnmounted(() => {
       :recalc-key="searchRecalcKey"
       @close="searchVisible = false"
     />
+    <div v-if="!searchVisible" class="floating-actions">
+      <button
+        class="floating-btn"
+        title="Relation Graph"
+        @click="openRelations"
+      >
+        <Network :size="18" />
+      </button>
+      <button
+        class="floating-btn"
+        :class="{ active: showAIChat }"
+        title="AI Assistant"
+        @click="toggleAIChat"
+      >
+        <MessageSquare :size="18" />
+      </button>
+    </div>
     <SelectionToolbar
       v-if="toolbarState.visible"
       :active-labels="activeLabels"
@@ -522,5 +553,40 @@ onUnmounted(() => {
   height: 1px;
   background: var(--border-subtle);
   margin: 4px 0;
+}
+
+.floating-actions {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 10;
+  --wails-draggable: no-drag;
+}
+
+.floating-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--foreground-tertiary);
+  border-radius: 6px;
+  padding: 0;
+}
+
+.floating-btn:hover {
+  color: var(--foreground-secondary);
+  background: var(--surface-hover);
+}
+
+.floating-btn.active {
+  color: var(--accent-primary);
+  background: var(--surface-hover);
 }
 </style>

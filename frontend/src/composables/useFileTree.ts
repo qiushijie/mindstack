@@ -490,6 +490,7 @@ export function useFileTree() {
       if (editorAdapter) {
         editorAdapter.setContent('')
       }
+      navigateTo('editor')
     }
 
     await saveAppConfig()
@@ -565,6 +566,7 @@ export function useFileTree() {
     if (editorAdapter) {
       editorAdapter.setContent('')
     }
+    navigateTo('editor')
 
     await saveAppConfig()
   }

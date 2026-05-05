@@ -1,7 +1,6 @@
 <script lang="ts" setup>
-import { ref, onMounted } from 'vue'
+import { ref, provide, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Network, MessageSquare } from 'lucide-vue-next'
 import { EventsOn, EventsOff, ClipboardGetText } from '../wailsjs/runtime/runtime'
 import { GetPendingOpenFile } from '../wailsjs/go/main/App'
 import AppSidebar from './components/AppSidebar.vue'
@@ -22,6 +21,7 @@ import { IsFullscreen } from '../wailsjs/go/main/App'
 
 const sidebarCollapsed = ref(false)
 const showAIChat = ref(false)
+provide('showAIChat', showAIChat)
 const isFullscreen = ref(false)
 const aboutDialogVisible = ref(false)
 
@@ -36,10 +36,6 @@ async function checkFullscreen() {
   }
 }
 
-function openRelations() {
-  openPageTab('relations', t('relationGraph.title'))
-  navigateTo('relations')
-}
 provideEditorState()
 const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs, dirtyTabs } = useFileTree()
 const { loadSettings, theme, debugMode } = useSettings()
@@ -166,24 +162,6 @@ onMounted(async () => {
         @close-all-tabs="closeAllTabs"
       />
       <div class="content-area">
-        <div class="floating-actions">
-          <button
-            class="floating-btn"
-            :class="{ active: currentPage === 'relations' }"
-            title="Relation Graph"
-            @click="openRelations"
-          >
-            <Network :size="18" />
-          </button>
-          <button
-            class="floating-btn"
-            :class="{ active: showAIChat }"
-            title="AI Assistant"
-            @click="showAIChat = !showAIChat"
-          >
-            <MessageSquare :size="18" />
-          </button>
-        </div>
         <AppEditor v-if="currentPage === 'editor'" />
         <AppSettings v-else-if="currentPage === 'settings'" />
         <RelationGraph v-else-if="currentPage === 'relations'" />
@@ -224,40 +202,5 @@ onMounted(async () => {
   flex-direction: column;
   position: relative;
   overflow: hidden;
-}
-
-.floating-actions {
-  position: absolute;
-  top: 6px;
-  right: 12px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  z-index: 10;
-  --wails-draggable: no-drag;
-}
-
-.floating-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--foreground-tertiary);
-  border-radius: 6px;
-  padding: 0;
-}
-
-.floating-btn:hover {
-  color: var(--foreground-secondary);
-  background: var(--surface-hover);
-}
-
-.floating-btn.active {
-  color: var(--accent-primary);
-  background: var(--surface-hover);
 }
 </style>
