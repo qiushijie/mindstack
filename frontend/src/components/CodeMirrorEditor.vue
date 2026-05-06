@@ -9,6 +9,7 @@ import { openPageTab } from '../composables/useTabs'
 import SelectionToolbar from './SelectionToolbar.vue'
 import ImageDialog from './ImageDialog.vue'
 import FindPanel from './FindPanel.vue'
+import { useSettings } from '../composables/useSettings'
 import { wrapInline, toggleBlockType, insertLink } from '../utils/markdownUtils'
 import { setSelectedHeadingLine, currentHeadings } from '../composables/useHeadingTree'
 import { BlockType, getBlockTypeAtLine, isFullBlockSelection, blockTypeToLabel } from '../utils/syntaxUtils'
@@ -19,6 +20,7 @@ import { getTableCellFromEvent } from '../extensions/tableWidget'
 import { parseTable, addRowBelow, addRowAbove, deleteRow, addColumnLeft, addColumnRight, deleteColumn, type TableData } from '../utils/tableUtils'
 
 const { t } = useI18n()
+const { rawMode } = useSettings()
 const containerRef = ref<HTMLElement | null>(null)
 const imageDialogVisible = ref(false)
 let imageInsertLineFrom = -1
@@ -64,6 +66,7 @@ function toggleAIChat() {
 
 const { view, focus, setContent } = useCodeMirror({
   container: containerRef,
+  rawMode,
   initialDoc: '',
   onChange: (doc) => {
     selectedFileContent.value = doc
@@ -145,7 +148,7 @@ function detectActiveLabels(): Set<string> {
 
 function showToolbar() {
   const v = view.value
-  if (!v) return
+  if (!v || rawMode.value) return
 
   const sel = v.state.selection.main
   if (sel.empty) {
@@ -230,6 +233,7 @@ function handleDocKeydown(e: KeyboardEvent) {
 }
 
 function handleContextMenu(e: MouseEvent) {
+  if (rawMode.value) return
   const target = e.target as HTMLElement
   if (target.closest('.cm-mermaid-preview') || target.closest('.cm-mermaid-edit-header')) {
     return
@@ -425,7 +429,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="editor-container" @contextmenu="handleContextMenu">
+  <div class="editor-container" :class="{ 'raw-mode': rawMode }" @contextmenu="handleContextMenu">
     <div ref="containerRef" class="cm-container" @pointerup="handleCmPointerup" />
     <FindPanel
       :visible="searchVisible"
@@ -588,5 +592,9 @@ onUnmounted(() => {
 .floating-btn.active {
   color: var(--accent-primary);
   background: var(--surface-hover);
+}
+
+.editor-container.raw-mode :deep(.cm-content) {
+  padding-left: 48px;
 }
 </style>

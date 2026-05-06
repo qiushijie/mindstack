@@ -39,7 +39,7 @@ async function checkFullscreen() {
 
 provideEditorState()
 const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs, dirtyTabs, handleExternalChange } = useFileTree()
-const { loadSettings, theme, debugMode } = useSettings()
+const { loadSettings, theme, debugMode, rawMode } = useSettings()
 
 onMounted(async () => {
   await loadSettings()
@@ -51,6 +51,8 @@ onMounted(async () => {
   ;(window as any).__localeReady = true
   // Expose setLocale for E2E tests to switch locale without Wails bindings
   ;(window as any).__setLocale = setLocale
+  // Expose setRawMode for E2E tests to toggle raw mode without Wails bindings
+  ;(window as any).__setRawMode = (v: boolean) => { rawMode.value = v }
 
   // HMR dev mode: Wails runtime may not be ready yet (window.go undefined),
   // causing LoadConfig() to fail silently. Retry when the runtime connects
@@ -150,6 +152,11 @@ onMounted(async () => {
   EventsOff('menu:toggle-debug')
   EventsOn('menu:toggle-debug', (checked: boolean) => {
     debugMode.value = checked
+  })
+
+  EventsOff('menu:toggle-raw')
+  EventsOn('menu:toggle-raw', (checked: boolean) => {
+    rawMode.value = checked
   })
 
   EventsOff('menu:file:new')

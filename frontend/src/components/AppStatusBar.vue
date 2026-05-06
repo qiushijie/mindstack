@@ -3,10 +3,12 @@ import { ref, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEditorState } from '../composables/useEditorState'
 import { useNavigation } from '../composables/useNavigation'
+import { useSettings } from '../composables/useSettings'
 
 const { t } = useI18n()
 const { editorView } = useEditorState()
 const { currentPage } = useNavigation()
+const { rawMode } = useSettings()
 
 const line = ref(1)
 const col = ref(1)
@@ -83,7 +85,7 @@ onUnmounted(() => {
 <template>
   <div class="status-bar">
     <template v-if="currentPage === 'editor'">
-      <span class="status-item">{{ t('statusBar.markdown') }}</span>
+      <span class="status-item">{{ rawMode ? 'Raw' : t('statusBar.markdown') }}</span>
       <span class="status-sep">|</span>
       <span class="status-item">{{ t('statusBar.line') }} {{ line }}, {{ t('statusBar.column') }} {{ col }}</span>
       <span class="status-sep">|</span>

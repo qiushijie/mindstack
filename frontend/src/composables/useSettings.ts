@@ -29,6 +29,7 @@ const showKeyIds = ref<Set<string>>(new Set())
 const platform = ref<UIPlatform>('macos')
 const uiPlatform = ref<UIPlatform>('macos')
 const debugMode = ref(false)
+const rawMode = ref(false)
 
 let loaded = false
 let skipWatch = false
@@ -74,6 +75,7 @@ async function doSave() {
           activeModelId: activeModelId.value,
           uiPlatform: uiPlatform.value,
           debugMode: debugMode.value,
+          rawMode: rawMode.value,
         }
         const result = await SaveConfig(JSON.stringify(config))
         if (result) {
@@ -113,6 +115,7 @@ export function useSettings() {
       if (Array.isArray(s.models)) models.value = s.models.map((m: any) => ({ ...m, model: m.model || 'deepseek-v4-flash', apiUrl: m.apiUrl || '' }))
       if (s.activeModelId) activeModelId.value = s.activeModelId
       if (typeof s.debugMode === 'boolean') debugMode.value = s.debugMode
+      if (typeof s.rawMode === 'boolean') rawMode.value = s.rawMode
       try {
         const p = await GetPlatform()
         const detected = p === 'windows' ? 'windows' : 'macos'
@@ -172,13 +175,13 @@ export function useSettings() {
   return {
     autoSave, autoSaveDelay, locale, theme,
     models, activeModelId, showKeyIds,
-    platform, uiPlatform, debugMode,
+    platform, uiPlatform, debugMode, rawMode,
     loadSettings, saveSettings,
     addModel, removeModel, activateModel, toggleShowKey,
   }
 }
 
-watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform, debugMode], async () => {
+watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform, debugMode, rawMode], async () => {
   if (!loaded || skipWatch) return
   await doSave()
 }, { deep: true })

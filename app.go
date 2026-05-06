@@ -46,6 +46,7 @@ type App struct {
 	pendingOpenPath  string
 	frontendReady    bool
 	debugMode        bool
+	rawMode          bool
 	llm              *llm.Service
 	watcher          *watcher.Watcher
 }
@@ -585,6 +586,7 @@ type AppConfig struct {
 	RecentEntries  []RecentEntry `json:"recentEntries"`
 	Settings       struct {
 		DebugMode bool `json:"debugMode"`
+		RawMode   bool `json:"rawMode"`
 	} `json:"settings"`
 }
 
@@ -602,6 +604,7 @@ func (a *App) LoadConfig() string {
 			a.recentEntries = []RecentEntry{}
 		}
 		a.debugMode = cfg.Settings.DebugMode
+		a.rawMode = cfg.Settings.RawMode
 		a.mu.Unlock()
 	}
 	return string(data)

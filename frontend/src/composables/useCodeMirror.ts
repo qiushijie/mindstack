@@ -26,6 +26,7 @@ interface UseCodeMirrorOptions {
   container: Ref<HTMLElement | null>
   initialDoc?: string
   extensions?: Extension[]
+  rawMode?: Ref<boolean>
   onChange?: (doc: string) => void
   onSelectionChange?: (state: EditorState) => void
   onScroll?: (topLine: number) => void
@@ -50,12 +51,32 @@ function isDarkTheme(): boolean {
 export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorReturn {
   const themeCompartment = new Compartment()
   const extCompartment = new Compartment()
+  const richCompartment = new Compartment()
   const view = shallowRef<EditorView | null>(null)
   const doc = ref(options.initialDoc ?? '')
   const { editorView: sharedView } = useEditorState()
   let themeObserver: MutationObserver | null = null
 
   let scrollDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  function getRichExtensions(): Extension[] {
+    if (options.rawMode?.value) return []
+    return [
+      markdownStyles,
+      checkboxClickHandler,
+      imageClickHandler,
+      tablePlugin,
+      tableEditHandler,
+      mathPlugin,
+      mathEditHandler,
+      mermaidPlugin,
+      ...createBlockGutter(),
+      ...createDragSort(),
+      createInputHandler(),
+      createSlashCommand(),
+      emptyLinePlaceholder,
+    ]
+  }
 
   function getBaseExtensions(): Extension[] {
     return [
@@ -70,20 +91,8 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       ]),
       createKeymapExtension(),
       search(),
-      markdownStyles,
       currentFilePathExtension(),
-      checkboxClickHandler,
-      imageClickHandler,
-      tablePlugin,
-      tableEditHandler,
-      mathPlugin,
-      mathEditHandler,
-      mermaidPlugin,
-      ...createBlockGutter(),
-      ...createDragSort(),
-      createInputHandler(),
-      createSlashCommand(),
-      emptyLinePlaceholder,
+      richCompartment.of(getRichExtensions()),
       drawSelection(),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update: ViewUpdate) => {
@@ -182,6 +191,15 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       })
     }
   })
+
+  if (options.rawMode) {
+    watch(options.rawMode, () => {
+      if (!view.value) return
+      view.value.dispatch({
+        effects: richCompartment.reconfigure(getRichExtensions()),
+      })
+    })
+  }
 
   return { view, doc, focus, destroy, setContent }
 }

@@ -35,6 +35,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "View",
 		"settings":         "Settings",
 		"debug":            "Debug Mode",
+		"raw":              "Raw Mode",
 		"toggleFullScreen": "Toggle Full Screen",
 		"openDevTools":     "Open Developer Tools",
 		"help":             "Help",
@@ -58,6 +59,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "表示",
 		"settings":         "設定",
 		"debug":            "デバッグモード",
+		"raw":              "Raw モード",
 		"toggleFullScreen": "全画面表示の切り替え",
 		"openDevTools":     "開発者ツールを開く",
 		"help":             "ヘルプ",
@@ -81,6 +83,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "Affichage",
 		"settings":         "Paramètres",
 		"debug":            "Mode débogage",
+		"raw":              "Mode Raw",
 		"toggleFullScreen": "Basculer plein écran",
 		"openDevTools":     "Ouvrir les outils de développement",
 		"help":             "Aide",
@@ -104,6 +107,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "Ansicht",
 		"settings":         "Einstellungen",
 		"debug":            "Debug-Modus",
+		"raw":              "Raw-Modus",
 		"toggleFullScreen": "Vollbild umschalten",
 		"openDevTools":     "Entwicklertools öffnen",
 		"help":             "Hilfe",
@@ -127,6 +131,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "Ver",
 		"settings":         "Configuración",
 		"debug":            "Modo depuración",
+		"raw":              "Modo Raw",
 		"toggleFullScreen": "Alternar pantalla completa",
 		"openDevTools":     "Abrir herramientas de desarrollo",
 		"help":             "Ayuda",
@@ -150,6 +155,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "Вид",
 		"settings":         "Настройки",
 		"debug":            "Режим отладки",
+		"raw":              "Raw-режим",
 		"toggleFullScreen": "Переключить полный экран",
 		"openDevTools":     "Открыть инструменты разработчика",
 		"help":             "Справка",
@@ -173,6 +179,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "보기",
 		"settings":         "설정",
 		"debug":            "디버그 모드",
+		"raw":              "Raw 모드",
 		"toggleFullScreen": "전체 화면 전환",
 		"openDevTools":     "개발자 도구 열기",
 		"help":             "도움말",
@@ -196,6 +203,7 @@ var menuLabels = map[string]map[string]string{
 		"view":             "视图",
 		"settings":         "设置",
 		"debug":            "调试模式",
+		"raw":              "源码模式",
 		"toggleFullScreen": "切换全屏",
 		"openDevTools":     "打开开发者工具",
 		"help":             "帮助",
@@ -319,6 +327,15 @@ func (a *App) buildMenu() *menu.Menu {
 		a.debugMode = cd.MenuItem.Checked
 		a.mu.Unlock()
 		runtime.EventsEmit(a.ctx, "menu:toggle-debug", cd.MenuItem.Checked)
+	})
+	a.mu.RLock()
+	rawMode := a.rawMode
+	a.mu.RUnlock()
+	viewMenu.AddCheckbox(a.menuText("raw"), rawMode, nil, func(cd *menu.CallbackData) {
+		a.mu.Lock()
+		a.rawMode = cd.MenuItem.Checked
+		a.mu.Unlock()
+		runtime.EventsEmit(a.ctx, "menu:toggle-raw", cd.MenuItem.Checked)
 	})
 	viewMenu.AddSeparator()
 	viewMenu.AddText(a.menuText("openDevTools"), keys.CmdOrCtrl("shift+i"), func(_ *menu.CallbackData) {
