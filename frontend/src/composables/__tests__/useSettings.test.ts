@@ -226,6 +226,102 @@ describe('useSettings', () => {
       expect(saved.settings.autoSaveDelay).toBe(15)
     })
 
+    it('saves autoCommit setting on change', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue('{}')
+      vi.mocked(SaveConfig).mockResolvedValue('')
+
+      const { useSettings } = await importFresh()
+      const { autoCommit, loadSettings } = useSettings()
+
+      await loadSettings()
+
+      autoCommit.value = true
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(SaveConfig).toHaveBeenCalledTimes(1)
+      const savedArg = vi.mocked(SaveConfig).mock.calls[0][0]
+      const saved = JSON.parse(savedArg)
+      expect(saved.settings.autoCommit).toBe(true)
+    })
+
+    it('saves autoPull setting on change', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue('{}')
+      vi.mocked(SaveConfig).mockResolvedValue('')
+
+      const { useSettings } = await importFresh()
+      const { autoPull, loadSettings } = useSettings()
+
+      await loadSettings()
+
+      autoPull.value = true
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(SaveConfig).toHaveBeenCalledTimes(1)
+      const savedArg = vi.mocked(SaveConfig).mock.calls[0][0]
+      const saved = JSON.parse(savedArg)
+      expect(saved.settings.autoPull).toBe(true)
+    })
+
+    it('saves defaultBranch setting on change', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue('{}')
+      vi.mocked(SaveConfig).mockResolvedValue('')
+
+      const { useSettings } = await importFresh()
+      const { defaultBranch, loadSettings } = useSettings()
+
+      await loadSettings()
+
+      defaultBranch.value = 'develop'
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(SaveConfig).toHaveBeenCalledTimes(1)
+      const savedArg = vi.mocked(SaveConfig).mock.calls[0][0]
+      const saved = JSON.parse(savedArg)
+      expect(saved.settings.defaultBranch).toBe('develop')
+    })
+
+    it('loads git sync settings from config', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue(JSON.stringify({
+        settings: { autoCommit: true, autoPull: true, defaultBranch: 'develop' },
+      }))
+
+      const { useSettings } = await importFresh()
+      const { autoCommit, autoPull, defaultBranch, loadSettings } = useSettings()
+
+      await loadSettings()
+
+      expect(autoCommit.value).toBe(true)
+      expect(autoPull.value).toBe(true)
+      expect(defaultBranch.value).toBe('develop')
+    })
+
+    it('uses defaults for git sync settings when not in config', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue('{}')
+
+      const { useSettings } = await importFresh()
+      const { autoCommit, autoPull, defaultBranch, loadSettings } = useSettings()
+
+      await loadSettings()
+
+      expect(autoCommit.value).toBe(false)
+      expect(autoPull.value).toBe(false)
+      expect(defaultBranch.value).toBe('main')
+    })
+
+    it('loads autoCommit boolean correctly when false', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue(JSON.stringify({
+        settings: { autoCommit: false, autoPull: true },
+      }))
+
+      const { useSettings } = await importFresh()
+      const { autoCommit, autoPull, loadSettings } = useSettings()
+
+      await loadSettings()
+
+      expect(autoCommit.value).toBe(false)
+      expect(autoPull.value).toBe(true)
+    })
+
     it('handles LoadConfig failure during watch gracefully', async () => {
       vi.mocked(LoadConfig).mockResolvedValueOnce('{}').mockRejectedValueOnce(new Error('fail'))
       vi.mocked(SaveConfig).mockResolvedValue('')

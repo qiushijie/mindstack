@@ -19,6 +19,7 @@ frontend/package.json.md5
 frontend/coverage
 .playwright-cli/
 tests/e2e/playwright-report/
+tests/e2e/fixtures/remote.git/
 tests/e2e/test-results/
 frontend/test-results/
 *.out

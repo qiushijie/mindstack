@@ -28,6 +28,12 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// jsonError returns a JSON string with the given error message, properly escaped.
+func jsonError(msg string) string {
+	out, _ := json.Marshal(map[string]string{"error": msg})
+	return string(out)
+}
+
 type FileEntry struct {
 	Name  string `json:"name"`
 	Path  string `json:"path"`
@@ -597,7 +603,7 @@ func (a *App) GitInit(branch string) string {
 		return `{"error":"no workspace open"}`
 	}
 	if err := gitpkg.NewService(root).Init(branch); err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
 	}
 	return `{"ok":true}`
 }
@@ -612,10 +618,10 @@ func (a *App) GitCommit(msg string) string {
 	}
 	svc := gitpkg.NewService(root)
 	if err := svc.AddAll(); err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
 	}
 	if err := svc.Commit(msg); err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
 	}
 	return `{"ok":true}`
 }
@@ -634,13 +640,13 @@ func (a *App) GitAutoCommit() string {
 
 	// Stage all changes first
 	if err := svc.AddAll(); err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
 	}
 
 	// Check if there's anything to commit
 	status, err := svc.Status()
 	if err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
 	}
 	if status == "" {
 		return `{"ok":true,"message":"nothing to commit"}`
@@ -649,7 +655,7 @@ func (a *App) GitAutoCommit() string {
 	// Get diff for LLM
 	diff, err := svc.Diff()
 	if err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
 	}
 
 	// Get recent commit history for context
@@ -657,11 +663,93 @@ func (a *App) GitAutoCommit() string {
 
 	msg, err := a.generateCommitMessage(diff, recentLog)
 	if err != nil {
-		return fmt.Sprintf(`{"error":"generate commit message: %s"}`, err.Error())
+		return jsonError(fmt.Sprintf("generate commit message: %s", err.Error()))
 	}
 
 	if err := svc.Commit(msg); err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
+	}
+
+	out, _ := json.Marshal(map[string]interface{}{
+		"ok":      true,
+		"message": msg,
+	})
+	return string(out)
+}
+
+// GitCommitFiles commits with message, staging only the specified files.
+// If files is empty, stages all changes.
+func (a *App) GitCommitFiles(msg string, files []string) string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+	if root == "" {
+		return `{"error":"no workspace open"}`
+	}
+	svc := gitpkg.NewService(root)
+	if !svc.CheckInit() {
+		return `{"error":"not a git repository"}`
+	}
+	if err := svc.Add(files...); err != nil {
+		return jsonError(err.Error())
+	}
+	if err := svc.Commit(msg); err != nil {
+		return jsonError(err.Error())
+	}
+	return `{"ok":true}`
+}
+
+// GitGenerateCommitMessage generates a commit message via LLM from the diff of specified files.
+// Does NOT stage or commit. Returns the generated message for user review.
+// Returns an error if LLM is not configured (no fallback to generic messages).
+func (a *App) GitGenerateCommitMessage(files []string) string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+	if root == "" {
+		return `{"error":"no workspace open"}`
+	}
+
+	svc := gitpkg.NewService(root)
+	if !svc.CheckInit() {
+		return `{"error":"not a git repository"}`
+	}
+
+	// Get diff for specified files WITHOUT staging
+	diff, err := svc.DiffFiles(files...)
+	if err != nil {
+		return jsonError(err.Error())
+	}
+	if diff == "" {
+		return `{"ok":true,"message":"","note":"no changes detected"}`
+	}
+
+	// Get recent commit history for context
+	recentLog, _ := svc.Log(5)
+
+	prompt := fmt.Sprintf(`Generate a concise git commit message (one line, under 80 characters) for the following diff. The recent commit style is: %s
+
+Diff:
+%s
+
+Commit message:`, recentLog, diff)
+
+	msg, err := a.llm.Chat(a.ctx, []*einoschema.Message{
+		{Role: "system", Content: "You are a git commit message generator. Respond with ONLY the commit message, no explanation, no quotes, no backticks. Keep it under 80 characters, imperative mood."},
+		{Role: "user", Content: prompt},
+	})
+	if err != nil {
+		return jsonError(fmt.Sprintf("AI generate: %s", err.Error()))
+	}
+
+	msg = strings.TrimSpace(msg)
+	msg = strings.Trim(msg, "\"'`")
+	msg = strings.Split(msg, "\n")[0]
+	if len(msg) > 200 {
+		msg = msg[:200]
+	}
+	if msg == "" {
+		return jsonError("AI returned empty message")
 	}
 
 	out, _ := json.Marshal(map[string]interface{}{
@@ -721,7 +809,7 @@ func (a *App) GitPull() string {
 		return `{"error":"no remote configured"}`
 	}
 	if err := svc.Pull(); err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
 	}
 	return `{"ok":true}`
 }
@@ -742,7 +830,34 @@ func (a *App) GitPush() string {
 		return `{"error":"no remote configured"}`
 	}
 	if err := svc.Push(); err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
+	}
+	return `{"ok":true}`
+}
+
+// GitGetRemote returns the current remote URL for "origin", or empty string.
+func (a *App) GitGetRemote() string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+	if root == "" {
+		return ""
+	}
+	svc := gitpkg.NewService(root)
+	return svc.GetRemote()
+}
+
+// GitSetRemote sets the remote URL for "origin".
+func (a *App) GitSetRemote(url string) string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+	if root == "" {
+		return `{"error":"no workspace open"}`
+	}
+	svc := gitpkg.NewService(root)
+	if err := svc.SetRemote(url); err != nil {
+		return jsonError(err.Error())
 	}
 	return `{"ok":true}`
 }
@@ -761,7 +876,7 @@ func (a *App) GitStatus() string {
 	}
 	status, err := svc.Status()
 	if err != nil {
-		return fmt.Sprintf(`{"error":"%s"}`, err.Error())
+		return jsonError(err.Error())
 	}
 	if status == "" {
 		return `{"clean":true,"files":[]}`

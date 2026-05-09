@@ -61,6 +61,21 @@ func (s *Service) AddAll() error {
 	return nil
 }
 
+// Add stages specific files. If no files given, stages all changes.
+func (s *Service) Add(files ...string) error {
+	args := []string{"add"}
+	if len(files) > 0 {
+		args = append(args, files...)
+	} else {
+		args = append(args, "-A")
+	}
+	_, stderr, err := s.run(args...)
+	if err != nil {
+		return fmt.Errorf("git add: %w: %s", err, strings.TrimSpace(stderr))
+	}
+	return nil
+}
+
 // Commit creates a commit with the given message.
 func (s *Service) Commit(message string) error {
 	_, stderr, err := s.run("commit", "-m", message)
@@ -70,8 +85,30 @@ func (s *Service) Commit(message string) error {
 	return nil
 }
 
-// Pull pulls from the remote tracking branch.
+// ensureUpstream sets the current branch to track origin/<branch> if it has no upstream yet.
+func (s *Service) ensureUpstream() error {
+	branch, err := s.currentBranch()
+	if err != nil {
+		return err
+	}
+	_, _, err = s.run("rev-parse", "--abbrev-ref", "--symbolic-full-name", branch+"@{upstream}")
+	if err == nil {
+		return nil // already has upstream
+	}
+	// No upstream configured — set it
+	_, stderr, err := s.run("branch", "--set-upstream-to", "origin/"+branch, branch)
+	if err != nil {
+		return fmt.Errorf("git branch --set-upstream-to: %w: %s", err, strings.TrimSpace(stderr))
+	}
+	return nil
+}
+
+// Pull pulls from the upstream tracking branch.
+// If no upstream is configured, it sets origin as upstream first.
 func (s *Service) Pull() error {
+	if err := s.ensureUpstream(); err != nil {
+		return fmt.Errorf("git pull: %w", err)
+	}
 	_, stderr, err := s.run("pull", "--ff-only")
 	if err != nil {
 		return fmt.Errorf("git pull: %w: %s", err, strings.TrimSpace(stderr))
@@ -80,17 +117,38 @@ func (s *Service) Pull() error {
 }
 
 // Push pushes to the remote tracking branch.
+// If no upstream is configured, it pushes with -u to set it.
 func (s *Service) Push() error {
-	_, stderr, err := s.run("push")
+	branch, err := s.currentBranch()
+	if err != nil {
+		return fmt.Errorf("git push: %w", err)
+	}
+	_, _, err = s.run("rev-parse", "--abbrev-ref", "--symbolic-full-name", branch+"@{upstream}")
+	hasUpstream := err == nil
+
+	var stderr string
+	if hasUpstream {
+		_, stderr, err = s.run("push")
+	} else {
+		_, stderr, err = s.run("push", "-u", "origin", branch)
+	}
 	if err != nil {
 		return fmt.Errorf("git push: %w: %s", err, strings.TrimSpace(stderr))
 	}
 	return nil
 }
 
-// Status returns a porcelain status string.
+func (s *Service) currentBranch() (string, error) {
+	stdout, stderr, err := s.run("rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse: %w: %s", err, strings.TrimSpace(stderr))
+	}
+	return strings.TrimSpace(stdout), nil
+}
+
+// Status returns a porcelain status string with individual untracked files.
 func (s *Service) Status() (string, error) {
-	stdout, stderr, err := s.run("status", "--porcelain")
+	stdout, stderr, err := s.run("status", "--porcelain", "--untracked-files=all")
 	if err != nil {
 		return "", fmt.Errorf("git status: %w: %s", err, strings.TrimSpace(stderr))
 	}
@@ -113,6 +171,24 @@ func (s *Service) Diff() (string, error) {
 	return stdout, nil
 }
 
+// DiffFiles returns the diff for the specified files, checking staged changes first,
+// then falling back to unstaged changes. Does NOT stage the files.
+func (s *Service) DiffFiles(files ...string) (string, error) {
+	args := append([]string{"diff", "--cached"}, files...)
+	stdout, _, err := s.run(args...)
+	if err != nil {
+		return "", fmt.Errorf("git diff --cached: %w", err)
+	}
+	if stdout == "" {
+		args := append([]string{"diff"}, files...)
+		stdout, _, err = s.run(args...)
+		if err != nil {
+			return "", fmt.Errorf("git diff: %w", err)
+		}
+	}
+	return stdout, nil
+}
+
 // Log returns recent commit messages for context (used for LLM prompt).
 func (s *Service) Log(count int) (string, error) {
 	stdout, stderr, err := s.run("log", fmt.Sprintf("-%d", count), "--oneline")
@@ -126,4 +202,29 @@ func (s *Service) Log(count int) (string, error) {
 func (s *Service) HasRemote() bool {
 	stdout, _, err := s.run("remote", "-v")
 	return err == nil && strings.TrimSpace(stdout) != ""
+}
+
+// GetRemote returns the remote URL for "origin", or empty string if not set.
+func (s *Service) GetRemote() string {
+	stdout, _, err := s.run("remote", "get-url", "origin")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(stdout)
+}
+
+// SetRemote adds or updates the remote "origin" with the given URL.
+func (s *Service) SetRemote(url string) error {
+	if s.HasRemote() {
+		_, stderr, err := s.run("remote", "set-url", "origin", url)
+		if err != nil {
+			return fmt.Errorf("git remote set-url: %w: %s", err, strings.TrimSpace(stderr))
+		}
+	} else {
+		_, stderr, err := s.run("remote", "add", "origin", url)
+		if err != nil {
+			return fmt.Errorf("git remote add: %w: %s", err, strings.TrimSpace(stderr))
+		}
+	}
+	return nil
 }

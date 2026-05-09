@@ -40,11 +40,19 @@ export function GitCheckInit():Promise<boolean>;
 
 export function GitCommit(arg1:string):Promise<string>;
 
+export function GitCommitFiles(arg1:string,arg2:Array<string>):Promise<string>;
+
+export function GitGenerateCommitMessage(arg1:Array<string>):Promise<string>;
+
+export function GitGetRemote():Promise<string>;
+
 export function GitInit(arg1:string):Promise<string>;
 
 export function GitPull():Promise<string>;
 
 export function GitPush():Promise<string>;
+
+export function GitSetRemote(arg1:string):Promise<string>;
 
 export function GitStatus():Promise<string>;
 

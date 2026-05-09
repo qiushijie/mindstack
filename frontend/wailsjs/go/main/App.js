@@ -78,6 +78,18 @@ export function GitCommit(arg1) {
   return window['go']['main']['App']['GitCommit'](arg1);
 }
 
+export function GitCommitFiles(arg1, arg2) {
+  return window['go']['main']['App']['GitCommitFiles'](arg1, arg2);
+}
+
+export function GitGenerateCommitMessage(arg1) {
+  return window['go']['main']['App']['GitGenerateCommitMessage'](arg1);
+}
+
+export function GitGetRemote() {
+  return window['go']['main']['App']['GitGetRemote']();
+}
+
 export function GitInit(arg1) {
   return window['go']['main']['App']['GitInit'](arg1);
 }
@@ -88,6 +100,10 @@ export function GitPull() {
 
 export function GitPush() {
   return window['go']['main']['App']['GitPush']();
+}
+
+export function GitSetRemote(arg1) {
+  return window['go']['main']['App']['GitSetRemote'](arg1);
 }
 
 export function GitStatus() {

@@ -17,6 +17,7 @@ import {
 import { useSettings, applyTheme, SUPPORTED_MODELS } from '../composables/useSettings'
 import type { SupportedModel, UIPlatform } from '../composables/useSettings'
 import type { Locale } from '../i18n'
+import { GitSetRemote, GitGetRemote } from '../../wailsjs/go/main/App'
 
 const { t } = useI18n()
 
@@ -75,6 +76,8 @@ const modelKeywords = computed(() => [
 const gitKeywords = computed(() => [
   t('settings.section.git'),
   t('settings.group.versionControl'),
+  t('settings.label.remoteUrl'),
+  t('settings.desc.remoteUrl'),
   t('settings.label.defaultBranch'),
   t('settings.desc.defaultBranch'),
   t('settings.label.autoCommit'),
@@ -92,7 +95,7 @@ const debugKeywords = computed(() => [
   t('settings.platform.windows'),
 ].join(' '))
 
-const { autoSave, autoSaveDelay, locale, theme, models, activeModelId, showKeyIds, platform, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
+const { autoSave, autoSaveDelay, locale, theme, models, activeModelId, showKeyIds, platform, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, gitRemote, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
 const fontFamily = ref('Inter')
 const fontSize = ref(16)
 const tabSize = ref(2)
@@ -133,6 +136,11 @@ async function selectLocale(key: Locale) {
   locale.value = key
   langOpen.value = false
   await saveSettings()
+}
+
+async function syncRemoteUrl() {
+  await saveSettings()
+  await GitSetRemote(gitRemote.value).catch(() => {})
 }
 </script>
 
@@ -384,6 +392,19 @@ async function selectLocale(key: Locale) {
             <span class="group-label">{{ t('settings.group.versionControl') }}</span>
             <div class="setting-row">
               <div class="setting-info">
+                <span class="setting-label">{{ t('settings.label.remoteUrl') }}</span>
+                <span class="setting-desc">{{ t('settings.desc.remoteUrl') }}</span>
+              </div>
+              <input
+                v-model="gitRemote"
+                class="setting-input mono"
+                :placeholder="t('settings.remoteUrlPlaceholder')"
+                @change="syncRemoteUrl"
+                @keydown.enter="syncRemoteUrl"
+              />
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
                 <span class="setting-label">{{ t('settings.label.defaultBranch') }}</span>
                 <span class="setting-desc">{{ t('settings.desc.defaultBranch') }}</span>
               </div>
@@ -588,6 +609,28 @@ async function selectLocale(key: Locale) {
 .setting-desc {
   font-size: 12px;
   color: var(--foreground-tertiary);
+}
+
+.setting-input {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: none;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  color: var(--foreground-secondary);
+  outline: none;
+  flex-shrink: 0;
+  min-width: 240px;
+}
+
+.setting-input.mono {
+  font-family: var(--font-mono);
+}
+
+.setting-input:focus {
+  border-color: var(--accent-primary);
 }
 
 /* Toggle */

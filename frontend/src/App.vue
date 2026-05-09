@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, provide, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Network, MessageSquare, GitBranch } from 'lucide-vue-next'
 import { EventsOn, EventsOff, ClipboardGetText } from '../wailsjs/runtime/runtime'
@@ -12,6 +12,7 @@ import AppTabBar from './components/AppTabBar.vue'
 import AIChatPanel from './components/AIChatPanel.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import CommitDialog from './components/CommitDialog.vue'
 import RelationGraph from './components/RelationGraph.vue'
 import { useNavigation } from './composables/useNavigation'
 import { provideEditorState } from './composables/useEditorState'
@@ -32,8 +33,7 @@ const showSyncMenu = ref(false)
 const syncBtnEl = ref<HTMLElement>()
 const syncMenuX = ref(0)
 const syncMenuY = ref(0)
-const showCommitInput = ref(false)
-const commitMsg = ref('')
+const showCommitDialog = ref(false)
 const syncStatus = ref('')
 
 function toggleSyncMenu() {
@@ -43,8 +43,6 @@ function toggleSyncMenu() {
     syncMenuX.value = rect.left
     syncMenuY.value = rect.bottom + 4
   }
-  showCommitInput.value = false
-  commitMsg.value = ''
   syncStatus.value = ''
 }
 
@@ -68,54 +66,16 @@ async function handleGitPull() {
 }
 
 async function handleGitCommit() {
-  syncStatus.value = ''
-  try {
-    const gitInit = await GitCheckInit()
-    if (!gitInit) {
-      syncStatus.value = t('editor.gitSync.initMessage')
-      return
-    }
-    const { autoCommit: ac } = useSettings()
-    if (ac.value) {
-      // Auto-commit with LLM
-      const result = await GitAutoCommit()
-      const data = JSON.parse(result)
-      if (data.error) {
-        syncStatus.value = t('editor.gitSync.error', { error: data.error })
-      } else if (data.ok && data.message) {
-        if (data.message === 'nothing to commit') {
-          syncStatus.value = t('editor.gitSync.nothingToCommit')
-        } else {
-          syncStatus.value = t('editor.gitSync.commitSuccess', { message: data.message })
-        }
-        showSyncMenu.value = false
-      } else if (data.ok) {
-        syncStatus.value = t('editor.gitSync.commitSuccess', { message: '' })
-        showSyncMenu.value = false
-      }
-    } else {
-      // Show commit message input
-      showCommitInput.value = true
-      return
-    }
-  } catch (err) {
-    syncStatus.value = t('editor.gitSync.error', { error: String(err) })
+  const gitInit = await GitCheckInit()
+  if (!gitInit) {
+    syncStatus.value = t('editor.gitSync.initMessage')
+    return
   }
+  showSyncMenu.value = false
+  showCommitDialog.value = true
 }
 
-async function submitCommit() {
-  if (!commitMsg.value.trim()) return
-  try {
-    const result = await GitCommit(commitMsg.value.trim())
-    const data = JSON.parse(result)
-    if (data.error) {
-      syncStatus.value = t('editor.gitSync.error', { error: data.error })
-    } else {
-      syncStatus.value = t('editor.gitSync.commitSuccess', { message: commitMsg.value.trim() })
-    }
-  } catch (err) {
-    syncStatus.value = t('editor.gitSync.error', { error: String(err) })
-  }
+async function onCommitSuccess() {
   showSyncMenu.value = false
 }
 
@@ -128,8 +88,7 @@ async function handleGitPush() {
     }
 
     // If auto-commit is enabled, commit first then push
-    const { autoCommit: ac } = useSettings()
-    if (ac.value) {
+    if (autoCommit.value) {
       const commitResult = await GitAutoCommit()
       const commitData = JSON.parse(commitResult)
       if (!commitData.ok && commitData.error) {
@@ -162,8 +121,13 @@ async function checkFullscreen() {
 }
 
 provideEditorState()
-const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs, dirtyTabs, rootPath } = useFileTree()
-const { loadSettings, theme, debugMode, autoPull, defaultBranch } = useSettings()
+const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs, dirtyTabs, rootPath, handleExternalChange } = useFileTree()
+
+function openRelations() {
+  openPageTab('relations', t('relationGraph.title'))
+  navigateTo('relations')
+}
+const { loadSettings, theme, rawMode, debugMode, autoPull, defaultBranch, autoCommit } = useSettings()
 
 onMounted(async () => {
   await loadSettings()
@@ -366,7 +330,7 @@ watch(rootPath, async (newPath) => {
             <button
               class="floating-btn"
               :class="{ active: showSyncMenu }"
-              title="Git Sync"
+              :title="t('editor.gitSync.sync')"
               @click.stop="toggleSyncMenu"
             >
               <GitBranch :size="18" />
@@ -384,21 +348,7 @@ watch(rootPath, async (newPath) => {
                   @click.stop
                 >
                   <div v-if="syncStatus" class="sync-status">{{ syncStatus }}</div>
-                  <template v-if="showCommitInput">
-                    <div class="sync-commit-input-row">
-                      <input
-                        v-model="commitMsg"
-                        class="sync-commit-input"
-                        :placeholder="t('editor.gitSync.commitMessage')"
-                        @keydown.enter="submitCommit"
-                      />
-                    </div>
-                    <div class="sync-menu-item" @click="submitCommit">
-                      {{ t('editor.gitSync.commit') }}
-                    </div>
-                  </template>
-                  <template v-else>
-                    <div class="sync-menu-item" @click="handleGitPull">
+                  <div class="sync-menu-item" @click="handleGitPull">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
                         <path d="M21 3v5h-5" />
@@ -422,7 +372,6 @@ watch(rootPath, async (newPath) => {
                       </svg>
                       {{ t('editor.gitSync.push') }}
                     </div>
-                  </template>
                 </div>
               </div>
             </Teleport>
@@ -451,6 +400,7 @@ watch(rootPath, async (newPath) => {
       <AppStatusBar />
     </div>
     <AIChatPanel v-if="showAIChat" @close="showAIChat = false" @open-file="selectFile" />
+    <CommitDialog :visible="showCommitDialog" @close="showCommitDialog = false" @commit-success="onCommitSuccess" />
     <AboutDialog :visible="aboutDialogVisible" @close="aboutDialogVisible = false" />
     <ConfirmDialog />
   </div>
@@ -578,23 +528,4 @@ watch(rootPath, async (newPath) => {
   word-break: break-all;
 }
 
-.sync-commit-input-row {
-  padding: 4px 8px;
-}
-
-.sync-commit-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 4px 8px;
-  font-size: 12px;
-  border: 1px solid var(--border-secondary);
-  border-radius: 4px;
-  background: var(--surface-secondary);
-  color: var(--foreground-primary);
-  outline: none;
-}
-
-.sync-commit-input:focus {
-  border-color: var(--accent-primary);
-}
 </style>

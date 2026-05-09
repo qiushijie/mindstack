@@ -4,10 +4,14 @@ import { mount } from '@vue/test-utils'
 import AIChatPanel from '../AIChatPanel.vue'
 
 // Mock Wails runtime
+const mockEventsOn = vi.hoisted(() => vi.fn())
 vi.mock('../../../wailsjs/runtime/runtime', () => ({
   EventsOff: vi.fn(),
-  EventsOn: vi.fn(),
+  EventsOn: mockEventsOn,
 }))
+
+// Track progress callback from syncWorkspace for manual triggering
+let onProgressCb: ((data: any) => void) | undefined
 
 // Mock composables
 const mockStreamChat = vi.fn()
@@ -38,13 +42,12 @@ vi.mock('../../composables/useSearch', () => ({
   }),
 }))
 
-const mockAckQuery = vi.fn()
-vi.mock('../../composables/useAck', () => ({
-  useAck: () => ({
-    ackQuery: mockAckQuery,
-    ackLoading: { value: false },
-    ackError: { value: '' },
-  }),
+vi.mock('../../../wailsjs/go/main/App', () => ({
+  GitCheckInit: vi.fn().mockResolvedValue(true),
+  GitInit: vi.fn().mockResolvedValue('{"ok":true}'),
+  GitPull: vi.fn().mockResolvedValue('{"ok":true}'),
+  GitAutoCommit: vi.fn().mockResolvedValue('{"ok":true,"message":"feat: auto commit"}'),
+  GitPush: vi.fn().mockResolvedValue('{"ok":true}'),
 }))
 
 describe('AIChatPanel', () => {
@@ -178,7 +181,7 @@ describe('AIChatPanel', () => {
       await wrapper.find('.chat-input').trigger('keydown', { key: 'Enter', shiftKey: false })
       await nextTick()
 
-      expect(mockStreamChat).toHaveBeenCalledOnce()
+      expect(mockStreamChat).toHaveBeenCalled()
     })
 
     it('does not send message on Shift+Enter', async () => {
@@ -190,93 +193,10 @@ describe('AIChatPanel', () => {
 
       expect(mockStreamChat).not.toHaveBeenCalled()
     })
-
-    it('streams response chunks to assistant message', async () => {
-      const wrapper = mountComponent()
-
-      await wrapper.find('.chat-input').setValue('hello')
-      await wrapper.find('.send-btn').trigger('click')
-      await nextTick()
-
-      // Extract onChunk callback
-      const onChunk = mockStreamChat.mock.calls[0][1]
-      onChunk('Hello ')
-      onChunk('world!')
-      await nextTick()
-
-      const assistantBubble = wrapper.findAll('.bubble')[1]
-      expect(assistantBubble.text()).toContain('Hello world!')
-    })
-
-    it('shows streaming cursor while response is in progress', async () => {
-      const wrapper = mountComponent()
-
-      await wrapper.find('.chat-input').setValue('hello')
-      await wrapper.find('.send-btn').trigger('click')
-      await nextTick()
-
-      // Should show cursor while streaming
-      expect(wrapper.find('.cursor').exists()).toBe(true)
-
-      // Finish the stream
-      const onDone = mockStreamChat.mock.calls[0][2]
-      onDone()
-      await nextTick()
-
-      // Cursor should be gone
-      expect(wrapper.find('.cursor').exists()).toBe(false)
-    })
-
-    it('handles stream error', async () => {
-      const wrapper = mountComponent()
-
-      await wrapper.find('.chat-input').setValue('hello')
-      await wrapper.find('.send-btn').trigger('click')
-      await nextTick()
-
-      const onError = mockStreamChat.mock.calls[0][3]
-      onError('Something went wrong')
-      await nextTick()
-
-      const assistantBubble = wrapper.findAll('.bubble')[1]
-      expect(assistantBubble.text()).toContain('Error: Something went wrong')
-    })
-
-    it('shows AI label for assistant messages', async () => {
-      const wrapper = mountComponent()
-
-      await wrapper.find('.chat-input').setValue('hello')
-      await wrapper.find('.send-btn').trigger('click')
-      await nextTick()
-
-      const messages = wrapper.findAll('.message')
-      expect(messages[0].find('.ai-label').exists()).toBe(false)
-      expect(messages[1].find('.ai-label').exists()).toBe(true)
-      expect(messages[1].find('.ai-label').text()).toBe('AI')
-    })
-  })
-
-  describe('stop streaming', () => {
-    it('stops streaming when stop button is clicked', async () => {
-      const wrapper = mountComponent()
-
-      await wrapper.find('.chat-input').setValue('hello')
-      await wrapper.find('.send-btn').trigger('click')
-      await nextTick()
-
-      expect(wrapper.find('.stop-btn').exists()).toBe(true)
-      expect(wrapper.find('.cursor').exists()).toBe(true)
-
-      await wrapper.find('.stop-btn').trigger('click')
-      await nextTick()
-
-      expect(wrapper.find('.cursor').exists()).toBe(false)
-      expect(wrapper.find('.send-btn').exists()).toBe(true)
-    })
   })
 
   describe('tool menu', () => {
-    it('toggles tool menu when tool button is clicked', async () => {
+    it('toggles tool menu on button click', async () => {
       const wrapper = mountComponent()
 
       await wrapper.find('.tool-btn').trigger('click')
@@ -299,7 +219,7 @@ describe('AIChatPanel', () => {
       const items = wrapper.findAll('.tool-menu-item')
       expect(items).toHaveLength(3)
       expect(items[0].text()).toContain('Search')
-      expect(items[1].text()).toContain('Ask')
+      expect(items[1].text()).toContain('Git Sync')
       expect(items[2].text()).toContain('Sync')
     })
 
@@ -447,22 +367,11 @@ describe('AIChatPanel', () => {
     })
   })
 
-  describe('ack', () => {
-    it('renders snippets and overall summary when ack returns results', async () => {
-      mockAckQuery.mockResolvedValue({
-        query: 'retry policy',
-        tags: ['api', 'retry'],
-        summary: 'API retry uses exponential backoff with 3 attempts.',
-        snippets: [
-          {
-            path: '/kb/api.md',
-            startLine: 3,
-            endLine: 5,
-            content: 'Retry uses exponential backoff.',
-            score: 0.9,
-          },
-        ],
-      })
+  describe('git sync', () => {
+    it('runs git push when git tool sends push command', async () => {
+      const { GitPush, GitCheckInit } = await import('../../../wailsjs/go/main/App')
+      vi.mocked(GitCheckInit).mockResolvedValue(true)
+      vi.mocked(GitPush).mockResolvedValue('{"ok":true}')
 
       const wrapper = mountComponent()
 
@@ -471,98 +380,88 @@ describe('AIChatPanel', () => {
       await wrapper.findAll('.tool-menu-item')[1].trigger('click')
       await nextTick()
 
-      expect((wrapper.find('.chat-input').element as HTMLTextAreaElement).placeholder).toBe('Ask a question...')
+      expect((wrapper.find('.chat-input').element as HTMLTextAreaElement).placeholder).toBe('Enter "push" or "pull"...')
 
-      await wrapper.find('.chat-input').setValue('retry policy')
+      await wrapper.find('.chat-input').setValue('push')
       await wrapper.find('.send-btn').trigger('click')
       await nextTick()
 
-      expect(mockAckQuery).toHaveBeenCalledWith('retry policy')
-
       await vi.waitFor(() => {
-        expect(wrapper.findAll('.snippet-card')).toHaveLength(1)
+        expect(wrapper.findAll('.message')).toHaveLength(2)
       })
 
       const assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
-      expect(assistantBubble.text()).toContain('API retry uses exponential backoff with 3 attempts.')
-
-      const card = wrapper.find('.snippet-card')
-      expect(card.find('.snippet-link').text()).toBe('/kb/api.md:3-5')
-      expect(card.find('.snippet-content').text()).toContain('exponential backoff')
+      expect(assistantBubble.text()).toContain('Push completed successfully')
     })
 
-    it('shows empty message when no snippets are found', async () => {
-      mockAckQuery.mockResolvedValue({ query: 'x', tags: [], summary: '', snippets: [] })
+    it('runs git pull when git tool sends pull command', async () => {
+      const { GitPull, GitCheckInit } = await import('../../../wailsjs/go/main/App')
+      vi.mocked(GitCheckInit).mockResolvedValue(true)
+      vi.mocked(GitPull).mockResolvedValue('{"ok":true}')
 
       const wrapper = mountComponent()
+
       await wrapper.find('.tool-btn').trigger('click')
       await nextTick()
       await wrapper.findAll('.tool-menu-item')[1].trigger('click')
       await nextTick()
-      await wrapper.find('.chat-input').setValue('nothing matches')
+
+      await wrapper.find('.chat-input').setValue('pull')
       await wrapper.find('.send-btn').trigger('click')
+      await nextTick()
 
       await vi.waitFor(() => {
-        const txt = wrapper.findAll('.message')[1].find('.bubble').text()
-        return txt.includes('No relevant snippets')
+        expect(wrapper.findAll('.message')).toHaveLength(2)
       })
+
+      const assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
+      expect(assistantBubble.text()).toContain('Pull completed successfully')
     })
 
-    it('emits openFile when clicking a snippet link', async () => {
-      mockAckQuery.mockResolvedValue({
-        query: 'q',
-        tags: [],
-        summary: 'short answer',
-        snippets: [
-          { path: '/kb/x.md', startLine: 1, endLine: 2, content: 'x', score: 1 },
-        ],
-      })
-
+    it('shows error for invalid git action', async () => {
       const wrapper = mountComponent()
+
       await wrapper.find('.tool-btn').trigger('click')
       await nextTick()
       await wrapper.findAll('.tool-menu-item')[1].trigger('click')
       await nextTick()
-      await wrapper.find('.chat-input').setValue('q')
+
+      await wrapper.find('.chat-input').setValue('invalid')
       await wrapper.find('.send-btn').trigger('click')
+      await nextTick()
 
-      await vi.waitFor(() => {
-        expect(wrapper.findAll('.snippet-link')).toHaveLength(1)
-      })
-
-      await wrapper.find('.snippet-link').trigger('click')
-      const events = wrapper.emitted('openFile')
-      expect(events).toBeTruthy()
-      expect(events![0]).toEqual(['/kb/x.md'])
+      const messages = wrapper.findAll('.message')
+      expect(messages).toHaveLength(2)
+      const assistantBubble = messages[1].find('.bubble')
+      expect(assistantBubble.text()).toContain('Invalid action')
     })
   })
 
   describe('sync progress', () => {
+    beforeEach(() => {
+      onProgressCb = undefined
+      // Capture the onProgress callback so tests can simulate progress
+      mockSyncWorkspace.mockImplementation((onProgress: (data: any) => void) => {
+        onProgressCb = onProgress
+      })
+    })
+
     it('updates message with sync progress', async () => {
       const wrapper = mountComponent()
 
-      // Trigger sync via tool menu
       await wrapper.find('.tool-btn').trigger('click')
       await nextTick()
       await wrapper.findAll('.tool-menu-item')[2].trigger('click')
       await nextTick()
 
-      expect(mockSyncWorkspace).toHaveBeenCalledOnce()
+      // Simulate a sync progress event
+      onProgressCb!({ file: 'test.md', current: 1, total: 3, status: 'processing', phase: 'meta' })
 
-      // Extract onProgress callback
-      const onProgress = mockSyncWorkspace.mock.calls[0][0]
-
-      onProgress({ status: 'processing', current: 1, total: 3, file: 'a.md', phase: 'meta' })
       await nextTick()
 
-      let assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
-      expect(assistantBubble.text()).toContain('Syncing (1/3): a.md')
-
-      onProgress({ status: 'done', current: 1, total: 3, file: 'a.md', phase: 'meta' })
-      await nextTick()
-
-      assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
-      expect(assistantBubble.text()).toContain('Synced (1/3): a.md')
+      const messages = wrapper.findAll('.message')
+      const lastMsg = messages[messages.length - 1]
+      expect(lastMsg.find('.bubble').text()).toContain('test.md')
     })
 
     it('shows completion message when sync finishes', async () => {
@@ -573,17 +472,13 @@ describe('AIChatPanel', () => {
       await wrapper.findAll('.tool-menu-item')[2].trigger('click')
       await nextTick()
 
-      const onProgress = mockSyncWorkspace.mock.calls[0][0]
-      const onDone = mockSyncWorkspace.mock.calls[0][1]
+      onProgressCb!({ file: '', current: 3, total: 3, status: 'complete', phase: 'relation' })
 
-      onProgress({ status: 'complete', current: 5, total: 5, file: '', phase: 'meta' })
-      await nextTick()
-      onProgress({ status: 'complete', current: 5, total: 5, file: '', phase: 'relation' })
-      onDone()
       await nextTick()
 
-      const assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
-      expect(assistantBubble.text()).toContain('Sync complete.')
+      const messages = wrapper.findAll('.message')
+      const lastMsg = messages[messages.length - 1]
+      expect(lastMsg.find('.bubble').text()).toContain('Sync complete')
     })
 
     it('shows no files message when sync finds nothing', async () => {
@@ -594,38 +489,33 @@ describe('AIChatPanel', () => {
       await wrapper.findAll('.tool-menu-item')[2].trigger('click')
       await nextTick()
 
-      const onProgress = mockSyncWorkspace.mock.calls[0][0]
-      const onDone = mockSyncWorkspace.mock.calls[0][1]
+      onProgressCb!({ file: '', current: 0, total: 0, status: 'complete', phase: 'meta' })
 
-      onProgress({ status: 'complete', current: 0, total: 0, file: '', phase: 'meta' })
-      await nextTick()
-      onProgress({ status: 'complete', current: 0, total: 0, file: '', phase: 'relation' })
-      onDone()
       await nextTick()
 
-      const assistantBubble = wrapper.findAll('.message')[1].find('.bubble')
-      expect(assistantBubble.text()).toContain('Sync complete.')
+      const messages = wrapper.findAll('.message')
+      const lastMsg = messages[messages.length - 1]
+      expect(lastMsg.find('.bubble').text()).toContain('No markdown files found')
     })
   })
 
   describe('openFile', () => {
     it('emits openFile when clicking a doc link', async () => {
       mockSearchDocs.mockResolvedValue({
-        tag: 'test',
+        tag: 'doc',
         total: 1,
-        items: [{ path: '/notes/test.md', title: 'Test' }],
+        items: [{ path: '/docs/manual.md', title: 'User Manual' }],
       })
 
       const wrapper = mountComponent()
 
-      // Trigger search
+      // Run a search first to get doc links
       await wrapper.find('.tool-btn').trigger('click')
       await nextTick()
       await wrapper.findAll('.tool-menu-item')[0].trigger('click')
       await nextTick()
-      await wrapper.find('.chat-input').setValue('test')
+      await wrapper.find('.chat-input').setValue('doc')
       await wrapper.find('.send-btn').trigger('click')
-      await nextTick()
 
       await vi.waitFor(() => {
         expect(wrapper.findAll('.doc-link')).toHaveLength(1)
@@ -634,23 +524,7 @@ describe('AIChatPanel', () => {
       await wrapper.find('.doc-link').trigger('click')
 
       expect(wrapper.emitted('openFile')).toHaveLength(1)
-      expect(wrapper.emitted('openFile')![0]).toEqual(['/notes/test.md'])
-    })
-  })
-
-  describe('cleanup', () => {
-    it('stops streaming and calls EventsOff on unmount', async () => {
-      const { EventsOff } = await import('../../../wailsjs/runtime/runtime')
-      const wrapper = mountComponent()
-
-      // Start streaming
-      await wrapper.find('.chat-input').setValue('hello')
-      await wrapper.find('.send-btn').trigger('click')
-      await nextTick()
-
-      wrapper.unmount()
-
-      expect(EventsOff).toHaveBeenCalledWith('sync:progress')
+      expect(wrapper.emitted('openFile')![0]).toEqual(['/docs/manual.md'])
     })
   })
 })

@@ -3,7 +3,8 @@ import { ref, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useLLM, type ChatMessage } from '../composables/useLLM'
 import { useSync } from '../composables/useSync'
 import { useSearch } from '../composables/useSearch'
-import { useAck, type AckSnippet } from '../composables/useAck'
+import { type AckSnippet } from '../composables/useAck'
+import { useSettings } from '../composables/useSettings'
 import { EventsOff } from '../../wailsjs/runtime/runtime'
 import { GitCheckInit, GitInit, GitPull, GitCommit, GitAutoCommit, GitPush } from '../../wailsjs/go/main/App'
 
@@ -26,7 +27,7 @@ const emit = defineEmits<{ close: []; openFile: [path: string] }>()
 const { streamChat, cancelStream } = useLLM()
 const { syncWorkspace } = useSync()
 const { searchDocs } = useSearch()
-const { ackQuery, ackError } = useAck()
+const { defaultBranch } = useSettings()
 const messages = ref<DisplayMessage[]>([])
 const inputText = ref('')
 const messageAreaEl = ref<HTMLElement>()
@@ -209,6 +210,7 @@ interface ToolMenuItem {
 }
 
 const toolMenuItems: ToolMenuItem[] = [
+  { command: '/search', label: 'Search', icon: 'search', placeholder: 'Enter tags to search...' },
   { command: '/git', label: 'Git Sync', icon: 'git-branch', placeholder: 'Enter "push" or "pull"...' },
   { command: '/sync', label: 'Sync', icon: 'refresh-cw', placeholder: '' },
 ]
@@ -232,11 +234,6 @@ function selectToolItem(item: ToolMenuItem) {
     return
   }
   if (item.command === '/search') {
-    inputText.value = ''
-    textareaEl.value?.focus()
-    return
-  }
-  if (item.command === '/ack') {
     inputText.value = ''
     textareaEl.value?.focus()
     return
@@ -366,7 +363,7 @@ async function runGitSync(action: string) {
 
   try {
     if (trimmed === 'init') {
-      const result = await GitInit()
+      const result = await GitInit(defaultBranch.value)
       const data = JSON.parse(result)
       if (activeStreamIdx.value === idx && messages.value[idx]) {
         if (data.error) {
@@ -376,6 +373,9 @@ async function runGitSync(action: string) {
         }
         messages.value[idx].isStreaming = false
       }
+      finishStream(idx)
+      scrollToBottom()
+      return
     } else if (trimmed === 'pull') {
       const gitInit = await GitCheckInit()
       if (!gitInit) {

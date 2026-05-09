@@ -28,10 +28,12 @@ const activeModelId = ref('')
 const showKeyIds = ref<Set<string>>(new Set())
 const platform = ref<UIPlatform>('macos')
 const uiPlatform = ref<UIPlatform>('macos')
+const rawMode = ref(false)
 const debugMode = ref(false)
 const defaultBranch = ref('main')
 const autoCommit = ref(false)
 const autoPull = ref(false)
+const gitRemote = ref('')
 
 let loaded = false
 let skipWatch = false
@@ -80,6 +82,7 @@ async function doSave() {
           defaultBranch: defaultBranch.value,
           autoCommit: autoCommit.value,
           autoPull: autoPull.value,
+          gitRemote: gitRemote.value,
         }
         const result = await SaveConfig(JSON.stringify(config))
         if (result) {
@@ -122,6 +125,7 @@ export function useSettings() {
       if (s.defaultBranch) defaultBranch.value = s.defaultBranch
       if (typeof s.autoCommit === 'boolean') autoCommit.value = s.autoCommit
       if (typeof s.autoPull === 'boolean') autoPull.value = s.autoPull
+      if (s.gitRemote) gitRemote.value = s.gitRemote
       try {
         const p = await GetPlatform()
         const detected = p === 'windows' ? 'windows' : 'macos'
@@ -181,14 +185,14 @@ export function useSettings() {
   return {
     autoSave, autoSaveDelay, locale, theme,
     models, activeModelId, showKeyIds,
-    platform, uiPlatform, debugMode,
-    defaultBranch, autoCommit, autoPull,
+    platform, uiPlatform, rawMode, debugMode,
+    defaultBranch, autoCommit, autoPull, gitRemote,
     loadSettings, saveSettings,
     addModel, removeModel, activateModel, toggleShowKey,
   }
 }
 
-watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull], async () => {
+watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, gitRemote], async () => {
   if (!loaded || skipWatch) return
   await doSave()
 }, { deep: true })

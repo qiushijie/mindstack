@@ -19,6 +19,11 @@ export async function waitForAppReady(page: Page): Promise<void> {
     ;(window as any).__setLocale?.('zh')
   })
   await page.waitForTimeout(100)
+
+  // Wait for Wails Go bindings to be ready (injected asynchronously by the
+  // Wails runtime WebSocket connection). Tests that call Go backend methods
+  // via window.go.main.App.* need this before proceeding.
+  await page.waitForFunction(() => !!(window as any).go?.main?.App, { timeout: 15000 })
 }
 
 export async function resetAppState(page: Page): Promise<void> {
