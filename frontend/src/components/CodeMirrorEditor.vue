@@ -1,11 +1,9 @@
 <script lang="ts" setup>
 import { ref, inject, onMounted, onUnmounted, nextTick, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Network, MessageSquare } from 'lucide-vue-next'
+import { MessageSquare } from 'lucide-vue-next'
 import { syntaxTree } from '@codemirror/language'
 import { useCodeMirror } from '../composables/useCodeMirror'
-import { useNavigation } from '../composables/useNavigation'
-import { openPageTab } from '../composables/useTabs'
 import SelectionToolbar from './SelectionToolbar.vue'
 import ImageDialog from './ImageDialog.vue'
 import FindPanel from './FindPanel.vue'
@@ -53,12 +51,6 @@ function findNearestHeadingLine(cursorLine: number): number {
 const searchVisible = ref(false)
 const searchRecalcKey = ref(0)
 const showAIChat = inject<Ref<boolean>>('showAIChat', ref(false))
-const { navigateTo } = useNavigation()
-
-function openRelations() {
-  openPageTab('relations', t('relationGraph.title'))
-  navigateTo('relations')
-}
 
 function toggleAIChat() {
   showAIChat.value = !showAIChat.value
@@ -437,13 +429,6 @@ onUnmounted(() => {
       @close="searchVisible = false"
     />
     <div v-if="!searchVisible" class="floating-actions">
-      <button
-        class="floating-btn"
-        title="Relation Graph"
-        @click="openRelations"
-      >
-        <Network :size="18" />
-      </button>
       <button
         class="floating-btn"
         :class="{ active: showAIChat }"

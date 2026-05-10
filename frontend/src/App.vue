@@ -1,9 +1,9 @@
 <script lang="ts" setup>
 import { ref, provide, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Network, MessageSquare, GitBranch } from 'lucide-vue-next'
+import { MessageSquare } from 'lucide-vue-next'
 import { EventsOn, EventsOff, ClipboardGetText } from '../wailsjs/runtime/runtime'
-import { GetPendingOpenFile, GitCheckInit, GitInit, GitPull, GitCommit, GitAutoCommit, GitPush, GitStatus } from '../wailsjs/go/main/App'
+import { GetPendingOpenFile, GitCheckInit, GitInit, GitPull, GitAutoCommit, GitPush } from '../wailsjs/go/main/App'
 import AppSidebar from './components/AppSidebar.vue'
 import AppEditor from './components/AppEditor.vue'
 import AppStatusBar from './components/AppStatusBar.vue'
@@ -29,83 +29,40 @@ provide('showAIChat', showAIChat)
 const isFullscreen = ref(false)
 const aboutDialogVisible = ref(false)
 
-const showSyncMenu = ref(false)
-const syncBtnEl = ref<HTMLElement>()
-const syncMenuX = ref(0)
-const syncMenuY = ref(0)
 const showCommitDialog = ref(false)
-const syncStatus = ref('')
-
-function toggleSyncMenu() {
-  showSyncMenu.value = !showSyncMenu.value
-  if (showSyncMenu.value && syncBtnEl.value) {
-    const rect = syncBtnEl.value.getBoundingClientRect()
-    syncMenuX.value = rect.left
-    syncMenuY.value = rect.bottom + 4
-  }
-  syncStatus.value = ''
-}
 
 async function handleGitPull() {
   try {
     const gitInit = await GitCheckInit()
-    if (!gitInit) {
-      syncStatus.value = t('editor.gitSync.initMessage')
-      return
-    }
-    const result = await GitPull()
-    const data = JSON.parse(result)
-    if (data.error) {
-      syncStatus.value = t('editor.gitSync.error', { error: data.error })
-    } else {
-      syncStatus.value = t('editor.gitSync.pullSuccess')
-    }
-  } catch (err) {
-    syncStatus.value = t('editor.gitSync.error', { error: String(err) })
+    if (!gitInit) return
+    await GitPull()
+  } catch {
+    // silent fail
   }
 }
 
 async function handleGitCommit() {
   const gitInit = await GitCheckInit()
-  if (!gitInit) {
-    syncStatus.value = t('editor.gitSync.initMessage')
-    return
-  }
-  showSyncMenu.value = false
+  if (!gitInit) return
   showCommitDialog.value = true
 }
 
 async function onCommitSuccess() {
-  showSyncMenu.value = false
+  // no-op after menu-triggered commit
 }
 
 async function handleGitPush() {
   try {
     const gitInit = await GitCheckInit()
-    if (!gitInit) {
-      syncStatus.value = t('editor.gitSync.initMessage')
-      return
-    }
+    if (!gitInit) return
 
-    // If auto-commit is enabled, commit first then push
     if (autoCommit.value) {
-      const commitResult = await GitAutoCommit()
-      const commitData = JSON.parse(commitResult)
-      if (!commitData.ok && commitData.error) {
-        syncStatus.value = t('editor.gitSync.error', { error: commitData.error })
-        return
-      }
+      await GitAutoCommit()
     }
 
-    const result = await GitPush()
-    const data = JSON.parse(result)
-    if (data.error) {
-      syncStatus.value = t('editor.gitSync.error', { error: data.error })
-    } else {
-      syncStatus.value = t('editor.gitSync.pushSuccess')
-    }
-  } catch (err) {
-    syncStatus.value = t('editor.gitSync.error', { error: String(err) })
+    await GitPush()
+  } catch {
+    // silent fail
   }
 }
 
@@ -123,10 +80,6 @@ async function checkFullscreen() {
 provideEditorState()
 const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs, dirtyTabs, rootPath, handleExternalChange } = useFileTree()
 
-function openRelations() {
-  openPageTab('relations', t('relationGraph.title'))
-  navigateTo('relations')
-}
 const { loadSettings, theme, rawMode, debugMode, autoPull, defaultBranch, autoCommit } = useSettings()
 
 onMounted(async () => {
@@ -277,6 +230,21 @@ onMounted(async () => {
     }
   })
 
+  EventsOff('menu:sync:pull')
+  EventsOn('menu:sync:pull', () => {
+    handleGitPull()
+  })
+
+  EventsOff('menu:sync:commit')
+  EventsOn('menu:sync:commit', () => {
+    handleGitCommit()
+  })
+
+  EventsOff('menu:sync:push')
+  EventsOn('menu:sync:push', () => {
+    handleGitPush()
+  })
+
   // Auto-pull on startup if configured
   if (autoPull.value && rootPath.value) {
     try {
@@ -326,64 +294,6 @@ watch(rootPath, async (newPath) => {
       />
       <div class="content-area">
         <div class="floating-actions">
-          <div ref="syncBtnEl" class="sync-btn-wrapper">
-            <button
-              class="floating-btn"
-              :class="{ active: showSyncMenu }"
-              :title="t('editor.gitSync.sync')"
-              @click.stop="toggleSyncMenu"
-            >
-              <GitBranch :size="18" />
-            </button>
-            <Teleport to="body">
-              <div
-                v-if="showSyncMenu"
-                class="sync-menu-overlay"
-                @click="showSyncMenu = false"
-                @contextmenu.prevent="showSyncMenu = false"
-              >
-                <div
-                  class="sync-menu"
-                  :style="{ left: syncMenuX + 'px', top: syncMenuY + 'px' }"
-                  @click.stop
-                >
-                  <div v-if="syncStatus" class="sync-status">{{ syncStatus }}</div>
-                  <div class="sync-menu-item" @click="handleGitPull">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                        <path d="M21 3v5h-5" />
-                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                        <path d="M8 16H3v5" />
-                      </svg>
-                      {{ t('editor.gitSync.pull') }}
-                    </div>
-                    <div class="sync-menu-item" @click="handleGitCommit">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="3" />
-                        <path d="M12 3v6" />
-                        <path d="M12 15v6" />
-                      </svg>
-                      {{ t('editor.gitSync.commit') }}
-                    </div>
-                    <div class="sync-menu-item" @click="handleGitPush">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M5 12h14" />
-                        <path d="m12 5 7 7-7 7" />
-                      </svg>
-                      {{ t('editor.gitSync.push') }}
-                    </div>
-                </div>
-              </div>
-            </Teleport>
-          </div>
-          <button
-            class="floating-btn"
-            :class="{ active: currentPage === 'relations' }"
-            title="Relation Graph"
-            @click="openRelations"
-          >
-            <Network :size="18" />
-          </button>
           <button
             class="floating-btn"
             :class="{ active: showAIChat }"
@@ -469,63 +379,6 @@ watch(rootPath, async (newPath) => {
 .floating-btn.active {
   color: var(--accent-primary);
   background: var(--surface-hover);
-}
-
-.sync-btn-wrapper {
-  display: flex;
-  align-items: center;
-  --wails-draggable: no-drag;
-}
-
-.sync-menu-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-}
-
-.sync-menu {
-  position: fixed;
-  min-width: 140px;
-  background: var(--surface-primary);
-  border: 1px solid var(--border-secondary);
-  border-radius: 6px;
-  padding: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.sync-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  font-size: 13px;
-  color: var(--foreground-primary);
-  cursor: pointer;
-  border-radius: 4px;
-  user-select: none;
-}
-
-.sync-menu-item:hover {
-  background: var(--accent-primary);
-  color: #fff;
-}
-
-.sync-menu-item:hover svg {
-  color: #fff;
-}
-
-.sync-menu-item svg {
-  color: var(--foreground-secondary);
-  flex-shrink: 0;
-}
-
-.sync-status {
-  padding: 6px 12px;
-  font-size: 12px;
-  color: var(--foreground-tertiary);
-  border-bottom: 1px solid var(--border-secondary);
-  margin-bottom: 4px;
-  word-break: break-all;
 }
 
 </style>

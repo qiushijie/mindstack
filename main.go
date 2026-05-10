@@ -40,6 +40,11 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Open Developer Tools",
 		"help":             "Help",
 		"about":            "About MindStack",
+		"sync":             "Synchronize",
+		"syncPull":         "Git Pull",
+		"syncCommit":       "Git Commit",
+		"syncPush":         "Git Push",
+		"relationGraph":    "Relation Graph",
 	},
 	"ja": {
 		"file":             "ファイル",
@@ -64,6 +69,11 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "開発者ツールを開く",
 		"help":             "ヘルプ",
 		"about":            "MindStack について",
+		"sync":             "同期",
+		"syncPull":         "Git Pull",
+		"syncCommit":       "Git Commit",
+		"syncPush":         "Git Push",
+		"relationGraph":    "関連ビュー",
 	},
 	"fr": {
 		"file":             "Fichier",
@@ -88,6 +98,11 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Ouvrir les outils de développement",
 		"help":             "Aide",
 		"about":            "À propos de MindStack",
+		"sync":             "Synchroniser",
+		"syncPull":         "Git Pull",
+		"syncCommit":       "Git Commit",
+		"syncPush":         "Git Push",
+		"relationGraph":    "Graphique de relations",
 	},
 	"de": {
 		"file":             "Datei",
@@ -112,6 +127,11 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Entwicklertools öffnen",
 		"help":             "Hilfe",
 		"about":            "Über MindStack",
+		"sync":             "Synchronisieren",
+		"syncPull":         "Git Pull",
+		"syncCommit":       "Git Commit",
+		"syncPush":         "Git Push",
+		"relationGraph":    "Beziehungsdiagramm",
 	},
 	"es": {
 		"file":             "Archivo",
@@ -136,6 +156,11 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Abrir herramientas de desarrollo",
 		"help":             "Ayuda",
 		"about":            "Acerca de MindStack",
+		"sync":             "Sincronizar",
+		"syncPull":         "Git Pull",
+		"syncCommit":       "Git Commit",
+		"syncPush":         "Git Push",
+		"relationGraph":    "Grafo de relaciones",
 	},
 	"ru": {
 		"file":             "Файл",
@@ -160,6 +185,11 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Открыть инструменты разработчика",
 		"help":             "Справка",
 		"about":            "О MindStack",
+		"sync":             "Синхронизация",
+		"syncPull":         "Git Pull",
+		"syncCommit":       "Git Commit",
+		"syncPush":         "Git Push",
+		"relationGraph":    "Граф связей",
 	},
 	"ko": {
 		"file":             "파일",
@@ -184,6 +214,11 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "개발자 도구 열기",
 		"help":             "도움말",
 		"about":            "MindStack 정보",
+		"sync":             "동기화",
+		"syncPull":         "Git Pull",
+		"syncCommit":       "Git Commit",
+		"syncPush":         "Git Push",
+		"relationGraph":    "관계 그래프",
 	},
 	"zh": {
 		"file":             "文件",
@@ -208,6 +243,11 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "打开开发者工具",
 		"help":             "帮助",
 		"about":            "关于 MindStack",
+		"sync":             "同步",
+		"syncPull":         "Git Pull",
+		"syncCommit":       "Git Commit",
+		"syncPush":         "Git Push",
+		"relationGraph":    "关联视图",
 	},
 }
 
@@ -315,9 +355,23 @@ func (a *App) buildMenu() *menu.Menu {
 		runtime.EventsEmit(a.ctx, "menu:edit:paste")
 	})
 
+	syncMenu := appMenu.AddSubmenu(a.menuText("sync"))
+	syncMenu.AddText(a.menuText("syncPull"), nil, func(_ *menu.CallbackData) {
+		runtime.EventsEmit(a.ctx, "menu:sync:pull")
+	})
+	syncMenu.AddText(a.menuText("syncCommit"), nil, func(_ *menu.CallbackData) {
+		runtime.EventsEmit(a.ctx, "menu:sync:commit")
+	})
+	syncMenu.AddText(a.menuText("syncPush"), nil, func(_ *menu.CallbackData) {
+		runtime.EventsEmit(a.ctx, "menu:sync:push")
+	})
+
 	viewMenu := appMenu.AddSubmenu(a.menuText("view"))
 	viewMenu.AddText(a.menuText("settings"), keys.CmdOrCtrl(","), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:navigate", "settings")
+	})
+	viewMenu.AddText(a.menuText("relationGraph"), nil, func(_ *menu.CallbackData) {
+		runtime.EventsEmit(a.ctx, "menu:navigate", "relations")
 	})
 	a.mu.RLock()
 	debugMode := a.debugMode
