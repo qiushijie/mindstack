@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref, watch, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { GitStatus, GitCommitFiles, GitGenerateCommitMessage } from '../../wailsjs/go/main/App'
+import { GitStatus, GitCommitFiles, GitGenerateCommitMessage, GitPush } from '../../wailsjs/go/main/App'
 
 const { t } = useI18n()
 
@@ -44,6 +44,7 @@ const loading = ref(false)
 const statusMsg = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const expandedDirs = ref(new Set<string>())
+const pushAfterCommit = ref(false)
 
 const selectedFiles = computed(() =>
   files.value.filter(f => f.selected).map(f => f.path)
@@ -223,10 +224,20 @@ async function handleCommit() {
     const data = JSON.parse(result)
     if (data.error) {
       statusMsg.value = t('editor.gitSync.error', { error: data.error })
-    } else {
-      emit('commit-success', { message: commitMsg.value.trim() })
-      emit('close')
+      return
     }
+    if (pushAfterCommit.value) {
+      const pushResult = await GitPush()
+      const pushData = JSON.parse(pushResult)
+      if (pushData.error) {
+        statusMsg.value = t('editor.gitSync.pushError', { error: pushData.error })
+        emit('commit-success', { message: commitMsg.value.trim() })
+        emit('close')
+        return
+      }
+    }
+    emit('commit-success', { message: commitMsg.value.trim() })
+    emit('close')
   } catch (err) {
     statusMsg.value = t('editor.gitSync.error', { error: String(err) })
   } finally {
@@ -268,6 +279,7 @@ watch(() => props.visible, (val) => {
     commitMsg.value = ''
     statusMsg.value = ''
     loading.value = false
+    pushAfterCommit.value = false
     loadFiles()
     nextTick(() => textareaRef.value?.focus())
   } else {
@@ -348,24 +360,35 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
         </div>
 
         <div class="commit-dialog-footer">
-          <button class="commit-btn commit-btn-cancel" @click="emit('close')" :disabled="loading">
-            Cancel
-          </button>
-          <button
-            class="commit-btn commit-btn-primary"
-            :disabled="!commitMsg.trim() || loading"
-            @click="handleCommit"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v6"/><path d="M12 15v6"/></svg>
-            {{ t('editor.gitSync.commit') }}
-          </button>
-          <button
-            class="commit-btn commit-btn-ai"
-            :disabled="files.length === 0 || loading"
-            @click="handleGenerateMessage"
-          >
-            {{ t('editor.gitSync.aiGenerate') }}
-          </button>
+          <label class="push-after-commit" @click.prevent="pushAfterCommit = !pushAfterCommit">
+            <div
+              class="push-after-checkbox"
+              :class="{ checked: pushAfterCommit }"
+            >
+              <svg v-if="pushAfterCommit" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <span>{{ t('editor.gitSync.pushAfterCommit') }}</span>
+          </label>
+          <div class="commit-dialog-footer-btns">
+            <button class="commit-btn commit-btn-cancel" @click="emit('close')" :disabled="loading">
+              Cancel
+            </button>
+            <button
+              class="commit-btn commit-btn-primary"
+              :disabled="!commitMsg.trim() || loading"
+              @click="handleCommit"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v6"/><path d="M12 15v6"/></svg>
+              {{ t('editor.gitSync.commit') }}
+            </button>
+            <button
+              class="commit-btn commit-btn-ai"
+              :disabled="files.length === 0 || loading"
+              @click="handleGenerateMessage"
+            >
+              {{ t('editor.gitSync.aiGenerate') }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -579,10 +602,45 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 
 .commit-dialog-footer {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
   padding: 12px 20px;
   border-top: 1px solid var(--border-subtle);
+}
+
+.commit-dialog-footer-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.push-after-commit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: var(--foreground-secondary);
+}
+
+.push-after-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.push-after-checkbox.checked {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.push-after-checkbox svg {
+  color: #fff;
 }
 
 .commit-btn {

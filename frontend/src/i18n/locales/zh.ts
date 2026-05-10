@@ -207,6 +207,8 @@ export default {
       aiGenerate: 'AI 生成',
       generatingMessage: '正在生成提交信息...',
       messageGenerated: 'AI 已生成提交信息',
+      pushAfterCommit: '提交后推送',
+      pushError: '推送失败：{error}',
     },
     toolbar: {
       Bold: '加粗',

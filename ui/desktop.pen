@@ -20408,85 +20408,129 @@
                 12,
                 20
               ],
-              "justifyContent": "end",
+              "justifyContent": "space_between",
               "alignItems": "center",
               "children": [
                 {
                   "type": "frame",
-                  "id": "on4BM",
-                  "name": "cancelBtn",
-                  "width": 80,
+                  "id": "OHIPB",
+                  "name": "pushCheckbox",
                   "height": 32,
-                  "fill": "$surface-primary",
-                  "cornerRadius": 6,
-                  "stroke": {
-                    "align": "inside",
-                    "thickness": 1,
-                    "fill": "$border-strong"
-                  },
-                  "justifyContent": "center",
+                  "gap": 6,
                   "alignItems": "center",
                   "children": [
                     {
+                      "type": "rectangle",
+                      "cornerRadius": 3,
+                      "id": "htw0A",
+                      "name": "checkSquare",
+                      "width": 16,
+                      "height": 16,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "$border-strong"
+                      }
+                    },
+                    {
                       "type": "text",
-                      "id": "uEHYU",
-                      "name": "cancelLbl",
+                      "id": "iSI22",
+                      "name": "checkLabel",
                       "fill": "$foreground-primary",
-                      "content": "Cancel",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "500"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "aN2Oa",
-                  "name": "pushBtn",
-                  "width": 80,
-                  "height": 32,
-                  "fill": "$accent-primary",
-                  "cornerRadius": 6,
-                  "justifyContent": "center",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "rKEd2",
-                      "name": "pushLbl",
-                      "fill": "$foreground-inverse",
-                      "content": "Commit",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "500"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "xceTA",
-                  "name": "aiAutoBtn",
-                  "width": 80,
-                  "height": 32,
-                  "fill": "#7C3AED",
-                  "cornerRadius": 8,
-                  "stroke": {
-                    "align": "inside",
-                    "thickness": 1,
-                    "fill": "$border-strong"
-                  },
-                  "justifyContent": "center",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "tTCIW",
-                      "name": "aiAutoLabel",
-                      "fill": "#FFFFFF",
-                      "content": "AI Auto",
+                      "content": "Push after commit",
                       "fontFamily": "Inter",
                       "fontSize": 12,
-                      "fontWeight": "600"
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "JkiEk",
+                  "name": "btnGroup",
+                  "height": 32,
+                  "gap": 8,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "on4BM",
+                      "name": "cancelBtn",
+                      "width": 80,
+                      "height": 32,
+                      "fill": "$surface-primary",
+                      "cornerRadius": 6,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "$border-strong"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "uEHYU",
+                          "name": "cancelLbl",
+                          "fill": "$foreground-primary",
+                          "content": "Cancel",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "aN2Oa",
+                      "name": "pushBtn",
+                      "width": 80,
+                      "height": 32,
+                      "fill": "$accent-primary",
+                      "cornerRadius": 6,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rKEd2",
+                          "name": "pushLbl",
+                          "fill": "$foreground-inverse",
+                          "content": "Commit",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "500"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "xceTA",
+                      "name": "aiAutoBtn",
+                      "width": 80,
+                      "height": 32,
+                      "fill": "#7C3AED",
+                      "cornerRadius": 8,
+                      "stroke": {
+                        "align": "inside",
+                        "thickness": 1,
+                        "fill": "$border-strong"
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "tTCIW",
+                          "name": "aiAutoLabel",
+                          "fill": "#FFFFFF",
+                          "content": "AI Auto",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        }
+                      ]
                     }
                   ]
                 }
