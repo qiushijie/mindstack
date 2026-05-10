@@ -19,7 +19,7 @@ var syncCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		root := requireRoot()
 
-		svc := llm.NewService(config.ConfigPath())
+		svc := llm.NewService(config.ResolveConfigPath())
 		if err := svc.InitFromConfig(); err != nil {
 			writeError(3, "LLM_UNAVAILABLE", fmt.Sprintf("cannot init LLM service: %v", err))
 		}

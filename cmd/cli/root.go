@@ -13,6 +13,7 @@ import (
 )
 
 var kbName string
+var configPath string
 
 var rootCmd = &cobra.Command{
 	Use:           "mindstack",
@@ -26,6 +27,13 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&kbName, "kb", "", "knowledge base name (required when multiple KBs are linked)")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "path to config file (JSON)")
+
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		if configPath != "" {
+			config.SetCustomConfigPath(configPath)
+		}
+	}
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(linkCmd)

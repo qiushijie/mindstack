@@ -9,6 +9,34 @@ import (
 
 const maxConfigSize = 64 * 1024 // 64KB
 
+var customConfigPath string
+
+// Overridable for testing.
+var userHomeDir = os.UserHomeDir
+
+// SetCustomConfigPath sets a custom config path via the --config CLI flag.
+func SetCustomConfigPath(path string) {
+	customConfigPath = path
+}
+
+// ResolveConfigPath returns the config path with the following priority:
+// 1. --config CLI flag (set via SetCustomConfigPath)
+// 2. ~/.mindstack/config.json (if exists)
+// 3. Default ConfigPath() (MINDSTACK_CONFIG_DIR env or OS config dir)
+func ResolveConfigPath() string {
+	if customConfigPath != "" {
+		return customConfigPath
+	}
+	homeDir, err := userHomeDir()
+	if err == nil {
+		homeCfg := filepath.Join(homeDir, ".mindstack", "config.json")
+		if _, err := os.Stat(homeCfg); err == nil {
+			return homeCfg
+		}
+	}
+	return ConfigPath()
+}
+
 // ConfigPath returns the absolute path to the application config file.
 // It checks MINDSTACK_CONFIG_DIR env var first, then falls back to the
 // OS-specific user config directory.

@@ -138,6 +138,83 @@ func TestConfigPath_EnvOverride(t *testing.T) {
 }
 
 // -------------------------------------------------------
+// ResolveConfigPath
+// -------------------------------------------------------
+
+func TestResolveConfigPath_Custom(t *testing.T) {
+	// Reset state
+	customConfigPath = ""
+
+	SetCustomConfigPath("/custom/path/config.json")
+	path := ResolveConfigPath()
+	if path != "/custom/path/config.json" {
+		t.Fatalf("expected /custom/path/config.json, got %s", path)
+	}
+
+	// Clean up
+	SetCustomConfigPath("")
+}
+
+func TestResolveConfigPath_HomeDir(t *testing.T) {
+	// Reset state
+	customConfigPath = ""
+
+	// Create a temporary home directory with .mindstack/config.json
+	homeDir := t.TempDir()
+	homeCfgDir := filepath.Join(homeDir, ".mindstack")
+	os.MkdirAll(homeCfgDir, 0755)
+	homeCfg := filepath.Join(homeCfgDir, "config.json")
+	os.WriteFile(homeCfg, []byte("{}"), 0644)
+
+	// Mock UserHomeDir
+	origUserHomeDir := userHomeDir
+	userHomeDir = func() (string, error) { return homeDir, nil }
+	defer func() { userHomeDir = origUserHomeDir }()
+
+	path := ResolveConfigPath()
+	if path != homeCfg {
+		t.Fatalf("expected %s, got %s", homeCfg, path)
+	}
+}
+
+func TestResolveConfigPath_Fallback(t *testing.T) {
+	// Reset state
+	customConfigPath = ""
+
+	// Ensure no ~/.mindstack/config.json interferes
+	origUserHomeDir := userHomeDir
+	userHomeDir = func() (string, error) { return "/nonexistent-home", nil }
+	defer func() { userHomeDir = origUserHomeDir }()
+
+	path := ResolveConfigPath()
+	expected := ConfigPath()
+	if path != expected {
+		t.Fatalf("expected %s (ConfigPath fallback), got %s", expected, path)
+	}
+}
+
+func TestResolveConfigPath_CustomTakesPriority(t *testing.T) {
+	// Custom path should win even when home dir config exists
+	SetCustomConfigPath("/custom/config.json")
+
+	homeDir := t.TempDir()
+	homeCfg := filepath.Join(homeDir, ".mindstack", "config.json")
+	os.MkdirAll(filepath.Dir(homeCfg), 0755)
+	os.WriteFile(homeCfg, []byte("{}"), 0644)
+
+	origUserHomeDir := userHomeDir
+	userHomeDir = func() (string, error) { return homeDir, nil }
+	defer func() { userHomeDir = origUserHomeDir }()
+
+	path := ResolveConfigPath()
+	if path != "/custom/config.json" {
+		t.Fatalf("expected custom path /custom/config.json, got %s", path)
+	}
+
+	SetCustomConfigPath("")
+}
+
+// -------------------------------------------------------
 // configError.Error
 // -------------------------------------------------------
 
