@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { Chat, StreamChat, GetActiveModelInfo } from '../../wailsjs/go/main/App'
+import { Chat, StreamChat, StreamChatWithHistory, GetActiveModelInfo } from '../../wailsjs/go/main/App'
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 
 export interface ChatMessage {
@@ -11,6 +11,18 @@ export interface ModelInfo {
   configured: boolean
   id?: string
   model?: string
+}
+
+export interface StreamChatHistoryRequest {
+  sessionId: number
+  workspacePath: string
+  messages: ChatMessage[]
+  userMessage: string
+  currentContent?: string
+  selectedText?: string
+  selectionFrom?: number
+  selectionTo?: number
+  filePath?: string
 }
 
 export function useLLM() {
@@ -46,6 +58,75 @@ export function useLLM() {
 
   function cancelStream() {
     cleanup()
+  }
+
+  // Track the active stream request to prevent EventsOff/EventsOn race condition
+  let activeRequestId = 0
+  let currentOnChunk: ((content: string) => void) | null = null
+  let currentOnDone: (() => void) | null = null
+  let currentOnError: ((err: string) => void) | null = null
+  let receivedAnyChunk = false
+
+  // Set up chat:message:chunk listener once to avoid race condition
+  let chatMessageChunkHandlerSetUp = false
+  function ensureChatMessageChunkListener() {
+    if (chatMessageChunkHandlerSetUp) return
+    chatMessageChunkHandlerSetUp = true
+    EventsOn('chat:message:chunk', (data: string) => {
+      if (activeRequestId === 0) return
+      let chunk: any
+      try {
+        chunk = JSON.parse(data)
+      } catch { return }
+
+      if (chunk.error) {
+        activeRequestId = 0
+        currentOnError?.(chunk.error)
+      } else if (chunk.done) {
+        activeRequestId = 0
+        if (chunk.content && !receivedAnyChunk) {
+          currentOnChunk?.(chunk.content)
+        }
+        currentOnDone?.()
+      } else if (chunk.content) {
+        receivedAnyChunk = true
+        currentOnChunk?.(chunk.content)
+      }
+    })
+  }
+
+  async function streamChatWithHistory(
+    req: StreamChatHistoryRequest,
+    onChunk: (content: string) => void,
+    onDone: () => void,
+    onError: (err: string) => void,
+  ): Promise<number> {
+    ensureChatMessageChunkListener()
+
+    activeRequestId += 1
+    receivedAnyChunk = false
+    currentOnChunk = onChunk
+    currentOnDone = onDone
+    currentOnError = onError
+
+    try {
+      const result = await StreamChatWithHistory(JSON.stringify(req))
+      const parsed = JSON.parse(result)
+      if (parsed.error) {
+        if (activeRequestId !== 0) {
+          activeRequestId = 0
+          onError(parsed.error)
+        }
+        return 0
+      }
+      return parsed.sessionId || 0
+    } catch (err: any) {
+      if (activeRequestId !== 0) {
+        activeRequestId = 0
+        onError(err.message || 'Stream failed')
+      }
+      return 0
+    }
   }
 
   function streamChat(
@@ -96,5 +177,5 @@ export function useLLM() {
     }
   }
 
-  return { loading, error, chat, streamChat, cancelStream, getActiveModel }
+  return { loading, error, chat, streamChat, streamChatWithHistory, cancelStream, getActiveModel }
 }

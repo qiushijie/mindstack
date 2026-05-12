@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { ref, nextTick, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useLLM, type ChatMessage } from '../composables/useLLM'
 import { useSync } from '../composables/useSync'
 import { useSearch } from '../composables/useSearch'
 import { type AckSnippet } from '../composables/useAck'
 import { useSettings } from '../composables/useSettings'
-import { EventsOff } from '../../wailsjs/runtime/runtime'
+import { useChatHistory, type ChatMessageRecord } from '../composables/useChatHistory'
+import { useAIEdit, type ChangeBlock } from '../composables/useAIEdit'
+import { useFileTree } from '../composables/useFileTree'
+import { useDiffView } from '../composables/useDiffView'
+import { isPageTab } from '../composables/useTabs'
+import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 import { GitCheckInit, GitInit, GitPull, GitCommit, GitAutoCommit, GitPush } from '../../wailsjs/go/main/App'
 
 interface MessageLink {
@@ -18,16 +23,25 @@ interface DisplayMessage {
   role: 'user' | 'assistant'
   content: string
   isStreaming?: boolean
+  isEdit?: boolean
+  isAction?: boolean
   links?: MessageLink[]
   snippets?: AckSnippet[]
 }
 
 const emit = defineEmits<{ close: []; openFile: [path: string] }>()
 
-const { streamChat, cancelStream } = useLLM()
+const { streamChat, streamChatWithHistory, cancelStream } = useLLM()
 const { syncWorkspace } = useSync()
 const { searchDocs } = useSearch()
 const { defaultBranch } = useSettings()
+const { sessions, currentSessionId, loadSessions, createSession, loadHistory, deleteSession, switchSession } = useChatHistory()
+const { isEditing, applyEdit, applyChanges, getCurrentDocument, getModifiedDocument, getSelection } = useAIEdit()
+const { rootPath, selectedFilePath } = useFileTree()
+const { openDiffView, clearDiffState, pendingCount } = useDiffView()
+
+const diffPending = computed(() => pendingCount.value > 0)
+
 const messages = ref<DisplayMessage[]>([])
 const inputText = ref('')
 const messageAreaEl = ref<HTMLElement>()
@@ -37,6 +51,12 @@ const activeStreamIdx = ref(-1)
 const panelEl = ref<HTMLElement>()
 const showToolMenu = ref(false)
 const gitSyncTimer = ref<ReturnType<typeof setTimeout>>()
+const showHistoryView = ref(false)
+const pendingEditContent = ref('')
+const pendingEditChanges = ref<ChangeBlock[]>([])
+
+// Track which message index the edit listener should handle (prevents race condition)
+let currentEditIdx = -1
 
 const PANEL_W = 380
 const PANEL_H = 600
@@ -48,8 +68,6 @@ let dragStartX = 0
 let dragStartY = 0
 let dragStartPanelX = 0
 let dragStartPanelY = 0
-
-const SYSTEM_PROMPT = 'You are a helpful AI assistant. Answer concisely and clearly.'
 
 function clampPosition(x: number, y: number) {
   const vw = window.innerWidth
@@ -92,12 +110,69 @@ function onDragEnd() {
 
 onMounted(() => {
   resetPosition()
+  if (rootPath.value) {
+    loadSessions(rootPath.value)
+  }
+
+  // Set up edit listener once to avoid EventsOff/EventsOn race condition
+  EventsOn('chat:edit:chunk', (data: string) => {
+    let chunk: any
+    try {
+      chunk = JSON.parse(data)
+    } catch { return }
+
+    const idx = currentEditIdx
+    if (idx < 0 || idx >= messages.value.length) return
+
+    if (chunk.error) {
+      if (activeStreamIdx.value === idx && messages.value[idx]) {
+        messages.value[idx].content += `\n\nError: ${chunk.error}`
+      }
+      finishStream(idx)
+      return
+    }
+
+    if (chunk.explanation) {
+      if (activeStreamIdx.value !== idx) return
+      messages.value[idx].content = chunk.explanation
+      messages.value[idx].isEdit = true
+      scrollToBottom()
+    }
+
+    if (chunk.content) {
+      pendingEditContent.value = chunk.content
+      if (chunk.changes) {
+        pendingEditChanges.value = chunk.changes
+      }
+    }
+
+    if (chunk.done) {
+      finishStream(idx)
+      // Open diff view for review
+      const original = getCurrentDocument()
+      if (pendingEditContent.value) {
+        const modified = getModifiedDocument(original, pendingEditContent.value)
+        openDiffView(original, modified, selectedFilePath.value || 'document')
+      }
+    }
+  })
+})
+
+watch(rootPath, (newPath) => {
+  if (newPath) {
+    loadSessions(newPath)
+  } else {
+    sessions.value = []
+    currentSessionId.value = 0
+    messages.value = []
+  }
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
   EventsOff('sync:progress')
+  EventsOff('chat:edit:chunk')
   if (gitSyncTimer.value) clearTimeout(gitSyncTimer.value)
   stopStreaming()
 })
@@ -105,6 +180,7 @@ onBeforeUnmount(() => {
 function sendMessage() {
   const text = inputText.value.trim()
   if (isStreaming.value) return
+  if (diffPending.value) return
   if (!text && !selectedTool.value) return
 
   if (selectedTool.value?.command === '/search') {
@@ -115,6 +191,7 @@ function sendMessage() {
     runGitSync(text)
     return
   }
+
   const fullText = selectedTool.value
     ? selectedTool.value.command + (text ? ' ' + text : '')
     : text
@@ -128,20 +205,36 @@ function sendMessage() {
   messages.value.push({ role: 'user', content: fullText })
 
   const idx = messages.value.length
-  messages.value.push({ role: 'assistant', content: '', isStreaming: true })
+  messages.value.push({ role: 'assistant', content: '', isStreaming: true, isEdit: false })
   activeStreamIdx.value = idx
   isStreaming.value = true
+  pendingEditContent.value = ''
+  pendingEditChanges.value = []
 
-  const chatMessages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    ...messages.value.slice(0, idx).map(m => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    })),
-  ]
+  const chatMessages: ChatMessage[] = messages.value.slice(0, idx).map(m => ({
+    role: m.role as 'user' | 'assistant',
+    content: m.content,
+  }))
 
-  streamChat(
-    chatMessages,
+  // Get selection info for the agent
+  const sel = getSelection ? getSelection() : null
+
+  // Mark which message index the edit listener should handle
+  currentEditIdx = idx
+
+  // Use persistent chat API
+  streamChatWithHistory(
+    {
+      sessionId: currentSessionId.value,
+      workspacePath: rootPath.value,
+      messages: chatMessages,
+      userMessage: fullText,
+      currentContent: getCurrentDocument(),
+      selectedText: sel?.text || '',
+      selectionFrom: sel?.from || 0,
+      selectionTo: sel?.to || 0,
+      filePath: selectedFilePath.value || '',
+    },
     (chunk) => {
       if (activeStreamIdx.value !== idx) return
       messages.value[idx].content += chunk
@@ -154,7 +247,11 @@ function sendMessage() {
       }
       finishStream(idx)
     },
-  )
+  ).then((sessionId) => {
+    if (sessionId && !currentSessionId.value) {
+      currentSessionId.value = sessionId
+    }
+  })
 
   scrollToBottom()
 }
@@ -187,7 +284,9 @@ function scrollToBottom() {
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
-    sendMessage()
+    if (!diffPending.value) {
+      sendMessage()
+    }
   }
 }
 
@@ -199,7 +298,21 @@ function autoResize(e: Event) {
 
 function handleClose() {
   stopStreaming()
+  showHistoryView.value = false
   emit('close')
+}
+
+function openHistoryView() {
+  showHistoryView.value = true
+}
+
+function closeHistoryView() {
+  showHistoryView.value = false
+}
+
+function onSessionClick(sessionId: number) {
+  loadSession(sessionId)
+  showHistoryView.value = false
 }
 
 interface ToolMenuItem {
@@ -408,7 +521,6 @@ async function runGitSync(action: string) {
         scrollToBottom()
         return
       }
-      // Try auto-commit first (will silently pass if nothing to commit)
       const commitResult = await GitAutoCommit()
       const commitData = JSON.parse(commitResult)
       if (commitData.error && commitData.error !== 'nothing to commit') {
@@ -449,6 +561,37 @@ async function runGitSync(action: string) {
   scrollToBottom()
 }
 
+// --- Session Management ---
+
+function startNewSession() {
+  currentSessionId.value = 0
+  messages.value = []
+  if (rootPath.value) {
+    createSession(rootPath.value)
+  }
+}
+
+async function loadSession(sessionId: number) {
+  if (!sessionId) return
+  switchSession(sessionId)
+  const history = await loadHistory(sessionId)
+  messages.value = history.map((m: ChatMessageRecord) => ({
+    role: m.role as 'user' | 'assistant',
+    content: m.content,
+  }))
+  nextTick(() => scrollToBottom())
+}
+
+function formatTime(dateStr: string): string {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function handleDeleteSession(sessionId: number, e: Event) {
+  e.stopPropagation()
+  deleteSession(sessionId, rootPath.value)
+}
+
 </script>
 
 <template>
@@ -458,17 +601,67 @@ async function runGitSync(action: string) {
     :style="{ left: panelX + 'px', top: panelY + 'px' }"
   >
     <div class="chat-header" @mousedown="onDragStart">
-      <span class="chat-title">AI Assistant</span>
-      <button class="close-btn" @mousedown.stop @click="handleClose" title="Close">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-        </svg>
-      </button>
+      <div class="chat-header-left">
+        <button v-if="showHistoryView" class="back-btn" @mousedown.stop @click="closeHistoryView" title="Back">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m15 18-6-6 6-6"/>
+          </svg>
+        </button>
+        <span class="chat-title">{{ showHistoryView ? 'Chat History' : 'AI Assistant' }}</span>
+      </div>
+      <div class="chat-header-actions">
+        <button v-if="!showHistoryView" class="history-btn" @mousedown.stop @click="openHistoryView" title="Chat History">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/>
+          </svg>
+        </button>
+        <button class="close-btn" @mousedown.stop @click="handleClose" title="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+          </svg>
+        </button>
+      </div>
     </div>
 
-    <div class="message-area" ref="messageAreaEl">
-      <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
-        <div v-if="msg.role === 'assistant'" class="ai-label">AI</div>
+    <!-- History View -->
+    <div v-if="showHistoryView" class="history-view">
+      <div class="history-list">
+        <div v-if="sessions.length === 0" class="history-empty">No sessions</div>
+        <div
+          v-for="session in sessions"
+          :key="session.id"
+          :class="['history-item', { active: session.id === currentSessionId }]"
+          @click="onSessionClick(session.id)"
+        >
+          <div class="history-item-info">
+            <span class="history-item-title">{{ session.title || 'New Chat' }}</span>
+            <span class="history-item-time">{{ formatTime(session.updatedAt) }}</span>
+          </div>
+          <button class="history-delete-btn" @click="handleDeleteSession(session.id, $event)" title="Delete">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="history-footer">
+        <button class="history-new-btn" @click="startNewSession(); closeHistoryView()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14" /><path d="M12 5v14" />
+          </svg>
+          <span>New Chat</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Chat View -->
+    <template v-else>
+      <div class="message-area" ref="messageAreaEl">
+      <div v-for="(msg, idx) in messages" :key="msg.role + '-' + idx" :class="['message', msg.role]">
+        <div v-if="msg.role === 'assistant'" class="ai-label">
+          <span>AI</span>
+          <span v-if="msg.isEdit" class="edit-badge">Edit</span>
+        </div>
         <div :class="['bubble', msg.role]">
           <span class="bubble-text">{{ msg.content }}</span>
           <template v-if="msg.links && msg.links.length">
@@ -504,7 +697,11 @@ async function runGitSync(action: string) {
       </div>
     </div>
 
-    <div class="input-area" @mousedown.stop>
+    <div v-if="diffPending" class="diff-pending-bar">
+      Please accept or reject all changes in the diff view before continuing.
+    </div>
+
+    <div class="input-area" :class="{ disabled: diffPending }" @mousedown.stop>
       <div class="tool-menu-wrapper" @mousedown.stop>
         <button class="tool-btn" :class="{ active: showToolMenu || selectedTool }" @click="selectedTool ? clearToolSelection() : toggleToolMenu()" :title="selectedTool ? selectedTool.label : 'Tools'">
           <svg v-if="selectedTool?.icon === 'search'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -518,6 +715,12 @@ async function runGitSync(action: string) {
           </svg>
           <svg v-else-if="selectedTool?.icon === 'refresh-cw'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" />
+          </svg>
+          <svg v-else-if="selectedTool?.icon === 'edit'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+          </svg>
+          <svg v-else-if="selectedTool?.icon === 'pen-tool'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m12 19 7-7 3 3-7 7-3-3z" /><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" /><path d="m2 2 7.5 8.6" /><path d="M22 22l-5.5-5.5" />
           </svg>
           <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="4" x2="20" y1="12" y2="12" /><line x1="4" x2="20" y1="6" y2="6" /><line x1="4" x2="20" y1="18" y2="18" />
@@ -537,6 +740,12 @@ async function runGitSync(action: string) {
             <svg v-else-if="item.icon === 'refresh-cw'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" />
             </svg>
+            <svg v-else-if="item.icon === 'edit'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+            </svg>
+            <svg v-else-if="item.icon === 'pen-tool'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m12 19 7-7 3 3-7 7-3-3z" /><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" /><path d="m2 2 7.5 8.6" /><path d="M22 22l-5.5-5.5" />
+            </svg>
             <span>{{ item.label }}</span>
           </button>
         </div>
@@ -546,11 +755,12 @@ async function runGitSync(action: string) {
         v-model="inputText"
         class="chat-input"
         :placeholder="selectedTool?.placeholder || 'Ask anything...'"
+        :disabled="diffPending"
         rows="1"
         @keydown="handleKeydown"
         @input="autoResize"
       />
-      <button v-if="!isStreaming" class="send-btn" @click="sendMessage" title="Send">
+      <button v-if="!isStreaming" class="send-btn" :disabled="diffPending" @click="sendMessage" title="Send">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" />
         </svg>
@@ -561,7 +771,8 @@ async function runGitSync(action: string) {
         </svg>
       </button>
     </div>
-  </div>
+  </template>
+</div>
 </template>
 
 <style scoped>
@@ -583,7 +794,7 @@ async function runGitSync(action: string) {
   align-items: center;
   justify-content: space-between;
   height: 44px;
-  padding: 0 16px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--border-subtle);
   border-radius: 12px 12px 0 0;
   flex-shrink: 0;
@@ -593,6 +804,37 @@ async function runGitSync(action: string) {
 
 .chat-header:active {
   cursor: grabbing;
+}
+
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--foreground-tertiary);
+  border-radius: 6px;
+  padding: 0;
+}
+
+.back-btn:hover {
+  background: var(--surface-hover);
+  color: var(--foreground-secondary);
 }
 
 .chat-title {
@@ -617,6 +859,158 @@ async function runGitSync(action: string) {
 }
 
 .close-btn:hover {
+  background: var(--surface-hover);
+  color: var(--foreground-secondary);
+}
+
+/* History View */
+.history-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+
+.history-empty {
+  font-size: 13px;
+  color: var(--foreground-tertiary);
+  padding: 32px 16px;
+  text-align: center;
+  font-family: var(--font-sans);
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.history-item:hover {
+  background: var(--surface-hover);
+}
+
+.history-item.active {
+  background: var(--surface-secondary);
+}
+
+.history-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground-primary);
+  font-family: var(--font-sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item-time {
+  font-size: 11px;
+  color: var(--foreground-tertiary);
+  font-family: var(--font-sans);
+}
+
+.history-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--foreground-tertiary);
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.history-item:hover .history-delete-btn {
+  opacity: 1;
+}
+
+.history-delete-btn:hover {
+  background: var(--danger-primary);
+  color: #fff;
+}
+
+.history-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.history-new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent-primary);
+  color: var(--foreground-inverse);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.history-new-btn:hover {
+  background: var(--accent-hover);
+}
+
+/* History Button */
+.history-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--foreground-tertiary);
+  border-radius: 6px;
+  padding: 0;
+}
+
+.history-btn:hover {
   background: var(--surface-hover);
   color: var(--foreground-secondary);
 }
@@ -655,11 +1049,23 @@ async function runGitSync(action: string) {
 }
 
 .ai-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 10px;
   font-weight: 600;
   color: var(--accent-primary);
   font-family: var(--font-sans);
   padding-left: 2px;
+}
+
+.edit-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  background: var(--accent-primary);
+  color: var(--foreground-inverse);
+  border-radius: 4px;
+  font-weight: 500;
 }
 
 .bubble {
@@ -891,5 +1297,33 @@ async function runGitSync(action: string) {
 .tool-menu-item svg {
   color: var(--foreground-secondary);
   flex-shrink: 0;
+}
+
+.diff-pending-bar {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--foreground-primary);
+  background: var(--surface-secondary);
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.input-area.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input-area.disabled .chat-input {
+  cursor: not-allowed;
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.send-btn:disabled:hover {
+  background: var(--accent-primary);
 }
 </style>

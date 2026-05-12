@@ -6,6 +6,16 @@ test.describe('Settings Persistence', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await waitForAppReady(page)
+
+    // Dismiss the git-init confirm dialog that appears when a workspace loads
+    const dialog = page.locator('.confirm-dialog-overlay')
+    try {
+      await dialog.waitFor({ state: 'visible', timeout: 3000 })
+      await page.locator('.btn-cancel').click()
+      await dialog.waitFor({ state: 'hidden', timeout: 3000 })
+    } catch {
+      // Dialog did not appear, that's fine
+    }
   })
 
   test('should preserve model settings after file tree operations', async ({ page }) => {

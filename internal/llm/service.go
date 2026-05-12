@@ -169,3 +169,46 @@ func (s *Service) GetActiveModel() *ActiveModelConfig {
 	cp := *s.active
 	return &cp
 }
+
+// GetToolCallingModel returns the underlying chat model as a ToolCallingChatModel.
+func (s *Service) GetToolCallingModel() model.ToolCallingChatModel {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.chatModel == nil {
+		return nil
+	}
+	tcm, ok := s.chatModel.(model.ToolCallingChatModel)
+	if !ok {
+		return nil
+	}
+	return tcm
+}
+
+// GenerateWithTool calls the LLM with a forced tool call.
+// The model must call the provided tool and return structured arguments.
+func (s *Service) GenerateWithTool(ctx context.Context, messages []*einoschema.Message, tool *einoschema.ToolInfo) (*einoschema.Message, error) {
+	s.mu.RLock()
+	cm := s.chatModel
+	s.mu.RUnlock()
+
+	if cm == nil {
+		return nil, fmt.Errorf("no model configured")
+	}
+
+	tcm, ok := cm.(model.ToolCallingChatModel)
+	if !ok {
+		return nil, fmt.Errorf("model does not support tool calling")
+	}
+
+	toolModel, err := tcm.WithTools([]*einoschema.ToolInfo{tool})
+	if err != nil {
+		return nil, fmt.Errorf("bind tool: %w", err)
+	}
+
+	resp, err := toolModel.Generate(ctx, messages, model.WithToolChoice(einoschema.ToolChoiceForced))
+	if err != nil {
+		return nil, fmt.Errorf("generate: %w", err)
+	}
+
+	return resp, nil
+}

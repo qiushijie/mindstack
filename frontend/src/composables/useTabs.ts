@@ -6,7 +6,7 @@ export interface Tab {
   title: string
 }
 
-const PAGE_TABS = new Set<string>(['settings', 'relations'])
+const PAGE_TABS = new Set<string>(['settings', 'relations', 'diff'])
 
 const tabs = ref<Tab[]>([])
 const activeTabIndex = ref(-1)
@@ -24,6 +24,24 @@ export function openPageTab(pageName: PageName, title: string): { isNew: boolean
   tabs.value.push({ path: pageName, title })
   activeTabIndex.value = tabs.value.length - 1
   return { isNew: true, index: activeTabIndex.value }
+}
+
+export function closeTabByPath(path: string): string | null {
+  const index = tabs.value.findIndex(t => t.path === path)
+  if (index < 0) return null
+  tabs.value.splice(index, 1)
+  if (tabs.value.length === 0) {
+    activeTabIndex.value = -1
+    return null
+  }
+  if (activeTabIndex.value > index) {
+    activeTabIndex.value--
+  } else if (activeTabIndex.value === index) {
+    activeTabIndex.value = Math.min(index, tabs.value.length - 1)
+  } else if (activeTabIndex.value >= tabs.value.length) {
+    activeTabIndex.value = tabs.value.length - 1
+  }
+  return tabs.value[activeTabIndex.value]?.path ?? null
 }
 
 export function useTabs() {

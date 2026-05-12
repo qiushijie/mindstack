@@ -15,7 +15,9 @@ import (
 	"sync/atomic"
 
 	"mindstack/internal/ack"
+	"mindstack/internal/chat"
 	"mindstack/internal/config"
+	"mindstack/internal/db"
 	gitpkg "mindstack/internal/git"
 	"mindstack/internal/llm"
 	"mindstack/internal/meta"
@@ -46,7 +48,6 @@ type App struct {
 	rootPath         string
 	fileServerPort   int
 	recentEntries    []RecentEntry
-	dialogOpen       int32
 	streaming        int32
 	syncing          int32
 	locale           string
@@ -56,6 +57,7 @@ type App struct {
 	rawMode          bool
 	llm              *llm.Service
 	watcher          *watcher.Watcher
+	chatService      *chat.Service
 }
 
 func NewApp() *App {
@@ -68,6 +70,15 @@ func (a *App) startup(ctx context.Context) {
 	a.llm = llm.NewService(config.ConfigPath())
 	if err := a.llm.InitFromConfig(); err != nil {
 		fmt.Println("failed to init LLM:", err)
+	}
+	if database, err := db.Init(); err != nil {
+		fmt.Println("failed to init DB:", err)
+	} else {
+		a.chatService = chat.NewService(database, a.llm)
+		a.chatService.SetContext(ctx)
+		if err := a.chatService.Init(); err != nil {
+			fmt.Println("failed to init chat service:", err)
+		}
 	}
 	a.startFileServer()
 	a.rebuildMenu()
@@ -293,11 +304,6 @@ func (a *App) GetFileServerPort() int {
 }
 
 func (a *App) OpenFolderDialog() string {
-	if !atomic.CompareAndSwapInt32(&a.dialogOpen, 0, 1) {
-		return ""
-	}
-	defer atomic.StoreInt32(&a.dialogOpen, 0)
-
 	path, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: a.dialogText("openFolder"),
 	})
@@ -322,11 +328,6 @@ func (a *App) OpenImageFileDialog() string {
 }
 
 func (a *App) OpenFileDialog() string {
-	if !atomic.CompareAndSwapInt32(&a.dialogOpen, 0, 1) {
-		return ""
-	}
-	defer atomic.StoreInt32(&a.dialogOpen, 0)
-
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: a.dialogText("openFile"),
 		Filters: []runtime.FileFilter{
@@ -920,7 +921,8 @@ type AppConfig struct {
 }
 
 func (a *App) LoadConfig() string {
-	data, err := os.ReadFile(config.ConfigPath())
+	cp := config.ConfigPath()
+	data, err := os.ReadFile(cp)
 	if err != nil {
 		return "{}"
 	}
@@ -1102,3 +1104,43 @@ func (a *App) GetDocumentRelations() string {
 	out, _ := json.Marshal(store)
 	return string(out)
 }
+
+// --- Chat Session Management ---
+
+func (a *App) ChatCreateSession(workspacePath string) string {
+	if a.chatService == nil {
+		return jsonError("chat service not initialized")
+	}
+	return a.chatService.CreateSession(workspacePath)
+}
+
+func (a *App) ChatListSessions(workspacePath string) string {
+	if a.chatService == nil {
+		return jsonError("chat service not initialized")
+	}
+	return a.chatService.ListSessions(workspacePath)
+}
+
+func (a *App) ChatGetHistory(sessionID uint) string {
+	if a.chatService == nil {
+		return jsonError("chat service not initialized")
+	}
+	return a.chatService.GetSessionHistory(sessionID)
+}
+
+func (a *App) ChatDeleteSession(sessionID uint) string {
+	if a.chatService == nil {
+		return jsonError("chat service not initialized")
+	}
+	return a.chatService.DeleteSession(sessionID)
+}
+
+// --- Chat with History ---
+
+func (a *App) StreamChatWithHistory(reqJSON string) string {
+	if a.chatService == nil {
+		return jsonError("chat service not initialized")
+	}
+	return a.chatService.StreamChatWithHistory(reqJSON)
+}
+

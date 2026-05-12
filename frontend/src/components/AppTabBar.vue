@@ -1,8 +1,11 @@
 <script lang="ts" setup>
-import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
-import { FileText, X, Settings, Minus, Square, Network } from 'lucide-vue-next'
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { FileText, X, Settings, Minus, Square, Network, GitCompare, Check } from 'lucide-vue-next'
 import { useTabs, isPageTab } from '../composables/useTabs'
 import { useSettings } from '../composables/useSettings'
+import { useDiffView } from '../composables/useDiffView'
+import { useAIEdit } from '../composables/useAIEdit'
+import { useFileTree } from '../composables/useFileTree'
 import { t } from '../i18n'
 import {
   WindowClose,
@@ -21,8 +24,28 @@ const emit = defineEmits<{
   closeAllTabs: []
 }>()
 
-const { tabs, activeTabIndex } = useTabs()
+const { tabs, activeTabIndex, activeTab } = useTabs()
 const { uiPlatform } = useSettings()
+const { acceptAll, rejectAll, getAppliedContent, hasChanges, closeDiffView } = useDiffView()
+const { applyEdit } = useAIEdit()
+const { selectedFileContent } = useFileTree()
+
+const isDiffActive = computed(() => activeTab.value?.path === 'diff')
+
+function handleAcceptAll() {
+  acceptAll()
+  const content = getAppliedContent()
+  closeDiffView()
+  nextTick(() => {
+    selectedFileContent.value = content
+    applyEdit(content, false)
+  })
+}
+
+function handleRejectAll() {
+  rejectAll()
+  closeDiffView()
+}
 
 const tabBarRef = ref<HTMLElement | null>(null)
 
@@ -136,10 +159,22 @@ onBeforeUnmount(() => {
       <FileText v-if="!isPageTab(tab.path)" :size="14" class="tab-icon" />
       <Settings v-else-if="tab.path === 'settings'" :size="14" class="tab-icon" />
       <Network v-else-if="tab.path === 'relations'" :size="14" class="tab-icon" />
+      <GitCompare v-else-if="tab.path === 'diff'" :size="14" class="tab-icon" />
       <span class="tab-title">{{ tab.title }}</span>
       <span v-if="dirtyPaths?.includes(tab.path)" class="tab-dirty-dot" />
       <button class="tab-close" @click="handleClose(index, $event)">
         <X :size="14" />
+      </button>
+    </div>
+    <div class="tab-bar-spacer" />
+    <div v-if="isDiffActive && hasChanges" class="diff-actions">
+      <button class="action-btn accept-all" @click="handleAcceptAll">
+        <Check :size="12" />
+        Accept All
+      </button>
+      <button class="action-btn reject-all" @click="handleRejectAll">
+        <X :size="12" />
+        Reject All
       </button>
     </div>
     <div v-if="uiPlatform === 'windows'" class="window-controls">
@@ -275,11 +310,65 @@ onBeforeUnmount(() => {
   background-color: var(--surface-primary);
 }
 
+.tab-bar-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.diff-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 8px;
+  --wails-draggable: no-drag;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  font-family: var(--font-sans);
+}
+
+.action-btn.accept-all {
+  background: #22C55E;
+  color: #fff;
+}
+
+.action-btn.accept-all:hover {
+  background: #16A34A;
+}
+
+.action-btn.reject-all {
+  background: #FF4444;
+  color: #fff;
+}
+
+.action-btn.reject-all:hover {
+  background: #DC2626;
+}
+
+.action-btn.apply {
+  background: var(--accent-primary);
+  color: var(--foreground-inverse);
+}
+
+.action-btn.apply:hover {
+  background: var(--accent-hover);
+}
+
 .window-controls {
   display: flex;
   align-items: center;
   height: 100%;
-  margin-left: auto;
   --wails-draggable: no-drag;
 }
 

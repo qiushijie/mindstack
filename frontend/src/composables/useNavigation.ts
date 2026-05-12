@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type PageName = 'editor' | 'settings' | 'relations'
+export type PageName = 'editor' | 'settings' | 'relations' | 'diff'
 
 const currentPage = ref<PageName>('editor')
 

@@ -185,6 +185,10 @@ function handleToolbarSelect(label: string) {
     case 'Strikethrough': wrapInline('~~', '~~')(v); break
     case 'Text': toggleBlockType('')(v); break
     case 'Link': insertLink(v); break
+    case 'AIRewrite': {
+      showAIChat.value = true
+      break
+    }
     default: {
       const config = getBlockConfigByToolbarLabel(label)
       if (config) toggleBlockType(config.prefix)(v)

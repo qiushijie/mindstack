@@ -14,6 +14,22 @@ export function Chat(arg1) {
   return window['go']['main']['App']['Chat'](arg1);
 }
 
+export function ChatCreateSession(arg1) {
+  return window['go']['main']['App']['ChatCreateSession'](arg1);
+}
+
+export function ChatDeleteSession(arg1) {
+  return window['go']['main']['App']['ChatDeleteSession'](arg1);
+}
+
+export function ChatGetHistory(arg1) {
+  return window['go']['main']['App']['ChatGetHistory'](arg1);
+}
+
+export function ChatListSessions(arg1) {
+  return window['go']['main']['App']['ChatListSessions'](arg1);
+}
+
 export function ClearRecentEntries() {
   return window['go']['main']['App']['ClearRecentEntries']();
 }
@@ -172,6 +188,10 @@ export function SetWorkspaceRoot(arg1) {
 
 export function StreamChat(arg1) {
   return window['go']['main']['App']['StreamChat'](arg1);
+}
+
+export function StreamChatWithHistory(arg1) {
+  return window['go']['main']['App']['StreamChatWithHistory'](arg1);
 }
 
 export function SyncWorkspace() {

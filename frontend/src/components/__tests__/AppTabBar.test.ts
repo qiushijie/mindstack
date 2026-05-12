@@ -32,13 +32,20 @@ vi.mock('../../composables/useTabs', () => ({
   useTabs: () => ({
     tabs: mockTabs,
     activeTabIndex: mockActiveTabIndex,
+    activeTab: { value: null },
   }),
-  isPageTab: (path: string) => path === 'settings' || path === 'relations',
+  isPageTab: (path: string) => path === 'settings' || path === 'relations' || path === 'diff',
 }))
 
 vi.mock('../../composables/useSettings', () => ({
   useSettings: () => ({
     uiPlatform: ref('windows'),
+  }),
+}))
+
+vi.mock('../../composables/useFileTree', () => ({
+  useFileTree: () => ({
+    selectedFileContent: { value: '' },
   }),
 }))
 

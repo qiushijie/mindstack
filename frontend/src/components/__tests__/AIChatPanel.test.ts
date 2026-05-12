@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import AIChatPanel from '../AIChatPanel.vue'
 
@@ -15,9 +15,11 @@ let onProgressCb: ((data: any) => void) | undefined
 
 // Mock composables
 const mockStreamChat = vi.fn()
+const mockStreamChatWithHistory = vi.fn().mockResolvedValue(0)
 vi.mock('../../composables/useLLM', () => ({
   useLLM: () => ({
     streamChat: mockStreamChat,
+    streamChatWithHistory: mockStreamChatWithHistory,
     cancelStream: vi.fn(),
     loading: { value: false },
     error: { value: '' },
@@ -42,6 +44,45 @@ vi.mock('../../composables/useSearch', () => ({
   }),
 }))
 
+const mockSessions = ref<Array<{ id: number; title: string; updatedAt: string }>>([])
+const mockCurrentSessionId = ref(0)
+const mockLoadSessions = vi.fn()
+const mockCreateSession = vi.fn().mockResolvedValue(1)
+const mockLoadHistory = vi.fn().mockResolvedValue([])
+const mockDeleteSession = vi.fn()
+const mockSwitchSession = vi.fn()
+
+vi.mock('../../composables/useChatHistory', () => ({
+  useChatHistory: () => ({
+    sessions: mockSessions,
+    currentSessionId: mockCurrentSessionId,
+    loadSessions: mockLoadSessions,
+    createSession: mockCreateSession,
+    loadHistory: mockLoadHistory,
+    deleteSession: mockDeleteSession,
+    switchSession: mockSwitchSession,
+  }),
+}))
+
+vi.mock('../../composables/useAIEdit', () => ({
+  useAIEdit: () => ({
+    pendingEdit: { value: null },
+    isEditing: { value: false },
+    getCurrentDocument: vi.fn().mockReturnValue(''),
+    getSelection: vi.fn().mockReturnValue(null),
+    applyEdit: vi.fn().mockReturnValue(true),
+    streamDocumentEdit: vi.fn(),
+    streamSelectionEdit: vi.fn(),
+  }),
+}))
+
+vi.mock('../../composables/useFileTree', () => ({
+  useFileTree: () => ({
+    rootPath: { value: '/test/workspace' },
+    selectedFilePath: { value: '' },
+  }),
+}))
+
 vi.mock('../../../wailsjs/go/main/App', () => ({
   GitCheckInit: vi.fn().mockResolvedValue(true),
   GitInit: vi.fn().mockResolvedValue('{"ok":true}'),
@@ -53,6 +94,8 @@ vi.mock('../../../wailsjs/go/main/App', () => ({
 describe('AIChatPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSessions.value = []
+    mockCurrentSessionId.value = 0
   })
 
   function mountComponent() {
@@ -149,19 +192,19 @@ describe('AIChatPanel', () => {
       expect((wrapper.find('.chat-input').element as HTMLTextAreaElement).value).toBe('')
     })
 
-    it('calls streamChat with correct messages', async () => {
+    it('calls streamChatWithHistory with correct data', async () => {
       const wrapper = mountComponent()
 
       await wrapper.find('.chat-input').setValue('test question')
       await wrapper.find('.send-btn').trigger('click')
       await nextTick()
 
-      expect(mockStreamChat).toHaveBeenCalledOnce()
-      const [chatMessages] = mockStreamChat.mock.calls[0]
-      // System prompt + user message
-      expect(chatMessages).toHaveLength(2)
-      expect(chatMessages[0]).toEqual({ role: 'system', content: 'You are a helpful AI assistant. Answer concisely and clearly.' })
-      expect(chatMessages[1]).toEqual({ role: 'user', content: 'test question' })
+      expect(mockStreamChatWithHistory).toHaveBeenCalledOnce()
+      const [req] = mockStreamChatWithHistory.mock.calls[0]
+      expect(req.workspacePath).toBe('/test/workspace')
+      expect(req.userMessage).toBe('test question')
+      expect(req.messages).toHaveLength(1)
+      expect(req.messages[0]).toEqual({ role: 'user', content: 'test question' })
     })
 
     it('does not send empty message', async () => {
@@ -170,7 +213,7 @@ describe('AIChatPanel', () => {
       await wrapper.find('.send-btn').trigger('click')
       await nextTick()
 
-      expect(mockStreamChat).not.toHaveBeenCalled()
+      expect(mockStreamChatWithHistory).not.toHaveBeenCalled()
       expect(wrapper.findAll('.message')).toHaveLength(0)
     })
 
@@ -181,7 +224,7 @@ describe('AIChatPanel', () => {
       await wrapper.find('.chat-input').trigger('keydown', { key: 'Enter', shiftKey: false })
       await nextTick()
 
-      expect(mockStreamChat).toHaveBeenCalled()
+      expect(mockStreamChatWithHistory).toHaveBeenCalled()
     })
 
     it('does not send message on Shift+Enter', async () => {
@@ -191,7 +234,7 @@ describe('AIChatPanel', () => {
       await wrapper.find('.chat-input').trigger('keydown', { key: 'Enter', shiftKey: true })
       await nextTick()
 
-      expect(mockStreamChat).not.toHaveBeenCalled()
+      expect(mockStreamChatWithHistory).not.toHaveBeenCalled()
     })
   })
 
@@ -525,6 +568,126 @@ describe('AIChatPanel', () => {
 
       expect(wrapper.emitted('openFile')).toHaveLength(1)
       expect(wrapper.emitted('openFile')![0]).toEqual(['/docs/manual.md'])
+    })
+  })
+
+  describe('history view', () => {
+    it('shows history button in chat header', () => {
+      const wrapper = mountComponent()
+
+      expect(wrapper.find('.history-btn').exists()).toBe(true)
+    })
+
+    it('switches to history view when clicking history button', async () => {
+      const wrapper = mountComponent()
+
+      await wrapper.find('.history-btn').trigger('click')
+      await nextTick()
+
+      expect(wrapper.find('.history-view').exists()).toBe(true)
+      expect(wrapper.find('.message-area').exists()).toBe(false)
+      expect(wrapper.find('.chat-title').text()).toBe('Chat History')
+    })
+
+    it('renders session list in history view', async () => {
+      mockSessions.value = [
+        { id: 1, title: 'Session One', updatedAt: '2026-05-01T10:00:00Z' },
+        { id: 2, title: 'Session Two', updatedAt: '2026-05-02T12:00:00Z' },
+      ]
+
+      const wrapper = mountComponent()
+
+      await wrapper.find('.history-btn').trigger('click')
+      await nextTick()
+
+      const items = wrapper.findAll('.history-item')
+      expect(items).toHaveLength(2)
+      expect(items[0].find('.history-item-title').text()).toBe('Session One')
+      expect(items[1].find('.history-item-title').text()).toBe('Session Two')
+    })
+
+    it('highlights current session in history view', async () => {
+      mockSessions.value = [
+        { id: 1, title: 'Session One', updatedAt: '2026-05-01T10:00:00Z' },
+        { id: 2, title: 'Session Two', updatedAt: '2026-05-02T12:00:00Z' },
+      ]
+      mockCurrentSessionId.value = 1
+
+      const wrapper = mountComponent()
+
+      await wrapper.find('.history-btn').trigger('click')
+      await nextTick()
+
+      const items = wrapper.findAll('.history-item')
+      expect(items[0].classes()).toContain('active')
+      expect(items[1].classes()).not.toContain('active')
+    })
+
+    it('switches session and returns to chat when clicking a session', async () => {
+      mockSessions.value = [
+        { id: 1, title: 'Session One', updatedAt: '2026-05-01T10:00:00Z' },
+        { id: 2, title: 'Session Two', updatedAt: '2026-05-02T12:00:00Z' },
+      ]
+
+      const wrapper = mountComponent()
+
+      await wrapper.find('.history-btn').trigger('click')
+      await nextTick()
+
+      await wrapper.findAll('.history-item')[1].trigger('click')
+      await nextTick()
+
+      expect(mockSwitchSession).toHaveBeenCalledWith(2)
+      expect(wrapper.find('.history-view').exists()).toBe(false)
+      expect(wrapper.find('.message-area').exists()).toBe(true)
+    })
+
+    it('deletes session when clicking delete button', async () => {
+      mockSessions.value = [
+        { id: 1, title: 'Session One', updatedAt: '2026-05-01T10:00:00Z' },
+        { id: 2, title: 'Session Two', updatedAt: '2026-05-02T12:00:00Z' },
+      ]
+
+      const wrapper = mountComponent()
+
+      await wrapper.find('.history-btn').trigger('click')
+      await nextTick()
+
+      await wrapper.findAll('.history-delete-btn')[0].trigger('click')
+      await nextTick()
+
+      expect(mockDeleteSession).toHaveBeenCalledWith(1, '/test/workspace')
+      expect(mockSwitchSession).not.toHaveBeenCalled()
+    })
+
+    it('creates new session and returns to chat', async () => {
+      const wrapper = mountComponent()
+
+      await wrapper.find('.history-btn').trigger('click')
+      await nextTick()
+
+      await wrapper.find('.history-new-btn').trigger('click')
+      await nextTick()
+
+      expect(mockCreateSession).toHaveBeenCalledWith('/test/workspace')
+      expect(wrapper.find('.history-view').exists()).toBe(false)
+      expect(wrapper.find('.message-area').exists()).toBe(true)
+    })
+
+    it('returns to chat view when clicking back button', async () => {
+      const wrapper = mountComponent()
+
+      await wrapper.find('.history-btn').trigger('click')
+      await nextTick()
+
+      expect(wrapper.find('.history-view').exists()).toBe(true)
+
+      await wrapper.find('.back-btn').trigger('click')
+      await nextTick()
+
+      expect(wrapper.find('.history-view').exists()).toBe(false)
+      expect(wrapper.find('.message-area').exists()).toBe(true)
+      expect(wrapper.find('.chat-title').text()).toBe('AI Assistant')
     })
   })
 })

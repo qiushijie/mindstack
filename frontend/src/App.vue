@@ -14,9 +14,11 @@ import AboutDialog from './components/AboutDialog.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import CommitDialog from './components/CommitDialog.vue'
 import RelationGraph from './components/RelationGraph.vue'
+import DiffView from './components/DiffView.vue'
 import { useNavigation } from './composables/useNavigation'
 import { provideEditorState } from './composables/useEditorState'
 import { useFileTree } from './composables/useFileTree'
+import { useDiffView } from './composables/useDiffView'
 import { useSettings, applyTheme } from './composables/useSettings'
 import { openPageTab } from './composables/useTabs'
 import { useConfirmDialog } from './composables/useConfirmDialog'
@@ -80,6 +82,7 @@ async function checkFullscreen() {
 provideEditorState()
 const { openFolder, openFile, saveCurrentFile, newFile, restoreSession, openRecentFolder, openRecentFile, selectFile, switchToTab, closeFileTab, closeOtherTabs, closeAllTabs, dirtyTabs, rootPath, handleExternalChange } = useFileTree()
 
+const { renderKey } = useDiffView()
 const { loadSettings, theme, rawMode, debugMode, autoPull, defaultBranch, autoCommit } = useSettings()
 
 onMounted(async () => {
@@ -114,7 +117,12 @@ onMounted(async () => {
   checkFullscreen()
   window.addEventListener('resize', checkFullscreen)
 
-  const pendingPath = await GetPendingOpenFile().catch(() => '')
+  let pendingPath = ''
+  try {
+    pendingPath = await GetPendingOpenFile()
+  } catch {
+    pendingPath = ''
+  }
   if (pendingPath) {
     await openRecentFile(pendingPath)
   }
@@ -306,6 +314,7 @@ watch(rootPath, async (newPath) => {
         <AppEditor v-if="currentPage === 'editor'" />
         <AppSettings v-else-if="currentPage === 'settings'" />
         <RelationGraph v-else-if="currentPage === 'relations'" />
+        <DiffView v-else-if="currentPage === 'diff'" :key="renderKey" />
       </div>
       <AppStatusBar />
     </div>

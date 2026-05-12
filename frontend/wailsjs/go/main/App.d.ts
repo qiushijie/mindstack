@@ -8,6 +8,14 @@ export function AddRecentEntry(arg1:string,arg2:boolean):Promise<void>;
 
 export function Chat(arg1:string):Promise<string>;
 
+export function ChatCreateSession(arg1:string):Promise<string>;
+
+export function ChatDeleteSession(arg1:number):Promise<string>;
+
+export function ChatGetHistory(arg1:number):Promise<string>;
+
+export function ChatListSessions(arg1:string):Promise<string>;
+
 export function ClearRecentEntries():Promise<void>;
 
 export function ClipboardGetText():Promise<string>;
@@ -87,6 +95,8 @@ export function SetRootPath(arg1:string):Promise<void>;
 export function SetWorkspaceRoot(arg1:string):Promise<void>;
 
 export function StreamChat(arg1:string):Promise<string>;
+
+export function StreamChatWithHistory(arg1:string):Promise<string>;
 
 export function SyncWorkspace():Promise<string>;
 

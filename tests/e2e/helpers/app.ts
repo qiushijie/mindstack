@@ -21,9 +21,15 @@ export async function waitForAppReady(page: Page): Promise<void> {
   await page.waitForTimeout(100)
 
   // Wait for Wails Go bindings to be ready (injected asynchronously by the
-  // Wails runtime WebSocket connection). Tests that call Go backend methods
-  // via window.go.main.App.* need this before proceeding.
-  await page.waitForFunction(() => !!(window as any).go?.main?.App, { timeout: 15000 })
+  // Wails runtime WebSocket connection). In e2e tests that connect directly
+  // to the Vite dev server, Wails runtime may not be available. Use a short
+  // timeout so tests that don't need Go bindings can proceed quickly.
+  try {
+    await page.waitForFunction(() => !!(window as any).go?.main?.App, { timeout: 3000 })
+  } catch {
+    // Go backend not available in this e2e environment.
+    // Tests that call Go methods should handle this themselves.
+  }
 }
 
 export async function resetAppState(page: Page): Promise<void> {

@@ -125,19 +125,47 @@ function cleanupPidFiles() {
   try { fs.unlinkSync(PID_FILE + '.configdir') } catch {}
 }
 
+function getDefaultConfigPath() {
+  const home = os.homedir()
+  const platform = os.platform()
+
+  if (process.env.MINDSTACK_CONFIG_DIR) {
+    return path.join(process.env.MINDSTACK_CONFIG_DIR, 'config.json')
+  }
+
+  let configDir
+  if (platform === 'darwin') {
+    configDir = path.join(home, 'Library', 'Application Support')
+  } else if (platform === 'win32') {
+    configDir = process.env.APPDATA || path.join(home, 'AppData', 'Roaming')
+  } else {
+    configDir = process.env.XDG_CONFIG_HOME || path.join(home, '.config')
+  }
+
+  return path.join(configDir, 'mindstack', 'config.json')
+}
+
 async function main() {
   const args = process.argv.slice(2)
   const existing = await checkExisting()
   let wailsProcess = null
+  let configBackupPath = null
+  let configPath = null
 
   if (!existing) {
     wailsProcess = await startWailsDev()
   } else {
     console.log('[e2e] Using existing wails dev process — config isolation not guaranteed')
+    configPath = getDefaultConfigPath()
+    if (fs.existsSync(configPath)) {
+      configBackupPath = path.join(os.tmpdir(), `mindstack-config-backup-${Date.now()}.json`)
+      fs.copyFileSync(configPath, configBackupPath)
+      console.log('[e2e] Backed up config to:', configBackupPath)
+    }
   }
 
   // Run Playwright
-  const pw = spawn('pnpm', ['playwright', 'test', ...args], {
+  const pw = spawn('pnpm', ['exec', 'playwright', 'test', ...args], {
     cwd: path.join(__dirname, '..'),
     stdio: 'inherit',
     shell: true,
@@ -162,6 +190,13 @@ async function main() {
     if (configDir) {
       try { fs.rmSync(configDir, { recursive: true, force: true }) } catch {}
     }
+  }
+
+  // Restore config if we backed it up
+  if (configBackupPath && configPath && fs.existsSync(configBackupPath)) {
+    fs.copyFileSync(configBackupPath, configPath)
+    console.log('[e2e] Restored config from backup')
+    try { fs.unlinkSync(configBackupPath) } catch {}
   }
 
   process.exit(exitCode)

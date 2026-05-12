@@ -9,6 +9,7 @@ import {
   Code,
   Quote,
   Link,
+  PenTool,
 } from 'lucide-vue-next'
 
 defineProps<{
@@ -54,6 +55,11 @@ const rows: { items: ToolbarItem[] }[] = [
       { icon: Code, label: 'Code' },
       { icon: Quote, label: 'Quote' },
       { icon: Link, label: 'Link' },
+    ],
+  },
+  {
+    items: [
+      { icon: PenTool, label: 'AIRewrite' },
     ],
   },
 ]
