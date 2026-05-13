@@ -304,9 +304,10 @@ Respond with ONLY a JSON object (no markdown, no code fences) with these fields:
 - "title": a concise title for the document (string)
 - "summary": a 1-3 sentence summary of the document's content (string)
 - "tags": an array of 3-7 relevant tags (array of strings, lowercase, use hyphens for multi-word tags)
+- "aliases": an array of alternative names or synonyms for the tags (array of strings, lowercase). For example, if tags includes "unit-test", aliases might include ["test", "testing", "ut"]. Include shorthand forms and common abbreviations.
 
 Example response:
-{"title":"REST API Design Guide","summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["api","rest","design","backend"]}`, filename, content)
+{"title":"REST API Design Guide","summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["api","rest","design","backend"],"aliases":["restful","http"]}`, filename, content)
 
 	messages := []*einoschema.Message{
 		{Role: einoschema.User, Content: prompt},
@@ -323,6 +324,7 @@ Example response:
 		Title   string   `json:"title"`
 		Summary string   `json:"summary"`
 		Tags    []string `json:"tags"`
+		Aliases []string `json:"aliases"`
 	}
 	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
 		return nil, fmt.Errorf("parse LLM response: %w (raw: %s)", err, resp)
@@ -332,6 +334,7 @@ Example response:
 		Title:   parsed.Title,
 		Summary: parsed.Summary,
 		Tags:    parsed.Tags,
+		Aliases: parsed.Aliases,
 		Status:  "active",
 	}, nil
 }
@@ -467,29 +470,44 @@ Respond with ONLY a JSON array:
 }
 
 func findCandidateDocs(allMetas []*meta.DocumentMeta, changedDocs map[string]bool) map[string][]candidateInfo {
-	tagMap := make(map[string][]string, len(allMetas))
+	// Build a lookup: path -> normalized set (tags + aliases, all lowercase)
+	normMap := make(map[string]map[string]bool, len(allMetas))
+	tagOnlyMap := make(map[string][]string, len(allMetas))
 	for _, m := range allMetas {
-		tagMap[m.Path] = m.Tags
+		s := make(map[string]bool, len(m.Tags)+len(m.Aliases))
+		for _, t := range m.Tags {
+			s[strings.ToLower(t)] = true
+		}
+		for _, a := range m.Aliases {
+			s[strings.ToLower(a)] = true
+		}
+		normMap[m.Path] = s
+		tagOnlyMap[m.Path] = m.Tags
 	}
 
 	result := make(map[string][]candidateInfo)
 
 	for _, changedDoc := range sortedKeys(changedDocs) {
-		changedTags := tagMap[changedDoc]
-		if len(changedTags) == 0 {
+		changedSet := normMap[changedDoc]
+		if len(changedSet) == 0 {
 			continue
-		}
-
-		tagSet := make(map[string]bool, len(changedTags))
-		for _, t := range changedTags {
-			tagSet[t] = true
 		}
 
 		for _, m := range allMetas {
 			if m.Path == changedDoc {
 				continue
 			}
-			shared := intersectTags(tagSet, m.Tags)
+			var shared []string
+			for _, t := range tagOnlyMap[m.Path] {
+				if changedSet[strings.ToLower(t)] {
+					shared = append(shared, t)
+				}
+			}
+			for _, a := range m.Aliases {
+				if changedSet[strings.ToLower(a)] {
+					shared = append(shared, a)
+				}
+			}
 			if len(shared) > 0 {
 				result[changedDoc] = append(result[changedDoc], candidateInfo{
 					path:       m.Path,
@@ -500,16 +518,6 @@ func findCandidateDocs(allMetas []*meta.DocumentMeta, changedDocs map[string]boo
 	}
 
 	return result
-}
-
-func intersectTags(tagSet map[string]bool, tags []string) []string {
-	var shared []string
-	for _, t := range tags {
-		if tagSet[t] {
-			shared = append(shared, t)
-		}
-	}
-	return shared
 }
 
 // sortedKeys returns the keys of a map whose key type is ~string, sorted lexicographically.

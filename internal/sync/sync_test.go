@@ -1118,22 +1118,57 @@ func TestFindCandidateDocs_NoChangedDocs(t *testing.T) {
 	}
 }
 
-// --- intersectTags tests ---
-
-func TestIntersectTags(t *testing.T) {
-	tagSet := map[string]bool{"go": true, "api": true, "testing": true}
-	tags := []string{"go", "python", "testing"}
-
-	result := intersectTags(tagSet, tags)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 shared tags, got %d: %v", len(result), result)
+func TestFindCandidateDocs_TagMatch(t *testing.T) {
+	allMetas := []*meta.DocumentMeta{
+		{Path: "a.md", Tags: []string{"go", "api"}},
+		{Path: "b.md", Tags: []string{"go", "cli"}},
+		{Path: "c.md", Tags: []string{"python"}},
+	}
+	changed := map[string]bool{"a.md": true}
+	result := findCandidateDocs(allMetas, changed)
+	if len(result["a.md"]) != 1 {
+		t.Fatalf("expected 1 candidate for a.md, got %d", len(result["a.md"]))
+	}
+	if result["a.md"][0].path != "b.md" {
+		t.Fatalf("expected b.md as candidate, got %s", result["a.md"][0].path)
 	}
 }
 
-func TestIntersectTags_NoOverlap(t *testing.T) {
-	result := intersectTags(map[string]bool{"go": true}, []string{"python"})
-	if len(result) != 0 {
-		t.Fatalf("expected 0 shared tags, got %d", len(result))
+func TestFindCandidateDocs_AliasMatch(t *testing.T) {
+	allMetas := []*meta.DocumentMeta{
+		{Path: "a.md", Tags: []string{"unit-test"}, Aliases: []string{"test", "testing"}},
+		{Path: "b.md", Tags: []string{"test"}},
+		{Path: "c.md", Tags: []string{"python"}},
+	}
+	changed := map[string]bool{"a.md": true}
+	result := findCandidateDocs(allMetas, changed)
+	if len(result["a.md"]) != 1 {
+		t.Fatalf("expected 1 candidate (alias match), got %d", len(result["a.md"]))
+	}
+	if result["a.md"][0].path != "b.md" {
+		t.Fatalf("expected b.md as candidate, got %s", result["a.md"][0].path)
+	}
+	if len(result["a.md"][0].sharedTags) != 1 || result["a.md"][0].sharedTags[0] != "test" {
+		t.Fatalf("expected sharedTags [test], got %v", result["a.md"][0].sharedTags)
+	}
+}
+
+func TestFindCandidateDocs_AliasBidirectional(t *testing.T) {
+	allMetas := []*meta.DocumentMeta{
+		{Path: "a.md", Tags: []string{"test"}},
+		{Path: "b.md", Tags: []string{"unit-test"}, Aliases: []string{"test", "testing"}},
+		{Path: "c.md", Tags: []string{"python"}},
+	}
+	changed := map[string]bool{"a.md": true}
+	result := findCandidateDocs(allMetas, changed)
+	if len(result["a.md"]) != 1 {
+		t.Fatalf("expected 1 candidate (reverse alias match), got %d", len(result["a.md"]))
+	}
+	if result["a.md"][0].path != "b.md" {
+		t.Fatalf("expected b.md as candidate, got %s", result["a.md"][0].path)
+	}
+	if len(result["a.md"][0].sharedTags) != 1 || result["a.md"][0].sharedTags[0] != "test" {
+		t.Fatalf("expected sharedTags [test], got %v", result["a.md"][0].sharedTags)
 	}
 }
 

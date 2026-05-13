@@ -144,6 +144,20 @@ Full-text search output:
 
 Error codes: `SEARCH_FAILED`, `SCAN_FAILED`.
 
+### Search vs Q&A: When to Use Which
+
+**`search` (tag/fulltext)**
+- Pros: fast, no LLM dependency, works offline
+- Cons: relies on tag and alias quality generated during sync, no natural-language understanding, struggles with complex queries
+- Best for: locating documents when you know the keyword or tag
+
+**`ack` (LLM semantic retrieval)**
+- Pros: understands natural-language questions, synthesizes evidence across documents, returns precise snippets with line numbers
+- Cons: requires LLM availability, slower (multiple LLM calls), consumes tokens
+- Best for: answering complex questions, cross-document analysis, extracting relevant passages
+
+**Recommendation**: prefer `search` for quick lookups; use `ack` when search results are imprecise or you need synthesized analysis.
+
 ### Q&A
 
 #### `mindstack ack <query>`
