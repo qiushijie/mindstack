@@ -301,7 +301,7 @@ watch(rootPath, async (newPath) => {
         @close-all-tabs="closeAllTabs"
       />
       <div class="content-area">
-        <div class="floating-actions">
+        <div v-if="currentPage === 'editor'" class="floating-actions">
           <button
             class="floating-btn"
             :class="{ active: showAIChat }"
@@ -318,7 +318,7 @@ watch(rootPath, async (newPath) => {
       </div>
       <AppStatusBar />
     </div>
-    <AIChatPanel v-if="showAIChat" @close="showAIChat = false" @open-file="selectFile" />
+    <AIChatPanel v-if="showAIChat && currentPage === 'editor'" @close="showAIChat = false" @open-file="selectFile" />
     <CommitDialog :visible="showCommitDialog" @close="showCommitDialog = false" @commit-success="onCommitSuccess" />
     <AboutDialog :visible="aboutDialogVisible" @close="aboutDialogVisible = false" />
     <ConfirmDialog />
