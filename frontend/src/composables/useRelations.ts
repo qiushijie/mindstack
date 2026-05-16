@@ -15,6 +15,7 @@ export interface Relation {
   score: number
   reason: string
   sharedTags: string[]
+  type?: string
 }
 
 export interface DocNode {
@@ -31,8 +32,10 @@ export interface RelationEdge {
   score: number
   reason: string
   sharedTags: string[]
+  type?: string
   incomingScore?: number
   incomingReason?: string
+  incomingType?: string
 }
 
 const NODE_COLORS = [
@@ -40,6 +43,14 @@ const NODE_COLORS = [
   '#14B8A6', '#F97316', '#EC4899', '#6366F1', '#84CC16',
   '#06B6D4', '#A855F7', '#F43F5E', '#10B981', '#3B82F6',
 ]
+
+const RELATION_TYPE_COLORS: Record<string, string> = {
+  'references': '#3B82F6',
+  'extends': '#22C55E',
+  'contrasts': '#F59E0B',
+  'depends-on': '#EF4444',
+  'similar-to': '#8B5CF6',
+}
 
 const metas = ref<Map<string, DocumentMeta>>(new Map())
 const relations = ref<RelationEdge[]>([])
@@ -75,6 +86,14 @@ export function useRelations() {
       }
     }
     return Array.from(tagSet).sort()
+  })
+
+  const allRelationTypes = computed<string[]>(() => {
+    const typeSet = new Set<string>()
+    for (const r of relations.value) {
+      if (r.type) typeSet.add(r.type)
+    }
+    return Array.from(typeSet).sort()
   })
 
   async function loadData() {
@@ -113,6 +132,7 @@ export function useRelations() {
             score: r.score,
             reason: r.reason,
             sharedTags: r.sharedTags || [],
+            type: r.type,
           })
         }
       }
@@ -137,8 +157,14 @@ export function useRelations() {
       if (existing) {
         existing.incomingScore = r.score
         existing.incomingReason = r.reason
+        existing.incomingType = r.type
       } else {
-        map.set(r.source, { ...r })
+        const cloned: RelationEdge = { ...r }
+        if (r.type) {
+          cloned.incomingType = r.type
+          delete (cloned as any).type
+        }
+        map.set(r.source, cloned)
       }
     }
 
@@ -166,16 +192,23 @@ export function useRelations() {
     return nodeMap.value.get(path)
   }
 
+  function getRelationTypeColor(type: string | undefined): string {
+    if (!type) return 'var(--accent-primary)'
+    return RELATION_TYPE_COLORS[type] || 'var(--accent-primary)'
+  }
+
   return {
     metas,
     relations,
     nodes,
     allTags,
+    allRelationTypes,
     loading,
     error,
     loadData,
     getRelationsForDoc,
     getRelatedDocs,
     getNode,
+    getRelationTypeColor,
   }
 }

@@ -262,5 +262,7 @@ export default {
     incoming: 'Entrante',
     openInEditor: 'Abrir en el editor',
     noSearchResults: 'No se encontraron documentos coincidentes',
+    relationType: 'Tipo de relación',
+    allTypes: 'Todos los tipos',
   },
 }

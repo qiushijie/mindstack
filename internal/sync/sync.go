@@ -370,12 +370,13 @@ Evaluate how related it is to each of the following documents:
 %s
 
 Respond with ONLY a JSON array (no markdown, no code fences):
-[{"target":"path/to/doc.md","score":0.8,"reason":"brief explanation"}]
+[{"target":"path/to/doc.md","score":0.8,"reason":"brief explanation","type":"references"}]
 
 Rules:
 - You MUST return an entry for EVERY document listed above, do not skip any
 - Score 0 means unrelated, 1 means highly related
 - Reason should be one concise sentence
+- Type should be a brief semantic relationship type (e.g., "references", "extends", "contrasts", "depends-on", "is-prerequisite-for"). Use lowercase with hyphens. Be specific and descriptive.
 - Use the exact file paths from the candidate list`, docPath, doc.Summary, doc.Tags, candidateBuilder.String())
 
 	messages := []*einoschema.Message{
@@ -393,6 +394,7 @@ Rules:
 		Target string  `json:"target"`
 		Score  float64 `json:"score"`
 		Reason string  `json:"reason"`
+		Type   string  `json:"type"`
 	}
 
 	// Initial LLM call
@@ -429,7 +431,7 @@ Rules:
 %s
 
 Respond with ONLY a JSON array:
-[{"target":"path/to/doc.md","score":0.8,"reason":"brief explanation"}]`, strings.Join(missing, "\n"))
+[{"target":"path/to/doc.md","score":0.8,"reason":"brief explanation","type":"references"}]`, strings.Join(missing, "\n"))
 
 		retryResp, err := svc.Chat(ctx, []*einoschema.Message{
 			{Role: einoschema.User, Content: prompt},
@@ -463,6 +465,7 @@ Respond with ONLY a JSON array:
 			Score:      r.Score,
 			Reason:     r.Reason,
 			SharedTags: candidateTagsMap[r.Target],
+			Type:       r.Type,
 		})
 	}
 

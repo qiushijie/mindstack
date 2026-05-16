@@ -262,5 +262,7 @@ export default {
     incoming: '受信',
     openInEditor: 'エディタで開く',
     noSearchResults: '一致するドキュメントが見つかりません',
+    relationType: '関係タイプ',
+    allTypes: 'すべてのタイプ',
   },
 }

@@ -262,5 +262,7 @@ export default {
     incoming: 'Eingehend',
     openInEditor: 'Im Editor öffnen',
     noSearchResults: 'Keine passenden Dokumente gefunden',
+    relationType: 'Beziehungstyp',
+    allTypes: 'Alle Typen',
   },
 }

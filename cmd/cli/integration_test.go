@@ -239,7 +239,7 @@ func TestLsCommand(t *testing.T) {
 	createFile(t, dir, "notes/test2.md", "# Test 2")
 	createFile(t, dir, "readme.md", "# README")
 
-	stdout, _, code := runCLI(dir, "", "ls")
+	stdout, _, code := runCLI(dir, "", "doc", "ls")
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -259,7 +259,7 @@ func TestLsWithPrefix(t *testing.T) {
 	createFile(t, dir, "notes/b.md", "# B")
 	createFile(t, dir, "readme.md", "# README")
 
-	stdout, _, code := runCLI(dir, "", "ls", "notes")
+	stdout, _, code := runCLI(dir, "", "doc", "ls", "notes")
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -272,7 +272,7 @@ func TestLsWithPrefix(t *testing.T) {
 
 func TestLsEmpty(t *testing.T) {
 	dir := setupKB(t)
-	stdout, _, code := runCLI(dir, "", "ls")
+	stdout, _, code := runCLI(dir, "", "doc", "ls")
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -288,7 +288,7 @@ func TestMetaCommandNoData(t *testing.T) {
 	dir := setupKB(t)
 	createFile(t, dir, "test.md", "# Hello")
 
-	stdout, _, code := runCLI(dir, "", "meta", filepath.Join(dir, "test.md"))
+	stdout, _, code := runCLI(dir, "", "doc", "meta", filepath.Join(dir, "test.md"))
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -313,7 +313,7 @@ func TestMetaWithMetadata(t *testing.T) {
 	metaData, _ := json.Marshal(meta)
 	os.WriteFile(filepath.Join(dir, ".mindstack", "meta.json"), metaData, 0644)
 
-	stdout, _, code := runCLI(dir, "", "meta", filepath.Join(dir, "doc.md"))
+	stdout, _, code := runCLI(dir, "", "doc", "meta", filepath.Join(dir, "doc.md"))
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -495,7 +495,7 @@ func TestRelationOutgoing(t *testing.T) {
 	relData, _ := json.Marshal(rels)
 	os.WriteFile(filepath.Join(dir, ".mindstack", "relations.json"), relData, 0644)
 
-	stdout, _, code := runCLI(dir, "", "relation", filepath.Join(dir, "a.md"))
+	stdout, _, code := runCLI(dir, "", "doc", "relation", filepath.Join(dir, "a.md"))
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -525,7 +525,7 @@ func TestRelationIncoming(t *testing.T) {
 	relData, _ := json.Marshal(rels)
 	os.WriteFile(filepath.Join(dir, ".mindstack", "relations.json"), relData, 0644)
 
-	stdout, _, code := runCLI(dir, "", "relation", filepath.Join(dir, "b.md"))
+	stdout, _, code := runCLI(dir, "", "doc", "relation", filepath.Join(dir, "b.md"))
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -570,7 +570,7 @@ func TestInfoCommand(t *testing.T) {
 
 func TestNotInitialized(t *testing.T) {
 	dir := t.TempDir()
-	_, stderr, code := runCLI(dir, "", "ls")
+	_, stderr, code := runCLI(dir, "", "doc", "ls")
 	if code != 2 {
 		t.Fatalf("expected exit code 2, got %d", code)
 	}
@@ -592,7 +592,7 @@ func TestWithKBFlag(t *testing.T) {
 	cfgContent := fmt.Sprintf("knowledge_bases:\n  - %q\n", kbDir)
 	os.WriteFile(filepath.Join(projectDir, ".mindstack", "config.yaml"), []byte(cfgContent), 0644)
 
-	stdout, _, code := runCLI(projectDir, "", "--kb", "mykb", "ls")
+	stdout, _, code := runCLI(projectDir, "", "--kb", "mykb", "doc", "ls")
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -613,7 +613,7 @@ func TestWithKBFlagNotFound(t *testing.T) {
 	cfgContent := fmt.Sprintf("knowledge_bases:\n  - %q\n", kbDir)
 	os.WriteFile(filepath.Join(projectDir, ".mindstack", "config.yaml"), []byte(cfgContent), 0644)
 
-	_, stderr, code := runCLI(projectDir, "", "--kb", "nonexistent", "ls")
+	_, stderr, code := runCLI(projectDir, "", "--kb", "nonexistent", "doc", "ls")
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
 	}

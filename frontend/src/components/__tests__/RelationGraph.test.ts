@@ -54,24 +54,37 @@ vi.mock('force-graph', () => ({
 const mockNodes = ref<any[]>([])
 const mockRelations = ref<any[]>([])
 const mockAllTags = ref<string[]>([])
+const mockAllRelationTypes = ref<string[]>([])
 const mockLoading = ref(false)
 const mockError = ref('')
 const mockLoadData = vi.fn()
 const mockGetNode = vi.fn()
 const mockGetRelationsForDoc = vi.fn<() => any[]>(() => [])
 const mockGetRelatedDocs = vi.fn<() => any[]>(() => [])
+const mockGetRelationTypeColor = vi.fn((type: string | undefined) => {
+  const colors: Record<string, string> = {
+    references: '#3B82F6',
+    extends: '#22C55E',
+    contrasts: '#F59E0B',
+    'depends-on': '#EF4444',
+    'similar-to': '#8B5CF6',
+  }
+  return type && colors[type] ? colors[type] : 'var(--accent-primary)'
+})
 
 vi.mock('../../composables/useRelations', () => ({
   useRelations: () => ({
     nodes: mockNodes,
     relations: mockRelations,
     allTags: mockAllTags,
+    allRelationTypes: mockAllRelationTypes,
     loading: mockLoading,
     error: mockError,
     loadData: mockLoadData,
     getRelationsForDoc: () => mockGetRelationsForDoc(),
     getRelatedDocs: () => mockGetRelatedDocs(),
     getNode: (...args: any[]) => mockGetNode(...args),
+    getRelationTypeColor: mockGetRelationTypeColor,
   }),
 }))
 
@@ -121,9 +134,11 @@ describe('RelationGraph', () => {
     mockNodes.value = []
     mockRelations.value = []
     mockAllTags.value = []
+    mockAllRelationTypes.value = []
     mockLoading.value = false
     mockError.value = ''
     mockLoadData.mockResolvedValue(undefined)
+    mockGetRelationTypeColor.mockClear()
     // Give the container dimensions so initGraph proceeds
     Object.defineProperties(HTMLElement.prototype, {
       clientWidth: { value: 800, configurable: true },
@@ -1188,7 +1203,7 @@ describe('RelationGraph', () => {
 
       const linkColorCb = mockGraphInstance.linkColor.mock.calls[0][0]
       const result = linkColorCb({ source: { id: 'x' }, target: { id: 'y' } })
-      expect(result).toContain('0.15')
+      expect(result).toContain('0.25')
       wrapper.unmount()
     })
 
@@ -1349,6 +1364,129 @@ describe('RelationGraph', () => {
       await flushAll()
 
       expect(mockGraphInstance.enableZoomInteraction).toHaveBeenCalledWith(false)
+      wrapper.unmount()
+    })
+  })
+
+  describe('relation type filter', () => {
+    it('shows type filter dropdown when relation types exist', async () => {
+      mockNodes.value = [
+        makeNode('a.md', 'Doc A'),
+        makeNode('b.md', 'Doc B'),
+      ]
+      mockAllRelationTypes.value = ['references', 'extends']
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      expect(wrapper.find('.graph-type-filter').exists()).toBe(true)
+      expect(wrapper.find('.graph-type-select').exists()).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('hides type filter when no relation types exist', async () => {
+      mockNodes.value = [makeNode('a.md', 'Doc A')]
+      mockAllRelationTypes.value = []
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      expect(wrapper.find('.graph-type-filter').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('filters graph data by selected relation type', async () => {
+      mockNodes.value = [
+        makeNode('a.md', 'Doc A'),
+        makeNode('b.md', 'Doc B'),
+        makeNode('c.md', 'Doc C'),
+      ]
+      mockRelations.value = [
+        { source: 'a.md', target: 'b.md', score: 0.8, reason: '', sharedTags: [], type: 'references' },
+        { source: 'a.md', target: 'c.md', score: 0.5, reason: '', sharedTags: [], type: 'extends' },
+      ]
+      mockAllRelationTypes.value = ['references', 'extends']
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      const select = wrapper.find('.graph-type-select')
+      await select.setValue('references')
+      await nextTick()
+
+      const lastCall = mockGraphInstance.graphData.mock.calls.at(-1)
+      expect(lastCall![0].links).toHaveLength(1)
+      expect(lastCall![0].links[0].type).toBe('references')
+      wrapper.unmount()
+    })
+  })
+
+  describe('relation type display in detail panel', () => {
+    async function mountWithTypedRelations() {
+      const nodeA = makeNode('a.md', 'Doc A', ['tag1'])
+      const nodeB = makeNode('b.md', 'Doc B', ['tag2'])
+      mockNodes.value = [nodeA, nodeB]
+      mockRelations.value = [
+        { source: 'a.md', target: 'b.md', score: 0.8, reason: 'linked', sharedTags: ['s'], type: 'references' },
+      ]
+      mockAllRelationTypes.value = ['references']
+      mockGetNode.mockImplementation((path: string) => {
+        if (path === 'a.md') return nodeA
+        if (path === 'b.md') return nodeB
+        return undefined
+      })
+      mockGetRelationsForDoc.mockReturnValue([
+        { source: 'a.md', target: 'b.md', score: 0.8, reason: 'linked', sharedTags: ['s'], type: 'references' },
+      ])
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      const clickCb = mockGraphInstance.onNodeClick.mock.calls[0][0]
+      clickCb({ id: 'a.md' })
+      await nextTick()
+
+      return wrapper
+    }
+
+    it('shows relation type badge in relation card', async () => {
+      const wrapper = await mountWithTypedRelations()
+
+      const typeBadge = wrapper.find('.relation-type-badge')
+      expect(typeBadge.exists()).toBe(true)
+      expect(typeBadge.text()).toBe('references')
+      wrapper.unmount()
+    })
+
+    it('shows relation type legend when selected node has typed relations', async () => {
+      const wrapper = await mountWithTypedRelations()
+
+      const typeLegend = wrapper.find('.type-legend')
+      expect(typeLegend.exists()).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('uses getRelationTypeColor for type badge styling', async () => {
+      const wrapper = await mountWithTypedRelations()
+
+      expect(mockGetRelationTypeColor).toHaveBeenCalledWith('references')
+      wrapper.unmount()
+    })
+  })
+
+  describe('linkColor with relation type', () => {
+    it('uses type color for unselected links with type', async () => {
+      mockNodes.value = [makeNode('a.md', 'Doc A'), makeNode('b.md', 'Doc B')]
+      mockRelations.value = [
+        { source: 'a.md', target: 'b.md', score: 0.8, reason: '', sharedTags: [], type: 'references' },
+      ]
+
+      const wrapper = createWrapper()
+      await flushAll()
+
+      const linkColorCb = mockGraphInstance.linkColor.mock.calls[0][0]
+      const result = linkColorCb({ source: { id: 'x' }, target: { id: 'y' }, type: 'references' })
+      expect(result).toContain('0.25')
       wrapper.unmount()
     })
   })

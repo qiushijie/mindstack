@@ -264,5 +264,7 @@ export default {
     incoming: 'Incoming',
     openInEditor: 'Open in Editor',
     noSearchResults: 'No matching documents found',
+    relationType: 'Relation Type',
+    allTypes: 'All Types',
   },
 }

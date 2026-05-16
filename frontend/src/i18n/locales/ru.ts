@@ -262,5 +262,7 @@ export default {
     incoming: 'Входящие',
     openInEditor: 'Открыть в редакторе',
     noSearchResults: 'Совпадающие документы не найдены',
+    relationType: 'Тип связи',
+    allTypes: 'Все типы',
   },
 }

@@ -262,5 +262,7 @@ export default {
     incoming: '수신',
     openInEditor: '편집기에서 열기',
     noSearchResults: '일치하는 문서를 찾을 수 없습니다',
+    relationType: '관계 유형',
+    allTypes: '모든 유형',
   },
 }

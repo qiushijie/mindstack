@@ -189,7 +189,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 	})
 
 	t.Run("ls_all", func(t *testing.T) {
-		stdout, _, code := e2eRun(kbDir, "", "ls")
+		stdout, _, code := e2eRun(kbDir, "", "doc", "ls")
 		if code != 0 {
 			t.Fatalf("exit %d", code)
 		}
@@ -203,7 +203,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 	})
 
 	t.Run("ls_prefix", func(t *testing.T) {
-		stdout, _, code := e2eRun(kbDir, "", "ls", "api")
+		stdout, _, code := e2eRun(kbDir, "", "doc", "ls", "api")
 		if code != 0 {
 			t.Fatalf("exit %d", code)
 		}
@@ -214,7 +214,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 	})
 
 	t.Run("meta_found", func(t *testing.T) {
-		stdout, _, code := e2eRun(kbDir, "", "meta", filepath.Join(kbDir, "api/rest.md"))
+		stdout, _, code := e2eRun(kbDir, "", "doc", "meta", filepath.Join(kbDir, "api/rest.md"))
 		if code != 0 {
 			t.Fatalf("exit %d", code)
 		}
@@ -236,7 +236,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 
 	t.Run("meta_not_found", func(t *testing.T) {
 		// A file that exists on disk but has no meta entry
-		stdout, _, code := e2eRun(kbDir, "", "meta", filepath.Join(kbDir, "README.md"))
+		stdout, _, code := e2eRun(kbDir, "", "doc", "meta", filepath.Join(kbDir, "README.md"))
 		if code != 0 {
 			t.Fatalf("exit %d", code)
 		}
@@ -272,7 +272,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 
 	t.Run("relation_outgoing", func(t *testing.T) {
 		// README.md has 2 outgoing relations
-		stdout, _, code := e2eRun(kbDir, "", "relation", filepath.Join(kbDir, "README.md"))
+		stdout, _, code := e2eRun(kbDir, "", "doc", "relation", filepath.Join(kbDir, "README.md"))
 		if code != 0 {
 			t.Fatalf("exit %d", code)
 		}
@@ -287,7 +287,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 
 	t.Run("relation_incoming", func(t *testing.T) {
 		// architecture.md is targeted by README.md and deployment.md
-		stdout, _, code := e2eRun(kbDir, "", "relation", filepath.Join(kbDir, "architecture.md"))
+		stdout, _, code := e2eRun(kbDir, "", "doc", "relation", filepath.Join(kbDir, "architecture.md"))
 		if code != 0 {
 			t.Fatalf("exit %d", code)
 		}
@@ -299,7 +299,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 
 	t.Run("relation_bidirectional", func(t *testing.T) {
 		// api/rest.md has 1 outgoing (→ graphql) and 1 incoming (← graphql, ← getting-started)
-		stdout, _, code := e2eRun(kbDir, "", "relation", filepath.Join(kbDir, "api/rest.md"))
+		stdout, _, code := e2eRun(kbDir, "", "doc", "relation", filepath.Join(kbDir, "api/rest.md"))
 		if code != 0 {
 			t.Fatalf("exit %d", code)
 		}
@@ -423,7 +423,7 @@ func TestE2E_LinkWorkflow(t *testing.T) {
 	projectDir, kbName := setupLinkedProject(t, kbDir)
 
 	t.Run("ls_via_kb_flag", func(t *testing.T) {
-		stdout, _, code := e2eRun(projectDir, "", "--kb", kbName, "ls")
+		stdout, _, code := e2eRun(projectDir, "", "--kb", kbName, "doc", "ls")
 		if code != 0 {
 			t.Fatalf("exit %d: %s", code, stdout)
 		}
@@ -472,7 +472,7 @@ func TestE2E_LinkWorkflow(t *testing.T) {
 		}
 
 		// Use the name via --kb flag
-		stdout2, _, code2 := e2eRun(project2, "", "--kb", "my-kb", "ls")
+		stdout2, _, code2 := e2eRun(project2, "", "--kb", "my-kb", "doc", "ls")
 		if code2 != 0 {
 			t.Fatalf("exit %d via --kb my-kb", code2)
 		}
@@ -483,7 +483,7 @@ func TestE2E_LinkWorkflow(t *testing.T) {
 	})
 
 	t.Run("kb_flag_not_found", func(t *testing.T) {
-		_, stderr, code := e2eRun(projectDir, "", "--kb", "nonexistent", "ls")
+		_, stderr, code := e2eRun(projectDir, "", "--kb", "nonexistent", "doc", "ls")
 		if code != 1 {
 			t.Fatalf("expected exit 1, got %d", code)
 		}
@@ -494,7 +494,7 @@ func TestE2E_LinkWorkflow(t *testing.T) {
 
 	t.Run("not_initialized", func(t *testing.T) {
 		emptyDir := t.TempDir()
-		_, stderr, code := e2eRun(emptyDir, "", "ls")
+		_, stderr, code := e2eRun(emptyDir, "", "doc", "ls")
 		if code != 2 {
 			t.Fatalf("expected exit 2, got %d", code)
 		}
@@ -562,7 +562,7 @@ func TestE2E_RelationTraversal(t *testing.T) {
 	t.Run("traverse_readme_to_api", func(t *testing.T) {
 		// README → getting-started → api/rest → api/graphql
 		// Step 1: README.md relations
-		stdout, _, _ := e2eRun(kbDir, "", "relation", filepath.Join(kbDir, "README.md"))
+		stdout, _, _ := e2eRun(kbDir, "", "doc", "relation", filepath.Join(kbDir, "README.md"))
 		readmeResult := e2eMustJSON(t, stdout)
 		outgoing := readmeResult["outgoing"].([]interface{})
 		if len(outgoing) == 0 {
@@ -570,7 +570,7 @@ func TestE2E_RelationTraversal(t *testing.T) {
 		}
 
 		// Step 2: getting-started.md relations
-		stdout2, _, _ := e2eRun(kbDir, "", "relation", filepath.Join(kbDir, "getting-started.md"))
+		stdout2, _, _ := e2eRun(kbDir, "", "doc", "relation", filepath.Join(kbDir, "getting-started.md"))
 		gsResult := e2eMustJSON(t, stdout2)
 		gsOutgoing := gsResult["outgoing"].([]interface{})
 		if len(gsOutgoing) == 0 {
@@ -595,10 +595,10 @@ func TestE2E_RelationTraversal(t *testing.T) {
 
 	t.Run("traverse_mutual_rest_graphql", func(t *testing.T) {
 		// rest ↔ graphql (mutual relation)
-		stdout, _, _ := e2eRun(kbDir, "", "relation", filepath.Join(kbDir, "api/rest.md"))
+		stdout, _, _ := e2eRun(kbDir, "", "doc", "relation", filepath.Join(kbDir, "api/rest.md"))
 		restResult := e2eMustJSON(t, stdout)
 
-		stdout2, _, _ := e2eRun(kbDir, "", "relation", filepath.Join(kbDir, "api/graphql.md"))
+		stdout2, _, _ := e2eRun(kbDir, "", "doc", "relation", filepath.Join(kbDir, "api/graphql.md"))
 		gqlResult := e2eMustJSON(t, stdout2)
 
 		// rest → graphql

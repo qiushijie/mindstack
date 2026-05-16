@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"mindstack/internal/config"
@@ -249,7 +250,7 @@ func TestCmdLs(t *testing.T) {
 	createTestFile(t, dir, "notes/b.md", "# B")
 	createTestFile(t, dir, "readme.md", "# README")
 
-	stdout, _, code := runCmd(t, "ls")
+	stdout, _, code := runCmd(t, "doc", "ls")
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -264,7 +265,7 @@ func TestCmdLsWithPrefix(t *testing.T) {
 	createTestFile(t, dir, "notes/a.md", "# A")
 	createTestFile(t, dir, "readme.md", "# R")
 
-	stdout, _, code := runCmd(t, "ls", "notes")
+	stdout, _, code := runCmd(t, "doc", "ls", "notes")
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -276,7 +277,7 @@ func TestCmdLsWithPrefix(t *testing.T) {
 
 func TestCmdLsEmpty(t *testing.T) {
 	setupTestKB(t)
-	stdout, _, code := runCmd(t, "ls")
+	stdout, _, code := runCmd(t, "doc", "ls")
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -292,7 +293,7 @@ func TestCmdMetaNoData(t *testing.T) {
 	dir := setupTestKB(t)
 	createTestFile(t, dir, "test.md", "# Hello")
 
-	stdout, _, code := runCmd(t, "meta", filepath.Join(dir, "test.md"))
+	stdout, _, code := runCmd(t, "doc", "meta", filepath.Join(dir, "test.md"))
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -314,7 +315,7 @@ func TestCmdMetaWithData(t *testing.T) {
 		},
 	})
 
-	stdout, _, code := runCmd(t, "meta", filepath.Join(dir, "doc.md"))
+	stdout, _, code := runCmd(t, "doc", "meta", filepath.Join(dir, "doc.md"))
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -331,7 +332,7 @@ func TestCmdMetaRejectsRelativePath(t *testing.T) {
 	dir := setupTestKB(t)
 	createTestFile(t, dir, "doc.md", "# Test")
 
-	_, stderr, code := runCmd(t, "meta", "doc.md")
+	_, stderr, code := runCmd(t, "doc", "meta", "doc.md")
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
 	}
@@ -463,6 +464,94 @@ func TestCmdSearchNoResults(t *testing.T) {
 	}
 }
 
+// --- related command ---
+
+func TestCmdRelatedDocs(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "a.md", "# A")
+	createTestFile(t, dir, "b.md", "# B")
+	createTestFile(t, dir, "c.md", "# C")
+	writeTestRelations(t, dir, map[string]interface{}{
+		"a.md": []interface{}{
+			map[string]interface{}{"source": "a.md", "target": "b.md", "score": 0.8, "reason": "linked", "sharedTags": []string{"x"}},
+		},
+	})
+
+	stdout, _, code := runCmd(t, "related", "docs", filepath.Join(dir, "a.md"))
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["total"].(float64) != 1 {
+		t.Errorf("total = %v, want 1", result["total"])
+	}
+	related := result["related"].([]interface{})
+	if len(related) != 1 {
+		t.Errorf("related count = %v, want 1", len(related))
+	}
+}
+
+func TestCmdRelatedDocsOutgoingOnly(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "a.md", "# A")
+	createTestFile(t, dir, "b.md", "# B")
+	createTestFile(t, dir, "c.md", "# C")
+	writeTestRelations(t, dir, map[string]interface{}{
+		"a.md": []interface{}{
+			map[string]interface{}{"source": "a.md", "target": "b.md", "score": 0.8, "reason": "", "sharedTags": []string{}},
+		},
+		"c.md": []interface{}{
+			map[string]interface{}{"source": "c.md", "target": "a.md", "score": 0.6, "reason": "", "sharedTags": []string{}},
+		},
+	})
+
+	stdout, _, code := runCmd(t, "related", "docs", filepath.Join(dir, "a.md"))
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["total"].(float64) != 1 {
+		t.Errorf("total = %v, want 1 (only b.md outgoing, not c.md incoming)", result["total"])
+	}
+	related := result["related"].([]interface{})
+	if len(related) != 1 || !strings.Contains(related[0].(string), "b.md") {
+		t.Errorf("expected b.md in related, got %v", related)
+	}
+}
+
+func TestCmdRelatedTags(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "doc1.md", "# Doc1")
+	createTestFile(t, dir, "doc2.md", "# Doc2")
+	writeTestMeta(t, dir, map[string]interface{}{
+		"doc1.md": map[string]interface{}{"title": "Doc1", "tags": []string{"api", "design"}},
+		"doc2.md": map[string]interface{}{"title": "Doc2", "tags": []string{"api"}},
+	})
+
+	stdout, _, code := runCmd(t, "related", "tags")
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["totalTags"].(float64) != 2 {
+		t.Errorf("totalTags = %v, want 2", result["totalTags"])
+	}
+}
+
+func TestCmdRelatedDocsNoRelations(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "a.md", "# A")
+
+	stdout, _, code := runCmd(t, "related", "docs", filepath.Join(dir, "a.md"))
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["total"].(float64) != 0 {
+		t.Errorf("total = %v, want 0", result["total"])
+	}
+}
+
 // --- relation command ---
 
 func TestCmdRelationOutgoing(t *testing.T) {
@@ -475,7 +564,7 @@ func TestCmdRelationOutgoing(t *testing.T) {
 		},
 	})
 
-	stdout, _, code := runCmd(t, "relation", filepath.Join(dir, "a.md"))
+	stdout, _, code := runCmd(t, "doc", "relation", filepath.Join(dir, "a.md"))
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -498,7 +587,7 @@ func TestCmdRelationIncoming(t *testing.T) {
 		},
 	})
 
-	stdout, _, code := runCmd(t, "relation", filepath.Join(dir, "b.md"))
+	stdout, _, code := runCmd(t, "doc", "relation", filepath.Join(dir, "b.md"))
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -512,7 +601,7 @@ func TestCmdRelationRejectsRelativePath(t *testing.T) {
 	dir := setupTestKB(t)
 	createTestFile(t, dir, "a.md", "# A")
 
-	_, stderr, code := runCmd(t, "relation", "a.md")
+	_, stderr, code := runCmd(t, "doc", "relation", "a.md")
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
 	}
@@ -550,7 +639,7 @@ func TestCmdNotInitialized(t *testing.T) {
 	os.Chdir(dir)
 	t.Cleanup(func() { os.Chdir(oldDir) })
 
-	_, stderr, code := runCmd(t, "ls")
+	_, stderr, code := runCmd(t, "doc", "ls")
 	if code != 2 {
 		t.Fatalf("expected exit code 2, got %d", code)
 	}
@@ -581,7 +670,7 @@ func TestCmdWithKBFlag(t *testing.T) {
 	os.Chdir(projectDir)
 	t.Cleanup(func() { os.Chdir(oldDir) })
 
-	stdout, _, code := runCmd(t, "--kb", "mykb", "ls")
+	stdout, _, code := runCmd(t, "--kb", "mykb", "doc", "ls")
 	if code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
@@ -610,7 +699,7 @@ func TestCmdWithKBFlagNotFound(t *testing.T) {
 	os.Chdir(projectDir)
 	t.Cleanup(func() { os.Chdir(oldDir) })
 
-	_, stderr, code := runCmd(t, "--kb", "nonexistent", "ls")
+	_, stderr, code := runCmd(t, "--kb", "nonexistent", "doc", "ls")
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
 	}
@@ -731,7 +820,7 @@ func TestCmdKBAmbiguous(t *testing.T) {
 	os.Chdir(projectDir)
 	t.Cleanup(func() { os.Chdir(oldDir) })
 
-	_, stderr, code := runCmd(t, "ls")
+	_, stderr, code := runCmd(t, "doc", "ls")
 	if code != 1 {
 		t.Fatalf("expected exit code 1, got %d", code)
 	}

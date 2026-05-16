@@ -24,8 +24,8 @@ description: MindStack CLI 工具使用，用于 AI codegen 工具操作 markdow
 使用命令前，当前工作目录（或其父目录）必须存在 `.mindstack/config.yaml`。关联多个知识库时需要通过 `--kb <name>` 指定目标：
 
 ```bash
-mindstack --kb kb1 ls
-mindstack --kb kb2 meta /path/to/kb2/docs/example.md
+mindstack --kb kb1 doc ls
+mindstack --kb kb2 doc meta /path/to/kb2/docs/example.md
 ```
 
 仅关联单个知识库时 `--kb` 可省略。
@@ -49,7 +49,7 @@ Exit code：0 成功，1 用户错误，2 未初始化，3 LLM 不可用。
 
 **CLI 不提供 read、write 和 edit 命令。** 所有返回的文档路径都是绝对路径，直接使用 Read/Write/Edit 工具操作这些路径：
 
-- 读取文档：对 `ls`、`search`、`meta`、`relation` 等命令返回的绝对路径调用 Read 工具
+- 读取文档：对 `doc ls`、`search`、`doc meta`、`doc relation` 等命令返回的绝对路径调用 Read 工具
 - 写入文档：对要创建/覆盖的绝对路径调用 Write 工具
 - 编辑文档：对绝对路径调用 Edit 工具
 
@@ -79,13 +79,15 @@ mindstack info
 
 `documentCount` 统计的是有元数据的文档数，不一定等于文件系统中所有 markdown 文件数。
 
-#### `mindstack ls [path]`
+### 文档操作
+
+#### `mindstack doc ls [path]`
 
 列出 markdown 文件（`.md` / `.markdown`）和目录。目录优先，按名称字母排序。不包含隐藏目录和 `.mindstack/`。
 
 ```bash
-mindstack ls
-mindstack ls docs/
+mindstack doc ls
+mindstack doc ls docs/
 ```
 
 成功输出：
@@ -197,12 +199,12 @@ mindstack ack "what is the api retry policy"
 
 ### 元数据
 
-#### `mindstack meta <path>`
+#### `mindstack doc meta <path>`
 
-查看文档元数据。路径为**绝对路径**（如 `ls`、`search` 返回的 `path`），文件必须存在。元数据由 `sync` 通过 LLM 生成。
+查看文档元数据。路径为**绝对路径**（如 `doc ls`、`search` 返回的 `path`），文件必须存在。元数据由 `sync` 通过 LLM 生成。
 
 ```bash
-mindstack meta /path/to/kb/docs/example.md
+mindstack doc meta /path/to/kb/docs/example.md
 ```
 
 有元数据时：
@@ -250,12 +252,12 @@ mindstack tags
 
 ### 文档关联
 
-#### `mindstack relation <path>`
+#### `mindstack doc relation <path>`
 
-查看指定文档的入向和出向关联。路径为**绝对路径**（如 `ls`、`search` 返回的 `path`），文件必须存在。
+查看指定文档的入向和出向关联。路径为**绝对路径**（如 `doc ls`、`search` 返回的 `path`），文件必须存在。
 
 ```bash
-mindstack relation /path/to/kb/docs/example.md
+mindstack doc relation /path/to/kb/docs/example.md
 ```
 
 成功输出：
@@ -273,14 +275,32 @@ mindstack relation /path/to/kb/docs/example.md
 }
 ```
 
+### 知识探索
+
+#### `mindstack related tags`
+
+列出所有标签及其文档数量（与 `tags` 命令等价）。
+
+```bash
+mindstack related tags
+```
+
+#### `mindstack related docs <doc-path>`
+
+列出指定文档的出向关联文档。
+
+```bash
+mindstack related docs /path/to/kb/docs/example.md
+```
+
 ### 同步
 
 #### `mindstack sync`
 
 使用 LLM 生成文档元数据和关联关系。分两阶段：
 
-1. **Meta 阶段**：扫描 markdown 文件，对内容变化的文档生成 title/summary/tags。新文档默认 status 为 "active"。自动清理已删除文件的元数据。
-2. **Relation 阶段**：对变更文档，找到共享标签的候选文档，LLM 评分关联。
+1. **Meta 阶段**：扫描 markdown 文件，对内容变化的文档生成 title/summary/tags/aliases。新文档默认 status 为 "active"。自动清理已删除文件的元数据。
+2. **Relation 阶段**：对变更文档，找到共享标签的候选文档，LLM 评分关联并生成关系类型。
 
 进度输出到 stderr：
 
@@ -308,20 +328,20 @@ mindstack relation /path/to/kb/docs/example.md
 ### 浏览和读取
 
 ```bash
-mindstack ls                                        # 列出文档结构，获取绝对路径
+mindstack doc ls                                          # 列出文档结构，获取绝对路径
 # 对返回的路径直接调用 Read 工具读取内容
-mindstack meta /path/to/kb/docs/interesting.md      # 查看元数据（输入绝对路径）
-mindstack relation /path/to/kb/docs/interesting.md  # 查看关联（输入绝对路径）
+mindstack doc meta /path/to/kb/docs/interesting.md        # 查看元数据（输入绝对路径）
+mindstack doc relation /path/to/kb/docs/interesting.md    # 查看关联（输入绝对路径）
 ```
 
 ### 搜索和探索
 
 ```bash
-mindstack search "api"                              # 标签搜索，返回匹配文档的绝对路径
-mindstack search "api,rest"                         # 多标签 AND 搜索
-mindstack search "keyword" --fulltext               # 全文搜索
+mindstack search "api"                                # 标签搜索，返回匹配文档的绝对路径
+mindstack search "api,rest"                           # 多标签 AND 搜索
+mindstack search "keyword" --fulltext                 # 全文搜索
 # 对搜索结果中的路径调用 Read 工具读取内容
-mindstack relation /path/to/kb/docs/api/auth.md     # 探索关联文档（输入绝对路径）
+mindstack doc relation /path/to/kb/docs/api/auth.md   # 探索关联文档（输入绝对路径）
 ```
 
 ### 用自然语言提问
@@ -357,8 +377,8 @@ mindstack tags       # 查看标签分布
 ## 注意事项
 
 - **路径**：所有命令返回的文档路径均为绝对路径，可直接用于 Read/Write/Edit 工具
-- **输入路径**：`meta`、`relation` 等命令的输入路径为绝对路径（直接传入 `ls` / `search` 返回的 `path`）
-- **`--kb` 位置**：必须在子命令之前 `mindstack --kb name ls`，不能放在后面
-- **`meta` found: false**：exit 0 不是错误，表示文档尚未 sync，可执行 `sync` 生成
+- **输入路径**：`doc meta`、`doc relation` 等命令的输入路径为绝对路径（直接传入 `doc ls` / `search` 返回的 `path`）
+- **`--kb` 位置**：必须在子命令之前 `mindstack --kb name doc ls`，不能放在后面
+- **`doc meta` found: false**：exit 0 不是错误，表示文档尚未 sync，可执行 `sync` 生成
 - **sync 幂等**：sync 自动跳过未修改的文档，可安全重复执行
 - **sync 截断**：超长文档可能被截断发给 LLM，影响摘要质量

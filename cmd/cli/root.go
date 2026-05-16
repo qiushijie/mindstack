@@ -38,11 +38,9 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(linkCmd)
 	rootCmd.AddCommand(infoCmd)
-	rootCmd.AddCommand(lsCmd)
-	rootCmd.AddCommand(metaCmd)
+	rootCmd.AddCommand(docCmd)
 	rootCmd.AddCommand(tagsCmd)
 	rootCmd.AddCommand(searchCmd)
-	rootCmd.AddCommand(relationCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(ackCmd)
 }

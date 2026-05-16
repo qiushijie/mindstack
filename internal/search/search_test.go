@@ -108,5 +108,3 @@ func TestSearchByTag_NoMatch(t *testing.T) {
 		t.Fatalf("expected 0, got %d", result.Total)
 	}
 }
-
-

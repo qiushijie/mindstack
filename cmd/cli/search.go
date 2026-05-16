@@ -16,7 +16,16 @@ var searchFulltext bool
 var searchCmd = &cobra.Command{
 	Use:   "search <query>",
 	Short: "Search documents by tag (comma-separated for AND) or full text",
-	Args:  cobra.ExactArgs(1),
+	Long: `Search documents by tag or full text.
+
+Tag search (default):
+  mindstack search <tag>
+  mindstack search <tag1>,<tag2>     -- AND semantics
+  mindstack search "tag1 , tag2"     -- spaces are trimmed
+
+Full text search:
+  mindstack search --fulltext <keyword>`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		root := requireRoot()
 

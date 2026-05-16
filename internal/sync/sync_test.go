@@ -608,7 +608,7 @@ func newMockLLMService(t *testing.T, responseContent string) (*llm.Service, *htt
 }
 
 func TestGenerateMeta_Success(t *testing.T) {
-	content := `{"title":"Test Document","summary":"A test document for unit testing.","tags":["test","unit-test","mock"]}`
+	content := `{"title":"Test Document","summary":"A test document for unit testing.","tags":["test","unit-test","mock"],"aliases":["testing"]}`
 	svc, server := newMockLLMService(t, content)
 	defer server.Close()
 
@@ -625,27 +625,31 @@ func TestGenerateMeta_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expected: processing -> done -> meta complete -> relation complete
-	if len(progresses) != 4 {
-		t.Fatalf("expected 4 progress events, got %d", len(progresses))
+	// Must contain: processing -> done -> meta complete -> relation complete
+	var foundProcessing, foundDone, foundMetaComplete, foundRelationComplete bool
+	for _, p := range progresses {
+		switch {
+		case p.Status == "processing" && p.File == "example.md":
+			foundProcessing = true
+		case p.Status == "done" && p.Summary == "A test document for unit testing.":
+			foundDone = true
+		case p.Status == "complete" && p.Phase == "meta":
+			foundMetaComplete = true
+		case p.Status == "complete" && p.Phase == "relation":
+			foundRelationComplete = true
+		}
 	}
-	if progresses[0].Status != "processing" {
-		t.Fatalf("progress[0]: expected processing, got %s", progresses[0].Status)
+	if !foundProcessing {
+		t.Fatal("expected processing event for example.md")
 	}
-	if progresses[0].File != "example.md" {
-		t.Fatalf("progress[0]: expected file example.md, got %s", progresses[0].File)
+	if !foundDone {
+		t.Fatal("expected done event with correct summary")
 	}
-	if progresses[1].Status != "done" {
-		t.Fatalf("progress[1]: expected done, got %s", progresses[1].Status)
+	if !foundMetaComplete {
+		t.Fatalf("expected meta complete event, got events: %v", progresses)
 	}
-	if progresses[1].Summary != "A test document for unit testing." {
-		t.Fatalf("progress[1]: unexpected summary: %s", progresses[1].Summary)
-	}
-	if progresses[2].Status != "complete" || progresses[2].Phase != "meta" {
-		t.Fatalf("progress[2]: expected meta complete, got status=%s phase=%s", progresses[2].Status, progresses[2].Phase)
-	}
-	if progresses[3].Status != "complete" || progresses[3].Phase != "relation" {
-		t.Fatalf("progress[3]: expected relation complete, got status=%s phase=%s", progresses[3].Status, progresses[3].Phase)
+	if !foundRelationComplete {
+		t.Fatalf("expected relation complete event, got events: %v", progresses)
 	}
 
 	// Verify metadata was saved correctly
@@ -667,6 +671,7 @@ func TestGenerateMeta_Success(t *testing.T) {
 	}
 }
 
+
 func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 	metaCallCount := 0
 	relationCallCount := 0
@@ -679,14 +684,19 @@ func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 		}
 		json.NewDecoder(r.Body).Decode(&reqBody)
 
-		isRelationPrompt := len(reqBody.Messages) > 0 && strings.Contains(reqBody.Messages[0].Content, "Evaluate how related it is to each")
+		promptContent := ""
+		if len(reqBody.Messages) > 0 {
+			promptContent = reqBody.Messages[0].Content
+		}
+
+		isRelationPrompt := strings.Contains(promptContent, "Evaluate how related it is to each")
 
 		var responseContent string
 		if isRelationPrompt {
 			relationCallCount++
 			// Determine the source doc from the prompt line "- path: \"xxx\"" to return matching target
 			var targetDoc string
-			if strings.Contains(reqBody.Messages[0].Content, `- path: "a.md"`) {
+			if strings.Contains(promptContent, `- path: "a.md"`) {
 				targetDoc = "b.md"
 			} else {
 				targetDoc = "a.md"

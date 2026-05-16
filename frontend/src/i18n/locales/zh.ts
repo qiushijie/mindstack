@@ -264,5 +264,7 @@ export default {
     incoming: '入向',
     openInEditor: '在编辑器中打开',
     noSearchResults: '未找到匹配的文档',
+    relationType: '关系类型',
+    allTypes: '全部类型',
   },
 }

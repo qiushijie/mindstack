@@ -13,9 +13,9 @@ type SearchItem struct {
 	Summary string `json:"summary"`
 }
 
-// SearchResult holds tag search results.
+// SearchResult holds search results.
 type SearchResult struct {
-	Tag   string       `json:"tag"`
+	Tag   string       `json:"tag,omitempty"`
 	Items []SearchItem `json:"items"`
 	Total int          `json:"total"`
 }

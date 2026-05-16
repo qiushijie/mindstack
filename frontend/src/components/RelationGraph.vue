@@ -15,18 +15,21 @@ const {
   nodes,
   relations,
   allTags,
+  allRelationTypes,
   loading,
   error,
   loadData,
   getRelationsForDoc,
   getRelatedDocs,
   getNode,
+  getRelationTypeColor,
 } = useRelations()
 const { selectFile, rootPath } = useFileTree()
 
 const selectedPath = ref<string | null>(null)
 const searchQuery = ref('')
 const searchFocused = ref(false)
+const selectedRelationType = ref<string>('')
 const containerRef = ref<HTMLElement | null>(null)
 const graphError = ref('')
 const zoomLevel = ref(1)
@@ -52,7 +55,11 @@ const filteredNodes = computed(() => {
 const filteredPaths = computed(() => new Set(filteredNodes.value.map(n => n.path)))
 
 const visibleRelations = computed(() =>
-  relations.value.filter(r => filteredPaths.value.has(r.source) && filteredPaths.value.has(r.target)),
+  relations.value.filter(r => {
+    if (!filteredPaths.value.has(r.source) || !filteredPaths.value.has(r.target)) return false
+    if (selectedRelationType.value && r.type !== selectedRelationType.value) return false
+    return true
+  }),
 )
 
 const graphData = computed(() => {
@@ -68,6 +75,7 @@ const graphData = computed(() => {
     score: r.score,
     reason: r.reason,
     sharedTags: r.sharedTags,
+    type: r.type,
   }))
   return { nodes: fgNodes, links: fgLinks }
 })
@@ -80,6 +88,15 @@ const selectedNode = computed<DocNode | null>(() => {
 const selectedRelations = computed(() => {
   if (!selectedPath.value) return []
   return getRelationsForDoc(selectedPath.value).sort((a, b) => b.score - a.score)
+})
+
+const selectedRelationTypeSet = computed(() => {
+  const types = new Set<string>()
+  for (const rel of selectedRelations.value) {
+    const type = rel.source === selectedPath.value ? rel.type : rel.incomingType
+    if (type) types.add(type)
+  }
+  return Array.from(types).sort()
 })
 
 const selectedSharedTags = computed(() => {
@@ -316,18 +333,18 @@ function doInitGraph() {
       .linkColor((link: any) => {
         const isSelected =
           selectedPath.value === link.source.id || selectedPath.value === link.target.id
-        const accent = getThemeColors().accentPrimary
-        if (isSelected) return hexToRgba(accent, 0.6)
-        return hexToRgba(accent, 0.15)
+        if (isSelected) return hexToRgba(getThemeColors().accentPrimary, 0.6)
+        const typeColor = link.type ? getRelationTypeColor(link.type) : getThemeColors().accentPrimary
+        return hexToRgba(typeColor, 0.25)
       })
       .linkDirectionalArrowLength(4)
       .linkDirectionalArrowRelPos(1)
       .linkDirectionalArrowColor((link: any) => {
         const isSelected =
           selectedPath.value === link.source.id || selectedPath.value === link.target.id
-        const accent = getThemeColors().accentPrimary
-        if (isSelected) return hexToRgba(accent, 0.6)
-        return hexToRgba(accent, 0.15)
+        if (isSelected) return hexToRgba(getThemeColors().accentPrimary, 0.6)
+        const typeColor = link.type ? getRelationTypeColor(link.type) : getThemeColors().accentPrimary
+        return hexToRgba(typeColor, 0.25)
       })
       .linkLineDash((link: any) => {
         const isSelected =
@@ -408,9 +425,16 @@ watch(selectedPath, () => {
     .linkColor((link: any) => {
       const isSelected =
         selectedPath.value === link.source.id || selectedPath.value === link.target.id
-      const accent = getThemeColors().accentPrimary
-      if (isSelected) return hexToRgba(accent, 0.6)
-      return hexToRgba(accent, 0.15)
+      if (isSelected) return hexToRgba(getThemeColors().accentPrimary, 0.6)
+      const typeColor = link.type ? getRelationTypeColor(link.type) : getThemeColors().accentPrimary
+      return hexToRgba(typeColor, 0.25)
+    })
+    .linkDirectionalArrowColor((link: any) => {
+      const isSelected =
+        selectedPath.value === link.source.id || selectedPath.value === link.target.id
+      if (isSelected) return hexToRgba(getThemeColors().accentPrimary, 0.6)
+      const typeColor = link.type ? getRelationTypeColor(link.type) : getThemeColors().accentPrimary
+      return hexToRgba(typeColor, 0.25)
     })
     .linkWidth((link: any) => {
       const isSelected =
@@ -496,6 +520,12 @@ onUnmounted(() => {
             </svg>
           </button>
         </div>
+        <div v-if="allRelationTypes.length > 0" class="graph-type-filter">
+          <select v-model="selectedRelationType" class="graph-type-select">
+            <option value="">{{ t('relationGraph.allTypes') }}</option>
+            <option v-for="rt in allRelationTypes" :key="rt" :value="rt">{{ rt }}</option>
+          </select>
+        </div>
         <div v-if="graphError" class="graph-error">{{ graphError }}</div>
         <div v-else-if="loading" class="graph-loading">{{ t('relationGraph.loading') }}</div>
         <div v-else-if="error" class="graph-error">{{ error }}</div>
@@ -554,7 +584,16 @@ onUnmounted(() => {
           >
             <div class="relation-top">
               <span class="relation-name">{{ getNode(getOtherDoc(rel))?.title || getOtherDoc(rel) }}</span>
-              <span class="relation-badge">{{ getScoreDisplay(rel) }}</span>
+              <div class="relation-badges">
+                <span
+                  v-if="rel.type || rel.incomingType"
+                  class="relation-type-badge"
+                  :style="{ backgroundColor: getRelationTypeColor(rel.source === selectedPath ? rel.type : rel.incomingType) + '20', color: getRelationTypeColor(rel.source === selectedPath ? rel.type : rel.incomingType) }"
+                >
+                  {{ rel.source === selectedPath ? rel.type : rel.incomingType }}
+                </span>
+                <span class="relation-badge">{{ getScoreDisplay(rel) }}</span>
+              </div>
             </div>
             <div v-if="rel.reason" class="relation-reason">{{ rel.reason }}</div>
           </div>
@@ -602,6 +641,23 @@ onUnmounted(() => {
             <div class="legend-item">
               <span class="legend-dot gray" />
               <span>{{ t('relationGraph.incoming') }}</span>
+            </div>
+          </div>
+
+          <div v-if="selectedRelationTypeSet.length > 0" class="detail-legend type-legend">
+            <div class="legend-item">
+              <span class="detail-label">{{ t('relationGraph.relationType') }}</span>
+            </div>
+            <div
+              v-for="rt in selectedRelationTypeSet"
+              :key="rt"
+              class="legend-item"
+            >
+              <span
+                class="legend-dot"
+                :style="{ backgroundColor: getRelationTypeColor(rt) }"
+              />
+              <span>{{ rt }}</span>
             </div>
           </div>
 
@@ -680,6 +736,30 @@ onUnmounted(() => {
 .graph-search-clear:hover {
   color: var(--foreground-primary);
   background-color: var(--surface-hover);
+}
+
+/* Type Filter */
+.graph-type-filter {
+  position: absolute;
+  top: 56px;
+  right: 16px;
+  z-index: 10;
+}
+
+.graph-type-select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--surface-primary);
+  color: var(--foreground-primary);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-sans);
+  outline: none;
+  cursor: pointer;
+}
+
+.graph-type-select:focus {
+  border-color: var(--accent-primary);
 }
 
 /* Content Layout */
@@ -897,6 +977,13 @@ onUnmounted(() => {
   color: var(--foreground-primary);
 }
 
+.relation-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .relation-badge {
   font-size: var(--font-size-xs);
   font-weight: 600;
@@ -904,6 +991,14 @@ onUnmounted(() => {
   padding: 2px 8px;
   border-radius: 4px;
   background-color: var(--surface-primary);
+  white-space: nowrap;
+}
+
+.relation-type-badge {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
   white-space: nowrap;
 }
 
@@ -992,6 +1087,15 @@ onUnmounted(() => {
 
 .legend-dot.gray {
   background-color: var(--foreground-tertiary);
+}
+
+.type-legend {
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.type-legend .detail-label {
+  letter-spacing: 0.5px;
 }
 
 /* Open File Button */

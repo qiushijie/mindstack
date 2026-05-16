@@ -18,12 +18,14 @@ describe('useRelations', () => {
   let relations: ReturnType<typeof useRelations>['relations']
   let nodes: ReturnType<typeof useRelations>['nodes']
   let allTags: ReturnType<typeof useRelations>['allTags']
+  let allRelationTypes: ReturnType<typeof useRelations>['allRelationTypes']
   let loading: ReturnType<typeof useRelations>['loading']
   let error: ReturnType<typeof useRelations>['error']
   let loadData: ReturnType<typeof useRelations>['loadData']
   let getRelationsForDoc: ReturnType<typeof useRelations>['getRelationsForDoc']
   let getRelatedDocs: ReturnType<typeof useRelations>['getRelatedDocs']
   let getNode: ReturnType<typeof useRelations>['getNode']
+  let getRelationTypeColor: ReturnType<typeof useRelations>['getRelationTypeColor']
 
   beforeEach(() => {
     vi.mocked(GetDocumentMetas).mockReset()
@@ -34,12 +36,14 @@ describe('useRelations', () => {
     relations = composable.relations
     nodes = composable.nodes
     allTags = composable.allTags
+    allRelationTypes = composable.allRelationTypes
     loading = composable.loading
     error = composable.error
     loadData = composable.loadData
     getRelationsForDoc = composable.getRelationsForDoc
     getRelatedDocs = composable.getRelatedDocs
     getNode = composable.getNode
+    getRelationTypeColor = composable.getRelationTypeColor
 
     // Reset module-level state
     metas.value = new Map()
@@ -56,7 +60,7 @@ describe('useRelations', () => {
       ])
       const relsJSON = JSON.stringify({
         'a.md': [
-          { source: 'a.md', target: 'b.md', score: 0.8, reason: 'related', sharedTags: ['tag1'] },
+          { source: 'a.md', target: 'b.md', score: 0.8, reason: 'related', sharedTags: ['tag1'], type: 'references' },
         ],
       })
 
@@ -77,6 +81,7 @@ describe('useRelations', () => {
         score: 0.8,
         reason: 'related',
         sharedTags: ['tag1'],
+        type: 'references',
       })
     })
 
@@ -413,6 +418,84 @@ describe('useRelations', () => {
 
       // colorMap persists, so same path gets same color
       expect(color1).toBe(color2)
+    })
+  })
+
+  describe('allRelationTypes computed', () => {
+    it('extracts unique relation types', () => {
+      relations.value = [
+        { source: 'a.md', target: 'b.md', score: 0.8, reason: '', sharedTags: [], type: 'references' },
+        { source: 'a.md', target: 'c.md', score: 0.5, reason: '', sharedTags: [], type: 'extends' },
+        { source: 'b.md', target: 'c.md', score: 0.3, reason: '', sharedTags: [], type: 'references' },
+      ]
+
+      expect(allRelationTypes.value).toEqual(['extends', 'references'])
+    })
+
+    it('returns empty array when no types', () => {
+      relations.value = [
+        { source: 'a.md', target: 'b.md', score: 0.8, reason: '', sharedTags: [] },
+      ]
+
+      expect(allRelationTypes.value).toEqual([])
+    })
+
+    it('returns empty array when no relations', () => {
+      relations.value = []
+
+      expect(allRelationTypes.value).toEqual([])
+    })
+  })
+
+  describe('getRelationTypeColor', () => {
+    it('returns color for known type', () => {
+      expect(getRelationTypeColor('references')).toBe('#3B82F6')
+      expect(getRelationTypeColor('extends')).toBe('#22C55E')
+      expect(getRelationTypeColor('depends-on')).toBe('#EF4444')
+    })
+
+    it('returns accent-primary for unknown type', () => {
+      expect(getRelationTypeColor('unknown-type')).toBe('var(--accent-primary)')
+    })
+
+    it('returns accent-primary for undefined type', () => {
+      expect(getRelationTypeColor(undefined)).toBe('var(--accent-primary)')
+    })
+  })
+
+  describe('getRelationsForDoc with type fields', () => {
+    it('merges bidirectional relations with incomingType', () => {
+      relations.value = [
+        { source: 'a.md', target: 'b.md', score: 0.8, reason: 'out', sharedTags: [], type: 'references' },
+        { source: 'b.md', target: 'a.md', score: 0.6, reason: 'in', sharedTags: [], type: 'extends' },
+      ]
+
+      const result = getRelationsForDoc('a.md')
+
+      expect(result).toHaveLength(1)
+      expect(result[0].type).toBe('references')
+      expect(result[0].incomingType).toBe('extends')
+    })
+
+    it('includes type on outgoing-only relations', () => {
+      relations.value = [
+        { source: 'a.md', target: 'b.md', score: 0.8, reason: '', sharedTags: [], type: 'contrasts' },
+      ]
+
+      const result = getRelationsForDoc('a.md')
+
+      expect(result[0].type).toBe('contrasts')
+      expect(result[0].incomingType).toBeUndefined()
+    })
+
+    it('includes incomingType on incoming-only relations', () => {
+      relations.value = [
+        { source: 'b.md', target: 'a.md', score: 0.6, reason: '', sharedTags: [], type: 'depends-on' },
+      ]
+
+      const result = getRelationsForDoc('a.md')
+
+      expect(result[0].incomingType).toBe('depends-on')
     })
   })
 })

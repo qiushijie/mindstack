@@ -18,6 +18,7 @@ type Relation struct {
 	Score      float64  `json:"score"`
 	Reason     string   `json:"reason"`
 	SharedTags []string `json:"sharedTags"`
+	Type       string   `json:"type,omitempty"`
 }
 
 // Store maps source doc path to its relations.
