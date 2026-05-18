@@ -147,7 +147,7 @@ function computeMermaidDecorations(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = []
 
   for (const r of ranges) {
-    if (sel.from >= r.from && sel.to <= r.to) continue
+    if (sel.from >= r.from && sel.from < r.to) continue
 
     const widget = new MermaidPreviewWidget(r.content, r.from)
     const deco = Decoration.replace({ widget, block: true })

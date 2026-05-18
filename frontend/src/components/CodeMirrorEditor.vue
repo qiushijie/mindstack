@@ -306,7 +306,7 @@ function handleContextAction(action: string) {
           const sel = current.state.selection.main
           current.dispatch({ changes: { from: sel.from, to: sel.to, insert: text } })
         }
-      }).catch(() => {})
+      }).catch((err) => { console.warn('[Editor] Clipboard read failed:', err) })
       break
     case 'refresh':
       location.reload()

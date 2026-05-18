@@ -63,6 +63,22 @@ test.describe('Tab Bar', () => {
     await expect(page.locator('.tab-item')).toHaveCount(0)
   })
 
+  test('should close current tab via context menu', async ({ page }) => {
+    await openFileFromTree(page, 'readme.md')
+    await openFileFromTree(page, 'code.md')
+    await expect(page.locator('.tab-item')).toHaveCount(2)
+
+    // Right-click on the first tab and close it
+    await page.locator('.tab-item').nth(0).click({ button: 'right' })
+    await page.waitForTimeout(200)
+    await page.locator('.context-menu-item').filter({ hasText: '关闭当前' }).click()
+    await page.waitForTimeout(500)
+
+    // Only the second tab should remain
+    await expect(page.locator('.tab-item')).toHaveCount(1)
+    await expect(page.locator('.tab-item').locator('.tab-title')).toHaveText('code')
+  })
+
   test('should close other tabs via context menu', async ({ page }) => {
     await openFileFromTree(page, 'readme.md')
     await openFileFromTree(page, 'code.md')

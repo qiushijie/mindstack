@@ -170,7 +170,12 @@ async function syncRootToFile(filePath: string) {
 
 if (import.meta.env.DEV) {
   ;(window as any).__setTestWorkspace = async (path: string, nodes: TreeNode[]) => {
-    await SetWorkspaceRoot(path)
+    try {
+      await SetWorkspaceRoot(path)
+    } catch (err) {
+      // Wails bindings may be unavailable when Playwright connects to Vite dev server directly
+      console.warn('[FileTree] SetWorkspaceRoot failed:', err)
+    }
     rootPath.value = path
     treeData.value = nodes
   }
@@ -187,6 +192,9 @@ if (import.meta.env.DEV) {
     if (editorAdapter) {
       editorAdapter.setContent('')
     }
+  }
+  ;(window as any).__setCopiedFilePath = (path: string) => {
+    copiedFilePath.value = path
   }
 }
 
@@ -238,8 +246,9 @@ export function useFileTree() {
       config.lastFolderPath = rootPath.value
       config.lastFilePath = selectedFilePath.value
       await SaveConfig(JSON.stringify(config))
-    } catch {
+    } catch (err) {
       // Wails bindings unavailable (e.g. dev mode without Go backend)
+      console.warn('[FileTree] Save config failed:', err)
     }
   }
 
@@ -263,8 +272,8 @@ export function useFileTree() {
           navigateTo('editor')
         }
       }
-    } catch {
-      // ignore restore errors
+    } catch (err) {
+      console.warn('[FileTree] Restore state failed:', err)
     }
   }
 
@@ -316,9 +325,10 @@ export function useFileTree() {
     let content = ''
     try {
       content = await loadTabContent(path)
-    } catch {
+    } catch (err) {
       // Wails bindings (ReadFileContent) unavailable in dev mode.
       // Open the tab with empty content so file selection still works.
+      console.warn('[FileTree] Load tab content failed:', err)
     }
     if (isNew) {
       tabContentCache.set(path, content)
@@ -462,7 +472,8 @@ export function useFileTree() {
           tabContentCache.set(currentPath, diskContent)
           applyContent(currentPath, diskContent)
         }
-      } catch {
+      } catch (err) {
+        console.warn('[FileTree] Reload disk content failed:', err)
         tabContentCache.set(currentPath, '')
         applyContent(currentPath, '')
       }

@@ -1,5 +1,8 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { EditorState } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
+import { markdown } from '@codemirror/lang-markdown'
+import { GFM } from '@lezer/markdown'
 import katex from 'katex'
 import { mathPlugin, mathEditHandler, MathWidget, scanMathRanges } from '../mathWidget'
 import { createView } from '../../test-utils/helpers'
@@ -10,10 +13,16 @@ afterEach(() => {
 
 // --- scanMathRanges ---
 
+const md = () => markdown({ extensions: GFM })
+
+function createState(doc: string) {
+  return EditorState.create({ doc, extensions: [md()] })
+}
+
 describe('scanMathRanges', () => {
   it('detects inline math $...$', () => {
-    const state = EditorState.create({ doc: 'The $E=mc^2$ formula' })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState('The $E=mc^2$ formula')
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(1)
     expect(ranges[0]).toMatchObject({
       from: 4,
@@ -25,8 +34,8 @@ describe('scanMathRanges', () => {
 
   it('detects block math $$...$$', () => {
     const doc = '$$\nE=mc^2\n$$'
-    const state = EditorState.create({ doc })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState(doc)
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(1)
     expect(ranges[0]).toMatchObject({
       from: 0,
@@ -37,8 +46,8 @@ describe('scanMathRanges', () => {
   })
 
   it('detects multiple inline formulas', () => {
-    const state = EditorState.create({ doc: '$a$ and $b$' })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState('$a$ and $b$')
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(2)
     expect(ranges[0].content).toBe('a')
     expect(ranges[1].content).toBe('b')
@@ -46,62 +55,62 @@ describe('scanMathRanges', () => {
 
   it('detects multiple block formulas', () => {
     const doc = '$$a$$\n\n$$b$$'
-    const state = EditorState.create({ doc })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState(doc)
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(2)
     expect(ranges[0].content).toBe('a')
     expect(ranges[1].content).toBe('b')
   })
 
   it('ignores $ followed by space', () => {
-    const state = EditorState.create({ doc: 'Price is $ 100' })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState('Price is $ 100')
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(0)
   })
 
   it('ignores inline formula when closing $ preceded by space', () => {
-    const state = EditorState.create({ doc: '$a $' })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState('$a $')
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(0)
   })
 
   it('handles empty inline formula', () => {
-    const state = EditorState.create({ doc: '$$' })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState('$$')
+    const ranges = scanMathRanges(state)
     // $$ is block math start, but no closing $$ — should find nothing
     expect(ranges).toHaveLength(0)
   })
 
   it('handles single $ at end of document', () => {
-    const state = EditorState.create({ doc: 'text $' })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState('text $')
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(0)
   })
 
   it('handles unclosed inline math', () => {
-    const state = EditorState.create({ doc: '$unclosed' })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState('$unclosed')
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(0)
   })
 
   it('handles unclosed block math', () => {
-    const state = EditorState.create({ doc: '$$\nunclosed' })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState('$$\nunclosed')
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(0)
   })
 
   it('trims block math content', () => {
     const doc = '$$\n  a + b  \n$$'
-    const state = EditorState.create({ doc })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState(doc)
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(1)
     expect(ranges[0].content).toBe('a + b')
   })
 
   it('does not treat $ inside block math as inline', () => {
     const doc = '$$\na $ b\n$$'
-    const state = EditorState.create({ doc })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState(doc)
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(1)
     expect(ranges[0].isBlock).toBe(true)
     expect(ranges[0].content).toBe('a $ b')
@@ -109,8 +118,8 @@ describe('scanMathRanges', () => {
 
   it('handles adjacent block and inline math', () => {
     const doc = '$a$\n$$b$$'
-    const state = EditorState.create({ doc })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState(doc)
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(2)
     expect(ranges[0].isBlock).toBe(false)
     expect(ranges[0].content).toBe('a')
@@ -119,18 +128,42 @@ describe('scanMathRanges', () => {
   })
 
   it('returns empty array for plain text', () => {
-    const state = EditorState.create({ doc: 'Just plain text without any math' })
-    const ranges = scanMathRanges(state.doc)
+    const state = createState('Just plain text without any math')
+    const ranges = scanMathRanges(state)
     expect(ranges).toHaveLength(0)
+  })
+
+  it('ignores $ inside fenced code block', () => {
+    const doc = '```sql\nSELECT * FROM t WHERE id = $1 ORDER BY id LIMIT $2;\n```'
+    const state = createState(doc)
+    const ranges = scanMathRanges(state)
+    expect(ranges).toHaveLength(0)
+  })
+
+  it('ignores $ inside inline code', () => {
+    const state = createState('Use `$1` and `$2` as placeholders')
+    const ranges = scanMathRanges(state)
+    expect(ranges).toHaveLength(0)
+  })
+
+  it('detects math outside code blocks', () => {
+    const doc = '```sql\nSELECT $1;\n```\n\nThe formula $E=mc^2$ is famous.'
+    const state = createState(doc)
+    const ranges = scanMathRanges(state)
+    expect(ranges).toHaveLength(1)
+    expect(ranges[0].content).toBe('E=mc^2')
+    expect(ranges[0].isBlock).toBe(false)
   })
 })
 
 // --- MathWidget ---
 
+const mockView = { dispatch: () => {}, focus: () => {} } as unknown as EditorView
+
 describe('MathWidget', () => {
   it('toDOM creates span for inline math', () => {
     const widget = new MathWidget('E=mc^2', false, 10)
-    const dom = widget.toDOM()
+    const dom = widget.toDOM(mockView)
     expect(dom.tagName).toBe('SPAN')
     expect(dom.className).toBe('cm-math-inline')
     expect(dom.getAttribute('contenteditable')).toBe('false')
@@ -139,7 +172,7 @@ describe('MathWidget', () => {
 
   it('toDOM creates div for block math', () => {
     const widget = new MathWidget('E=mc^2', true, 20)
-    const dom = widget.toDOM()
+    const dom = widget.toDOM(mockView)
     expect(dom.tagName).toBe('DIV')
     expect(dom.className).toBe('cm-math-block')
     expect(dom.getAttribute('contenteditable')).toBe('false')
@@ -148,13 +181,13 @@ describe('MathWidget', () => {
 
   it('toDOM renders valid KaTeX for inline math', () => {
     const widget = new MathWidget('x^2', false, 0)
-    const dom = widget.toDOM()
+    const dom = widget.toDOM(mockView)
     expect(dom.querySelector('.katex')).not.toBeNull()
   })
 
   it('toDOM renders valid KaTeX for block math', () => {
     const widget = new MathWidget('\\sum_{i=1}^n i', true, 0)
-    const dom = widget.toDOM()
+    const dom = widget.toDOM(mockView)
     expect(dom.querySelector('.katex-display')).not.toBeNull()
   })
 
@@ -162,7 +195,7 @@ describe('MathWidget', () => {
     const original = katex.renderToString
     katex.renderToString = () => { throw new Error('mock katex error') }
     const widget = new MathWidget('x', false, 0)
-    const dom = widget.toDOM()
+    const dom = widget.toDOM(mockView)
     expect(dom.classList.contains('cm-math-error')).toBe(true)
     expect(dom.textContent).toBe('x')
     katex.renderToString = original
@@ -192,9 +225,9 @@ describe('MathWidget', () => {
     expect(a.eq(b)).toBe(false)
   })
 
-  it('ignoreEvent returns true', () => {
+  it('ignoreEvent returns false', () => {
     const widget = new MathWidget('a', false, 0)
-    expect(widget.ignoreEvent()).toBe(true)
+    expect(widget.ignoreEvent()).toBe(false)
   })
 })
 

@@ -140,7 +140,7 @@ async function selectLocale(key: Locale) {
 
 async function syncRemoteUrl() {
   await saveSettings()
-  await GitSetRemote(gitRemote.value).catch(() => {})
+  await GitSetRemote(gitRemote.value).catch((err) => { console.warn('[Settings] Failed to set git remote:', err) })
 }
 </script>
 

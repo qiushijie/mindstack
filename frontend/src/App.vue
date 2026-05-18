@@ -38,8 +38,8 @@ async function handleGitPull() {
     const gitInit = await GitCheckInit()
     if (!gitInit) return
     await GitPull()
-  } catch {
-    // silent fail
+  } catch (err) {
+    console.warn('[App] Git pull failed:', err)
   }
 }
 
@@ -63,8 +63,8 @@ async function handleGitPush() {
     }
 
     await GitPush()
-  } catch {
-    // silent fail
+  } catch (err) {
+    console.warn('[App] Git auto-commit/push failed:', err)
   }
 }
 
@@ -97,6 +97,8 @@ onMounted(async () => {
   ;(window as any).__setLocale = setLocale
   // Expose setRawMode for E2E tests to toggle raw mode without Wails bindings
   ;(window as any).__setRawMode = (v: boolean) => { rawMode.value = v }
+  // Expose showCommitDialog for E2E tests to open commit dialog without menu
+  ;(window as any).__testShowCommitDialog = () => { showCommitDialog.value = true }
 
   // HMR dev mode: Wails runtime may not be ready yet (window.go undefined),
   // causing LoadConfig() to fail silently. Retry when the runtime connects
@@ -120,7 +122,8 @@ onMounted(async () => {
   let pendingPath = ''
   try {
     pendingPath = await GetPendingOpenFile()
-  } catch {
+  } catch (err) {
+    console.warn('[App] Failed to get pending open file:', err)
     pendingPath = ''
   }
   if (pendingPath) {
@@ -260,8 +263,8 @@ onMounted(async () => {
       if (isInit) {
         await GitPull()
       }
-    } catch {
-      // silent fail on auto-pull
+    } catch (err) {
+      console.warn('[App] Auto git pull failed:', err)
     }
   }
 })
@@ -283,8 +286,8 @@ watch(rootPath, async (newPath) => {
         await GitInit(defaultBranch.value)
       }
     }
-  } catch {
-    // silent fail on git check
+  } catch (err) {
+    console.warn('[App] Git check/init failed:', err)
   }
 })
 </script>

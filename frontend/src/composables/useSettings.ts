@@ -113,7 +113,7 @@ export function useSettings() {
       if (s.locale) {
         locale.value = s.locale as Locale
         setLocale(locale.value)
-        SetLocale(locale.value).catch(() => {})
+        SetLocale(locale.value).catch((err) => { console.warn('[Settings] Failed to set locale:', err) })
       }
       if (s.theme === 'light' || s.theme === 'dark') {
         theme.value = s.theme
@@ -145,7 +145,7 @@ export function useSettings() {
   async function saveSettings() {
     await doSave()
     if (activeModelId.value) {
-      ReloadLLM().catch(() => {})
+      ReloadLLM().catch((err) => { console.warn('[Settings] Failed to reload LLM:', err) })
     }
   }
 
@@ -172,7 +172,7 @@ export function useSettings() {
 
   function activateModel(id: string) {
     activeModelId.value = id
-    doSave().then(() => ReloadLLM().catch(() => {}))
+    doSave().then(() => ReloadLLM().catch((err) => { console.warn('[Settings] Failed to reload LLM:', err) }))
   }
 
   function toggleShowKey(id: string) {
@@ -203,5 +203,5 @@ watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform
 watch(locale, (newLocale) => {
   if (!loaded) return
   setLocale(newLocale)
-  SetLocale(newLocale).catch(() => {})
+  SetLocale(newLocale).catch((err) => { console.warn('[Settings] Failed to set locale:', err) })
 })

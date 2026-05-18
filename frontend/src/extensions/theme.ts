@@ -76,7 +76,7 @@ function buildEditorTheme(dark: boolean) {
       userSelect: 'none',
     },
 
-    // Code block container
+    // Code block lines: background directly on each line, no gaps
     '.cm-code-block': {
       backgroundColor: 'var(--code-bg)',
       borderLeft: '1px solid var(--border-subtle)',
@@ -116,6 +116,34 @@ function buildEditorTheme(dark: boolean) {
       fontFamily: 'var(--font-mono)',
       fontSize: 'var(--font-size-sm)',
       color: 'var(--foreground-tertiary)',
+      cursor: 'pointer',
+      userSelect: 'none',
+    },
+    '.cm-code-lang-dropdown': {
+      position: 'absolute',
+      top: 'calc(100% + 4px)',
+      left: '0',
+      backgroundColor: 'var(--surface-primary)',
+      border: '1px solid var(--border-subtle)',
+      borderRadius: '6px',
+      padding: '4px 0',
+      boxShadow: dark ? '0 4px 16px rgba(0,0,0,0.4)' : '0 4px 16px rgba(0,0,0,0.1)',
+      zIndex: '100',
+      maxHeight: '220px',
+      overflowY: 'auto',
+      minWidth: '120px',
+      fontFamily: 'var(--font-mono)',
+      fontSize: 'var(--font-size-sm)',
+    },
+    '.cm-code-lang-item': {
+      padding: '5px 14px',
+      cursor: 'pointer',
+      color: 'var(--foreground-secondary)',
+      transition: 'background-color 0.1s',
+    },
+    '.cm-code-lang-item:hover, .cm-code-lang-item.active': {
+      backgroundColor: 'var(--surface-hover)',
+      color: 'var(--foreground-primary)',
     },
     '.cm-code-line': {
       fontFamily: 'var(--font-mono)',

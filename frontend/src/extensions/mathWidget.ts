@@ -1,5 +1,6 @@
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
 import { StateField, type EditorState, Range } from '@codemirror/state'
+import { syntaxTree } from '@codemirror/language'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 
@@ -12,7 +13,7 @@ export class MathWidget extends WidgetType {
     readonly pos: number,
   ) { super() }
 
-  toDOM() {
+  toDOM(view: EditorView) {
     const container = document.createElement(this.isBlock ? 'div' : 'span')
     container.className = this.isBlock ? 'cm-math-block' : 'cm-math-inline'
     container.dataset.pos = String(this.pos)
@@ -20,14 +21,23 @@ export class MathWidget extends WidgetType {
 
     try {
       const html = katex.renderToString(this.content, {
-        throwOnError: false,
+        throwOnError: true,
         displayMode: this.isBlock,
       })
       container.innerHTML = html
-    } catch {
+    } catch (err) {
+      console.error('[MathWidget] KaTeX render error:', err, 'content:', this.content)
       container.textContent = this.content
       container.classList.add('cm-math-error')
     }
+
+    container.addEventListener('click', (e) => {
+      e.stopPropagation()
+      view.dispatch({
+        selection: { anchor: this.pos + (this.isBlock ? 2 : 1) },
+      })
+      view.focus()
+    })
 
     return container
   }
@@ -36,7 +46,7 @@ export class MathWidget extends WidgetType {
     return other.content === this.content && other.isBlock === this.isBlock && other.pos === this.pos
   }
 
-  ignoreEvent() { return true }
+  ignoreEvent() { return false }
 }
 
 // --- Math range detection ---
@@ -48,20 +58,43 @@ interface MathRange {
   isBlock: boolean
 }
 
-export function scanMathRanges(doc: EditorState['doc']): MathRange[] {
-  const ranges: MathRange[] = []
+const CODE_NODE_NAMES = new Set(['FencedCode', 'InlineCode', 'CodeBlock'])
+
+function collectCodeRanges(state: EditorState): Array<{ from: number; to: number }> {
+  const codeRanges: Array<{ from: number; to: number }> = []
+  syntaxTree(state).iterate({
+    enter(node) {
+      if (CODE_NODE_NAMES.has(node.name)) {
+        codeRanges.push({ from: node.from, to: node.to })
+      }
+    },
+  })
+  return codeRanges
+}
+
+function isInCode(codeRanges: Array<{ from: number; to: number }>, pos: number): boolean {
+  for (const r of codeRanges) {
+    if (pos >= r.from && pos < r.to) return true
+  }
+  return false
+}
+
+export function scanMathRanges(state: EditorState): MathRange[] {
+  const codeRanges = collectCodeRanges(state)
+  const doc = state.doc
   const text = doc.toString()
+  const ranges: MathRange[] = []
   let i = 0
 
   while (i < text.length) {
-    if (text[i] === '$') {
+    if (text[i] === '$' && !isInCode(codeRanges, i)) {
       if (text[i + 1] === '$') {
         // Block math: $$ ... $$
         const start = i
         i += 2
         let found = false
         while (i < text.length - 1) {
-          if (text[i] === '$' && text[i + 1] === '$') {
+          if (text[i] === '$' && text[i + 1] === '$' && !isInCode(codeRanges, i)) {
             const end = i + 2
             ranges.push({
               from: start,
@@ -82,7 +115,7 @@ export function scanMathRanges(doc: EditorState['doc']): MathRange[] {
         i++
         let found = false
         while (i < text.length) {
-          if (text[i] === '$' && text[i - 1] !== ' ') {
+          if (text[i] === '$' && text[i - 1] !== ' ' && !isInCode(codeRanges, i)) {
             // End $ not preceded by space
             ranges.push({
               from: start,
@@ -107,7 +140,7 @@ export function scanMathRanges(doc: EditorState['doc']): MathRange[] {
 // --- StateField for decorations ---
 
 function computeMathDecorations(state: EditorState): DecorationSet {
-  const ranges = scanMathRanges(state.doc)
+  const ranges = scanMathRanges(state)
   const sel = state.selection.main
   const decorations: Range<Decoration>[] = []
 

@@ -39,18 +39,121 @@ class CheckboxWidget extends WidgetType {
   ignoreEvent() { return false }
 }
 
+const CODE_LANGUAGES = [
+  'text', 'javascript', 'typescript', 'python', 'go', 'rust',
+  'java', 'c', 'cpp', 'csharp', 'sql', 'json', 'yaml', 'toml',
+  'xml', 'html', 'css', 'scss', 'bash', 'shell', 'powershell',
+  'markdown', 'dockerfile', 'vim', 'lua', 'ruby', 'php', 'swift',
+  'kotlin', 'dart', 'elixir', 'haskell', 'r', 'matlab',
+]
+
+function changeLanguage(view: EditorView, nodeFrom: number, newLang: string) {
+  const tree = syntaxTree(view.state)
+  const doc = view.state.doc
+
+  tree.iterate({
+    enter(node) {
+      if (node.name !== 'FencedCode' || node.from !== nodeFrom) return
+      const langNode = node.node.getChild('CodeInfo')
+      if (langNode) {
+        view.dispatch({
+          changes: { from: langNode.from, to: langNode.to, insert: newLang },
+        })
+      } else {
+        // No language tag yet, insert after opening backticks
+        const codeMark = node.node.getChild('CodeMark')
+        if (codeMark) {
+          view.dispatch({
+            changes: { from: codeMark.to, to: codeMark.to, insert: ' ' + newLang },
+          })
+        }
+      }
+    },
+  })
+}
+
 class CodeHeaderWidget extends WidgetType {
-  constructor(readonly lang: string) { super() }
-  toDOM() {
+  constructor(readonly lang: string, readonly nodeFrom: number) { super() }
+
+  private cleanup: (() => void) | null = null
+
+  toDOM(view: EditorView) {
     const div = document.createElement('div')
     div.className = 'cm-code-header'
+
     const span = document.createElement('span')
     span.className = 'cm-code-lang'
     span.textContent = this.lang
+    span.style.cursor = 'pointer'
+    span.style.userSelect = 'none'
+
+    let dropdown: HTMLDivElement | null = null
+
+    const closeDropdown = () => {
+      if (dropdown) {
+        dropdown.remove()
+        dropdown = null
+        document.removeEventListener('mousedown', onDocClick)
+      }
+    }
+
+    const onDocClick = (e: MouseEvent) => {
+      if (!dropdown) return
+      if (!dropdown.contains(e.target as Node)) {
+        closeDropdown()
+      }
+    }
+
+    const openDropdown = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      if (dropdown) {
+        closeDropdown()
+        return
+      }
+
+      const dd = document.createElement('div')
+      dd.className = 'cm-code-lang-dropdown'
+      dropdown = dd
+
+      CODE_LANGUAGES.forEach(lang => {
+        const item = document.createElement('div')
+        item.className = 'cm-code-lang-item'
+        item.textContent = lang
+        if (lang === this.lang) item.classList.add('active')
+        item.addEventListener('mousedown', (ev) => {
+          ev.stopPropagation()
+        })
+        item.addEventListener('click', (ev) => {
+          ev.stopPropagation()
+          changeLanguage(view, this.nodeFrom, lang)
+          closeDropdown()
+        })
+        dd.appendChild(item)
+      })
+
+      div.appendChild(dd)
+      document.addEventListener('mousedown', onDocClick)
+    }
+
+    span.addEventListener('mousedown', (e) => e.stopPropagation())
+    span.addEventListener('click', openDropdown)
     div.appendChild(span)
+
+    this.cleanup = closeDropdown
     return div
   }
-  eq(other: CodeHeaderWidget) { return other.lang === this.lang }
+
+  eq(other: CodeHeaderWidget) {
+    return other.lang === this.lang && other.nodeFrom === this.nodeFrom
+  }
+
+  destroy() {
+    this.cleanup?.()
+    this.cleanup = null
+  }
+
   ignoreEvent() { return false }
 }
 
@@ -133,6 +236,7 @@ class ImageWidget extends WidgetType {
       img.alt = this.alt
       img.loading = 'lazy'
       img.onerror = () => {
+        console.warn('[ImageWidget] Failed to load image:', this.url)
         container.classList.add('cm-image-load-error')
       }
       container.appendChild(img)
@@ -279,14 +383,17 @@ function build(view: EditorView) {
         if (node.to < from) return
 
         // -- Block line decorations --
-        // Only process block decorations if the node's start is within the expanded viewport
+        // nodeVisible: node start is in viewport (for single-line elements)
         const nodeVisible = node.from >= vpFrom && node.from < vpTo
+        // nodeOverlapsVp: node overlaps viewport (for multi-line blocks that
+        // may start above the viewport but extend into it)
+        const nodeOverlapsVp = node.from < vpTo && node.to > vpFrom
 
         if (nodeVisible && /^ATXHeading\d$/.test(t)) {
           addLine(node.from, `cm-h${t.replace('ATXHeading', '')}`)
         }
 
-        if (nodeVisible && t === 'Blockquote') {
+        if (nodeOverlapsVp && t === 'Blockquote') {
           const s = doc.lineAt(node.from).number
           const e = doc.lineAt(Math.max(node.from, node.to - 1)).number
           for (let ln = s; ln <= e; ln++) {
@@ -297,11 +404,11 @@ function build(view: EditorView) {
           }
         }
 
-        if (nodeVisible && t === 'FencedCode') {
+        if (nodeOverlapsVp && t === 'FencedCode') {
           const langNode = node.node.getChild('CodeInfo')
           const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
           const isMermaid = lang === 'mermaid'
-          const isEditing = isMermaid && cursorPos >= node.from && cursorPos <= node.to
+          const isEditing = isMermaid && cursorPos >= node.from && cursorPos < node.to
 
           if (isMermaid && !isEditing) {
             // Preview mode: skip code block styling, mermaidWidget will render preview
@@ -416,12 +523,12 @@ function build(view: EditorView) {
           const langNode = node.node.getChild('CodeInfo')
           const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
           const isMermaid = lang === 'mermaid'
-          const isEditing = isMermaid && cursorPos >= node.from && cursorPos <= node.to
+          const isEditing = isMermaid && cursorPos >= node.from && cursorPos < node.to
 
           if (isEditing) {
             ranges.push(Decoration.widget({ widget: new MermaidEditHeaderWidget(node.from), side: 1 }).range(startLine.from))
           } else if (!isMermaid) {
-            ranges.push(Decoration.widget({ widget: new CodeHeaderWidget(lang), side: 1 }).range(startLine.from))
+            ranges.push(Decoration.widget({ widget: new CodeHeaderWidget(lang, node.from), side: 1 }).range(startLine.from))
           }
           // If mermaid preview mode, skip header widget (mermaidWidget handles it)
         }
@@ -490,3 +597,4 @@ export const imageClickHandler = EditorView.domEventHandlers({
     return false
   },
 })
+
