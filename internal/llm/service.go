@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 	einoschema "github.com/cloudwego/eino/schema"
+	"github.com/pkoukk/tiktoken-go"
 )
 
 type ActiveModelConfig struct {
@@ -123,6 +126,13 @@ func (s *Service) Chat(ctx context.Context, messages []*einoschema.Message) (str
 	return resp.Content, nil
 }
 
+// SetChatModel sets the underlying chat model for testing purposes.
+func (s *Service) SetChatModel(cm model.ChatModel) {
+	s.mu.Lock()
+	s.chatModel = cm
+	s.mu.Unlock()
+}
+
 type StreamChunk struct {
 	Content string `json:"content"`
 	Done    bool   `json:"done"`
@@ -211,4 +221,63 @@ func (s *Service) GenerateWithTool(ctx context.Context, messages []*einoschema.M
 	}
 
 	return resp, nil
+}
+
+var modelContextWindows = map[string]int{
+	"deepseek-v4-flash": 128000,
+	"deepseek-v4-pro":   128000,
+}
+
+const defaultContextWindow = 128000
+
+// GetContextWindow returns the context window size for the active model.
+// It uses an internal mapping of known model names; unknown models default to 128000.
+func (s *Service) GetContextWindow() int {
+	// Allow temporary override for testing compression without long conversations.
+	if v := os.Getenv("MINDSTACK_DEBUG_CONTEXT_WINDOW"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.active == nil {
+		return defaultContextWindow
+	}
+	if cw, ok := modelContextWindows[s.active.Model]; ok {
+		return cw
+	}
+	return defaultContextWindow
+}
+
+var (
+	tiktokenOnce sync.Once
+	tiktokenEnc  *tiktoken.Tiktoken
+	tiktokenErr  error
+)
+
+// encoderProvider is overridable in tests to simulate encoder initialization failure.
+var encoderProvider = func() *tiktoken.Tiktoken {
+	tiktokenOnce.Do(func() {
+		tiktokenEnc, tiktokenErr = tiktoken.GetEncoding("cl100k_base")
+	})
+	if tiktokenErr != nil {
+		return nil
+	}
+	return tiktokenEnc
+}
+
+func getTiktokenEncoder() *tiktoken.Tiktoken {
+	return encoderProvider()
+}
+
+// CountTokens returns the approximate token count for the given text.
+// It uses tiktoken-go with cl100k_base encoding; if initialization fails, it falls back to rune count / 3.
+func (s *Service) CountTokens(text string) int {
+	enc := getTiktokenEncoder()
+	if enc == nil {
+		return utf8.RuneCountInString(text) / 3
+	}
+	return len(enc.Encode(text, nil, nil))
 }

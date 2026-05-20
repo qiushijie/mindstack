@@ -6,6 +6,7 @@ require (
 	github.com/cloudwego/eino v0.8.9
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.12
 	github.com/fsnotify/fsnotify v1.10.1
+	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	github.com/wailsapp/wails/v2 v2.12.0
@@ -25,6 +26,7 @@ require (
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.16 // indirect
+	github.com/dlclark/regexp2 v1.11.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect

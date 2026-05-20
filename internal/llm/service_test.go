@@ -11,6 +11,7 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	einoschema "github.com/cloudwego/eino/schema"
+	"github.com/pkoukk/tiktoken-go"
 )
 
 // mockChatModel implements model.ChatModel for testing without real API calls.
@@ -25,6 +26,16 @@ func (m *mockChatModel) Generate(ctx context.Context, input []*einoschema.Messag
 
 func (m *mockChatModel) Stream(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.StreamReader[*einoschema.Message], error) {
 	return m.streamFn(ctx, input, opts...)
+}
+
+// mockToolCallingModel implements model.ToolCallingChatModel for testing.
+type mockToolCallingModel struct {
+	mockChatModel
+	withToolsFn func(tools []*einoschema.ToolInfo) (model.ToolCallingChatModel, error)
+}
+
+func (m *mockToolCallingModel) WithTools(tools []*einoschema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return m.withToolsFn(tools)
 }
 
 func (m *mockChatModel) BindTools(tools []*einoschema.ToolInfo) error { return nil }
@@ -507,5 +518,201 @@ func TestInitFromConfig_FileNotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "read config") {
 		t.Fatalf("expected 'read config' error, got: %v", err)
+	}
+}
+
+// -------------------------------------------------------
+// CountTokens
+// -------------------------------------------------------
+
+func TestCountTokens(t *testing.T) {
+	svc := NewService("dummy")
+
+	if got := svc.CountTokens(""); got != 0 {
+		t.Fatalf("expected 0 tokens for empty string, got %d", got)
+	}
+	if got := svc.CountTokens("hello world"); got <= 0 {
+		t.Fatalf("expected > 0 tokens for 'hello world', got %d", got)
+	}
+	// Chinese text should also return > 0 tokens
+	if got := svc.CountTokens("你好世界"); got <= 0 {
+		t.Fatalf("expected > 0 tokens for Chinese text, got %d", got)
+	}
+}
+
+func TestCountTokens_NilEncoder(t *testing.T) {
+	orig := encoderProvider
+	encoderProvider = func() *tiktoken.Tiktoken { return nil }
+	defer func() { encoderProvider = orig }()
+
+	svc := NewService("dummy")
+
+	// Fallback path: rune count / 3
+	got := svc.CountTokens("hello world") // 11 runes -> 11/3 = 3
+	if got != 3 {
+		t.Fatalf("expected 3 (fallback), got %d", got)
+	}
+
+	gotEmpty := svc.CountTokens("")
+	if gotEmpty != 0 {
+		t.Fatalf("expected 0 for empty string, got %d", gotEmpty)
+	}
+}
+
+// -------------------------------------------------------
+// GetContextWindow
+// -------------------------------------------------------
+
+func TestGetContextWindow(t *testing.T) {
+	svc := NewService("dummy")
+
+	// No active model -> default
+	if got := svc.GetContextWindow(); got != defaultContextWindow {
+		t.Fatalf("expected default %d, got %d", defaultContextWindow, got)
+	}
+
+	// Known model
+	svc.active = &ActiveModelConfig{Model: "deepseek-v4-flash"}
+	if got := svc.GetContextWindow(); got != 128000 {
+		t.Fatalf("expected 128000, got %d", got)
+	}
+
+	// Another known model
+	svc.active = &ActiveModelConfig{Model: "deepseek-v4-pro"}
+	if got := svc.GetContextWindow(); got != 128000 {
+		t.Fatalf("expected 128000, got %d", got)
+	}
+
+	// Unknown model -> default
+	svc.active = &ActiveModelConfig{Model: "unknown-model"}
+	if got := svc.GetContextWindow(); got != defaultContextWindow {
+		t.Fatalf("expected default %d for unknown model, got %d", defaultContextWindow, got)
+	}
+}
+
+func TestGetContextWindow_DebugEnv(t *testing.T) {
+	// Valid env override
+	t.Setenv("MINDSTACK_DEBUG_CONTEXT_WINDOW", "500")
+	svc := NewService("dummy")
+	if got := svc.GetContextWindow(); got != 500 {
+		t.Fatalf("expected 500 from env, got %d", got)
+	}
+
+	// Invalid env value should fall through to default logic
+	t.Setenv("MINDSTACK_DEBUG_CONTEXT_WINDOW", "invalid")
+	svc2 := NewService("dummy")
+	if got := svc2.GetContextWindow(); got != defaultContextWindow {
+		t.Fatalf("expected default %d for invalid env, got %d", defaultContextWindow, got)
+	}
+
+	// Zero/negative env value should also fall through
+	t.Setenv("MINDSTACK_DEBUG_CONTEXT_WINDOW", "0")
+	svc3 := NewService("dummy")
+	if got := svc3.GetContextWindow(); got != defaultContextWindow {
+		t.Fatalf("expected default %d for zero env, got %d", defaultContextWindow, got)
+	}
+}
+
+// -------------------------------------------------------
+// GetToolCallingModel
+// -------------------------------------------------------
+
+func TestGetToolCallingModel_NoModel(t *testing.T) {
+	svc := NewService("dummy")
+	if got := svc.GetToolCallingModel(); got != nil {
+		t.Fatalf("expected nil when no model, got %v", got)
+	}
+}
+
+func TestGetToolCallingModel_NotToolCalling(t *testing.T) {
+	svc := NewService("dummy")
+	svc.chatModel = &mockChatModel{}
+	if got := svc.GetToolCallingModel(); got != nil {
+		t.Fatalf("expected nil when model doesn't support tool calling, got %v", got)
+	}
+}
+
+func TestGetToolCallingModel_Success(t *testing.T) {
+	svc := NewService("dummy")
+	tcm := &mockToolCallingModel{}
+	svc.chatModel = tcm
+	if got := svc.GetToolCallingModel(); got != tcm {
+		t.Fatalf("expected tool calling model, got %v", got)
+	}
+}
+
+// -------------------------------------------------------
+// GenerateWithTool
+// -------------------------------------------------------
+
+func TestGenerateWithTool_NoModel(t *testing.T) {
+	svc := NewService("dummy")
+	_, err := svc.GenerateWithTool(context.Background(), nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "no model configured") {
+		t.Fatalf("expected 'no model configured' error, got: %v", err)
+	}
+}
+
+func TestGenerateWithTool_NotToolCalling(t *testing.T) {
+	svc := NewService("dummy")
+	svc.chatModel = &mockChatModel{}
+	_, err := svc.GenerateWithTool(context.Background(), nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "model does not support tool calling") {
+		t.Fatalf("expected 'model does not support tool calling' error, got: %v", err)
+	}
+}
+
+func TestGenerateWithTool_BindToolError(t *testing.T) {
+	svc := NewService("dummy")
+	svc.chatModel = &mockToolCallingModel{
+		withToolsFn: func(tools []*einoschema.ToolInfo) (model.ToolCallingChatModel, error) {
+			return nil, fmt.Errorf("bind failed")
+		},
+	}
+	_, err := svc.GenerateWithTool(context.Background(), nil, &einoschema.ToolInfo{})
+	if err == nil || !strings.Contains(err.Error(), "bind tool") {
+		t.Fatalf("expected 'bind tool' error, got: %v", err)
+	}
+}
+
+func TestGenerateWithTool_GenerateError(t *testing.T) {
+	svc := NewService("dummy")
+	svc.chatModel = &mockToolCallingModel{
+		withToolsFn: func(tools []*einoschema.ToolInfo) (model.ToolCallingChatModel, error) {
+			return &mockToolCallingModel{
+				mockChatModel: mockChatModel{
+					generateFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error) {
+						return nil, fmt.Errorf("generate failed")
+					},
+				},
+			}, nil
+		},
+	}
+	_, err := svc.GenerateWithTool(context.Background(), nil, &einoschema.ToolInfo{})
+	if err == nil || !strings.Contains(err.Error(), "generate") {
+		t.Fatalf("expected 'generate' error, got: %v", err)
+	}
+}
+
+func TestGenerateWithTool_Success(t *testing.T) {
+	svc := NewService("dummy")
+	expectedMsg := &einoschema.Message{Role: einoschema.Assistant, Content: "result"}
+	svc.chatModel = &mockToolCallingModel{
+		withToolsFn: func(tools []*einoschema.ToolInfo) (model.ToolCallingChatModel, error) {
+			return &mockToolCallingModel{
+				mockChatModel: mockChatModel{
+					generateFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error) {
+						return expectedMsg, nil
+					},
+				},
+			}, nil
+		},
+	}
+	msg, err := svc.GenerateWithTool(context.Background(), nil, &einoschema.ToolInfo{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msg != expectedMsg {
+		t.Fatalf("expected message %v, got %v", expectedMsg, msg)
 	}
 }
