@@ -3,14 +3,15 @@
 // a single overall summary that synthesizes the evidence.
 //
 // Pipeline:
-//  1. Scan all document metadata to collect the existing tag universe.
-//  2. Ask the LLM to map the query to a subset of those tags.
-//  3. Recall candidate documents locally by tag union + full-text contains
+//  1. Scan all document metadata.
+//  2. Ask the LLM to map the query to a subset of existing tags (tags + aliases).
+//  3. Recall candidate documents locally by tag/alias union + title/summary/full-text
 //     hits, ranked and capped to topRecall.
-//  4. For each candidate, ask the LLM to extract relevant line ranges.
-//  5. Merge all extracted snippets, sort by score, and keep the top results
-//     with content sliced from the source files.
-//  6. Ask the LLM once more to synthesize an overall summary from the kept
+//  4. Ask the LLM once to rerank the candidates and return relevance scores.
+//  5. For each top-ranked document, extract relevant snippets locally by keyword
+//     matching without further LLM calls.
+//  6. Merge all extracted snippets, sort by score, and keep the top results.
+//  7. Ask the LLM once more to synthesize an overall summary from the kept
 //     snippets and the original query.
 package ack
 
@@ -30,10 +31,11 @@ import (
 )
 
 const (
-	maxContentLength  = 8000
 	topRecall         = 10
 	topSnippets       = 5
 	maxSnippetsPerDoc = 3
+	previewMaxLines   = 20
+	contextLines      = 2
 )
 
 //go:embed prompts/*/*.md
@@ -81,9 +83,9 @@ type LLMClient interface {
 	Chat(ctx context.Context, messages []*einoschema.Message) (string, error)
 }
 
-// Ack runs the full /ack pipeline: tag extraction -> recall -> snippet
-// extraction -> top-k selection. kbRoot must be an absolute path to a synced
-// knowledge base root.
+// Ack runs the full /ack pipeline: tag extraction -> recall -> rerank ->
+// local snippet extraction -> summary. kbRoot must be an absolute path to a
+// synced knowledge base root.
 func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Result, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -107,59 +109,46 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 		return &Result{Query: query, Tags: pickedTags, Snippets: []Snippet{}}, nil
 	}
 
-	type docExtraction struct {
-		relPath  string
-		absPath  string
-		snippets []snippetSpec
+	// Build document previews for rerank.
+	previews := make([]string, 0, len(candidates))
+	metaByPath := make(map[string]*meta.DocumentMeta, len(metas))
+	for _, m := range metas {
+		metaByPath[m.Path] = m
+	}
+	for _, c := range candidates {
+		m := metaByPath[c.relPath]
+		if m == nil {
+			continue
+		}
+		preview, err := makeDocPreview(kbRoot, c.relPath, m, lang)
+		if err != nil {
+			continue
+		}
+		previews = append(previews, preview)
 	}
 
-	var extractions []docExtraction
-	for _, c := range candidates {
+	// Single LLM call to rerank all candidates.
+	ranked := rerankCandidates(ctx, llmSvc, query, previews, lang, topSnippets)
+	if len(ranked) == 0 {
+		return &Result{Query: query, Tags: pickedTags, Snippets: []Snippet{}}, nil
+	}
+
+	// Local snippet extraction from top-ranked documents.
+	var all []Snippet
+	for _, r := range ranked {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
 		}
 
-		absPath := filepath.Join(kbRoot, c.relPath)
+		absPath := filepath.Join(kbRoot, r.Path)
 		raw, err := os.ReadFile(absPath)
 		if err != nil {
 			continue
 		}
-		snippets, err := extractDocSnippets(ctx, llmSvc, query, c.relPath, string(raw), lang)
-		if err != nil {
-			continue
-		}
-		if len(snippets) == 0 {
-			continue
-		}
-		extractions = append(extractions, docExtraction{
-			relPath:  c.relPath,
-			absPath:  absPath,
-			snippets: snippets,
-		})
-	}
-
-	var all []Snippet
-	for _, ex := range extractions {
-		raw, err := os.ReadFile(ex.absPath)
-		if err != nil {
-			continue
-		}
-		lines := splitLines(string(raw))
-		for _, sp := range ex.snippets {
-			start, end, ok := clampRange(sp.Start, sp.End, len(lines))
-			if !ok {
-				continue
-			}
-			all = append(all, Snippet{
-				Path:      ex.absPath,
-				StartLine: start,
-				EndLine:   end,
-				Content:   joinLines(lines, start, end),
-				Score:     sp.Score,
-			})
-		}
+		snippets := extractSnippetsLocal(query, absPath, string(raw), r.Score)
+		all = append(all, snippets...)
 	}
 
 	sort.SliceStable(all, func(i, j int) bool {
@@ -187,7 +176,8 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 	}, nil
 }
 
-// collectAllTags returns the sorted, de-duplicated tag union across metas.
+// collectAllTags returns the sorted, de-duplicated tag union across metas,
+// including both Tags and Aliases fields.
 func collectAllTags(metas []*meta.DocumentMeta) []string {
 	set := make(map[string]struct{})
 	for _, m := range metas {
@@ -197,6 +187,13 @@ func collectAllTags(metas []*meta.DocumentMeta) []string {
 				continue
 			}
 			set[t] = struct{}{}
+		}
+		for _, a := range m.Aliases {
+			a = strings.TrimSpace(a)
+			if a == "" {
+				continue
+			}
+			set[a] = struct{}{}
 		}
 	}
 	out := make([]string, 0, len(set))
@@ -211,13 +208,17 @@ func collectAllTags(metas []*meta.DocumentMeta) []string {
 type candidate struct {
 	relPath      string
 	tagHits      int
+	aliasHits    int
+	summaryHits  int
+	titleHits    int
 	fulltextHits int
 	score        int
 }
 
-// recallCandidates merges tag-based and full-text recall over the meta set.
-// Tag matching uses OR semantics across pickedTags. Documents are ranked by
-// `2*tagHits + fulltextHits` and capped to topRecall.
+// recallCandidates merges tag-based, alias-based, title/summary-based and
+// full-text recall over the meta set.
+// Tag/alias matching uses OR semantics across pickedTags.
+// Documents are ranked by a weighted score and capped to topRecall.
 func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags []string, query string) []candidate {
 	tagSet := make(map[string]struct{}, len(pickedTags))
 	for _, t := range pickedTags {
@@ -228,21 +229,32 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags []st
 
 	scored := make(map[string]*candidate, len(metas))
 
+	// First pass: Tags + Aliases + Title + Summary (no file IO).
 	for _, m := range metas {
-		c, ok := scored[m.Path]
-		if !ok {
-			c = &candidate{relPath: m.Path}
-			scored[m.Path] = c
-		}
+		c := &candidate{relPath: m.Path}
+
 		if len(tagSet) > 0 {
 			for _, t := range m.Tags {
 				if _, hit := tagSet[strings.ToLower(t)]; hit {
 					c.tagHits++
 				}
 			}
+			for _, a := range m.Aliases {
+				if _, hit := tagSet[strings.ToLower(a)]; hit {
+					c.aliasHits++
+				}
+			}
 		}
+
+		if queryLower != "" {
+			c.titleHits = strings.Count(strings.ToLower(m.Title), queryLower)
+			c.summaryHits = strings.Count(strings.ToLower(m.Summary), queryLower)
+		}
+
+		scored[m.Path] = c
 	}
 
+	// Second pass: full-text (requires reading files).
 	if queryLower != "" {
 		for _, m := range metas {
 			absPath := filepath.Join(kbRoot, m.Path)
@@ -254,18 +266,15 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags []st
 			if hits == 0 {
 				continue
 			}
-			c, ok := scored[m.Path]
-			if !ok {
-				c = &candidate{relPath: m.Path}
-				scored[m.Path] = c
+			if c, ok := scored[m.Path]; ok {
+				c.fulltextHits = hits
 			}
-			c.fulltextHits = hits
 		}
 	}
 
 	var list []candidate
 	for _, c := range scored {
-		c.score = 2*c.tagHits + c.fulltextHits
+		c.score = 5*c.tagHits + 4*c.aliasHits + 3*c.summaryHits + 2*c.titleHits + 1*c.fulltextHits
 		if c.score == 0 {
 			continue
 		}
@@ -285,11 +294,188 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags []st
 	return list
 }
 
-// snippetSpec is what the LLM returns for each picked range.
-type snippetSpec struct {
-	Start int     `json:"start"`
-	End   int     `json:"end"`
+// rerankItem is a single result from the LLM rerank step.
+type rerankItem struct {
+	Path  string  `json:"path"`
 	Score float64 `json:"score"`
+}
+
+// rerankCandidates asks the LLM to select the most relevant documents from
+// the previews in a single call.
+func rerankCandidates(ctx context.Context, svc LLMClient, query string, previews []string, lang string, topK int) []rerankItem {
+	if len(previews) == 0 {
+		return nil
+	}
+	var sb strings.Builder
+	for i, p := range previews {
+		fmt.Fprintf(&sb, "[%d]\n%s\n\n", i+1, p)
+	}
+	prompt := fmt.Sprintf(loadPrompt("rerank", lang), query, sb.String(), topK)
+
+	resp, err := svc.Chat(ctx, []*einoschema.Message{{Role: einoschema.User, Content: prompt}})
+	if err != nil {
+		return nil
+	}
+
+	cleaned := stripJSONFences(resp)
+	var items []rerankItem
+	if err := json.Unmarshal([]byte(cleaned), &items); err != nil {
+		return nil
+	}
+	return items
+}
+
+// makeDocPreview builds a preview string for a single document to feed into
+// the rerank prompt. Includes title, tags, summary, and the first previewMaxLines
+// lines of the document body.
+func makeDocPreview(kbRoot, relPath string, m *meta.DocumentMeta, lang string) (string, error) {
+	absPath := filepath.Join(kbRoot, relPath)
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return "", err
+	}
+
+	lines := splitLines(string(data))
+	var sb strings.Builder
+	if lang == "zh" {
+		fmt.Fprintf(&sb, "路径: %s\n", relPath)
+		fmt.Fprintf(&sb, "标题: %s\n", m.Title)
+		if len(m.Tags) > 0 {
+			fmt.Fprintf(&sb, "标签: %s\n", strings.Join(m.Tags, ", "))
+		}
+		if len(m.Aliases) > 0 {
+			fmt.Fprintf(&sb, "别名: %s\n", strings.Join(m.Aliases, ", "))
+		}
+		if m.Summary != "" {
+			fmt.Fprintf(&sb, "摘要: %s\n", m.Summary)
+		}
+		sb.WriteString("正文预览:\n")
+	} else {
+		fmt.Fprintf(&sb, "Path: %s\n", relPath)
+		fmt.Fprintf(&sb, "Title: %s\n", m.Title)
+		if len(m.Tags) > 0 {
+			fmt.Fprintf(&sb, "Tags: %s\n", strings.Join(m.Tags, ", "))
+		}
+		if len(m.Aliases) > 0 {
+			fmt.Fprintf(&sb, "Aliases: %s\n", strings.Join(m.Aliases, ", "))
+		}
+		if m.Summary != "" {
+			fmt.Fprintf(&sb, "Summary: %s\n", m.Summary)
+		}
+		sb.WriteString("Preview:\n")
+	}
+	limit := previewMaxLines
+	if len(lines) < limit {
+		limit = len(lines)
+	}
+	for i := 0; i < limit; i++ {
+		fmt.Fprintf(&sb, "%d: %s\n", i+1, lines[i])
+	}
+	if len(lines) > previewMaxLines {
+		sb.WriteString("... [truncated]\n")
+	}
+	return sb.String(), nil
+}
+
+// stopWords is a small set of common English words to skip when splitting
+// a multi-word query into search terms.
+var stopWords = map[string]bool{
+	"what": true, "is": true, "the": true, "a": true, "an": true,
+	"are": true, "how": true, "to": true, "do": true, "does": true,
+	"can": true, "will": true, "should": true, "would": true, "could": true,
+	"has": true, "have": true, "had": true, "was": true, "were": true,
+	"be": true, "been": true, "being": true, "am": true, "i": true,
+	"you": true, "he": true, "she": true, "it": true, "we": true, "they": true,
+	"this": true, "that": true, "these": true, "those": true,
+	"of": true, "in": true, "on": true, "at": true, "by": true,
+	"with": true, "from": true, "for": true, "about": true, "as": true,
+	"and": true, "but": true, "or": true, "yet": true, "so": true,
+}
+
+// extractSnippetsLocal extracts relevant snippets from a document by local
+// keyword matching without any LLM calls.
+func extractSnippetsLocal(query, absPath, content string, docScore float64) []Snippet {
+	queryLower := strings.ToLower(query)
+	lines := splitLines(content)
+	if len(lines) == 0 {
+		return nil
+	}
+
+	// Build search terms from query.
+	var terms []string
+	if strings.Contains(queryLower, " ") {
+		// Multi-word query: split and filter out common stop words.
+		for _, w := range strings.Fields(queryLower) {
+			w = strings.TrimSpace(w)
+			if w != "" && !stopWords[w] {
+				terms = append(terms, w)
+			}
+		}
+	} else {
+		// Single word or Chinese query: use as-is.
+		terms = append(terms, queryLower)
+	}
+	if len(terms) == 0 {
+		return nil
+	}
+
+	// Find all lines containing any search term.
+	var hitLines []int
+	for i, line := range lines {
+		lineLower := strings.ToLower(line)
+		for _, term := range terms {
+			if strings.Contains(lineLower, term) {
+				hitLines = append(hitLines, i+1) // 1-based
+				break
+			}
+		}
+	}
+	if len(hitLines) == 0 {
+		return nil
+	}
+
+	// Merge adjacent hits (gap <= contextLines) into contiguous ranges.
+	type lineRange struct{ start, end int }
+	var ranges []lineRange
+	start := hitLines[0]
+	end := hitLines[0]
+	for i := 1; i < len(hitLines); i++ {
+		if hitLines[i]-end <= contextLines+1 {
+			end = hitLines[i]
+		} else {
+			ranges = append(ranges, lineRange{start, end})
+			start = hitLines[i]
+			end = hitLines[i]
+		}
+	}
+	ranges = append(ranges, lineRange{start, end})
+
+	// Expand context and build snippets.
+	var snippets []Snippet
+	for _, r := range ranges {
+		s, e, ok := clampRange(r.start-contextLines, r.end+contextLines, len(lines))
+		if !ok {
+			continue
+		}
+		snippets = append(snippets, Snippet{
+			Path:      absPath,
+			StartLine: s,
+			EndLine:   e,
+			Content:   joinLines(lines, s, e),
+			Score:     docScore,
+		})
+	}
+
+	// Cap per-document snippets by range length (longer = more informative).
+	if len(snippets) > maxSnippetsPerDoc {
+		sort.SliceStable(snippets, func(i, j int) bool {
+			return (snippets[i].EndLine - snippets[i].StartLine) >
+				(snippets[j].EndLine - snippets[j].StartLine)
+		})
+		snippets = snippets[:maxSnippetsPerDoc]
+	}
+
+	return snippets
 }
 
 func extractTagsFromQuery(ctx context.Context, svc LLMClient, query string, allTags []string, lang string) ([]string, error) {
@@ -329,25 +515,6 @@ func extractTagsFromQuery(ctx context.Context, svc LLMClient, query string, allT
 	return out, nil
 }
 
-func extractDocSnippets(ctx context.Context, svc LLMClient, query, relPath, content, lang string) ([]snippetSpec, error) {
-	numbered, _ := numberLines(content, maxContentLength)
-	prompt := fmt.Sprintf(loadPrompt("snippet", lang), query, relPath, numbered, maxSnippetsPerDoc)
-
-	resp, err := svc.Chat(ctx, []*einoschema.Message{{Role: einoschema.User, Content: prompt}})
-	if err != nil {
-		return nil, err
-	}
-
-	cleaned := stripJSONFences(resp)
-	var parsed struct {
-		Snippets []snippetSpec `json:"snippets"`
-	}
-	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
-		return nil, fmt.Errorf("parse snippet response: %w (raw: %s)", err, resp)
-	}
-	return parsed.Snippets, nil
-}
-
 func summarizeSnippets(ctx context.Context, svc LLMClient, query string, snippets []Snippet, lang string) (string, error) {
 	var sb strings.Builder
 	for i, s := range snippets {
@@ -360,28 +527,6 @@ func summarizeSnippets(ctx context.Context, svc LLMClient, query string, snippet
 		return "", err
 	}
 	return strings.TrimSpace(stripJSONFences(resp)), nil
-}
-
-// numberLines returns content with `N: ` prefixed to each line. Truncates to
-// maxLen runes (after numbering would expand the size further; we trim raw
-// content first, then number). The boolean reports whether truncation was
-// applied.
-func numberLines(content string, maxLen int) (string, bool) {
-	runes := []rune(content)
-	truncated := false
-	if maxLen > 0 && len(runes) > maxLen {
-		content = string(runes[:maxLen])
-		truncated = true
-	}
-	lines := splitLines(content)
-	var sb strings.Builder
-	for i, ln := range lines {
-		fmt.Fprintf(&sb, "%d: %s\n", i+1, ln)
-	}
-	if truncated {
-		sb.WriteString("... [truncated]\n")
-	}
-	return sb.String(), truncated
 }
 
 // splitLines splits s on \n and drops the trailing empty element produced by a

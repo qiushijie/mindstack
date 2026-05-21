@@ -3,6 +3,7 @@ package ack
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,9 +82,9 @@ func TestSplitLines(t *testing.T) {
 
 func TestClampRange(t *testing.T) {
 	cases := []struct {
-		start, end, total int
+		start, end, total  int
 		wantStart, wantEnd int
-		wantOK            bool
+		wantOK             bool
 	}{
 		{1, 5, 10, 1, 5, true},
 		{0, 5, 10, 1, 5, true},
@@ -121,6 +122,23 @@ func TestCollectAllTags(t *testing.T) {
 	}
 }
 
+func TestCollectAllTags_WithAliases(t *testing.T) {
+	metas := []*meta.DocumentMeta{
+		{Tags: []string{"api"}, Aliases: []string{"rest", "  "}},
+		{Tags: []string{"design"}, Aliases: []string{"ui"}},
+	}
+	got := collectAllTags(metas)
+	want := []string{"api", "design", "rest", "ui"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("[%d] got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestJoinLines(t *testing.T) {
 	lines := []string{"a", "b", "c", "d"}
 	if got := joinLines(lines, 2, 3); got != "b\nc" {
@@ -133,7 +151,7 @@ func TestJoinLines(t *testing.T) {
 
 // writeFixture lays out a minimal knowledge base under root with the given
 // docs (relPath -> content) and meta entries. tags map docPath -> []string.
-func writeFixture(t *testing.T, root string, docs map[string]string, tags map[string][]string) {
+func writeFixture(t *testing.T, root string, docs map[string]string, tags map[string][]string, aliases map[string][]string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, ".mindstack"), 0755); err != nil {
 		t.Fatal(err)
@@ -151,6 +169,7 @@ func writeFixture(t *testing.T, root string, docs map[string]string, tags map[st
 			Title:   rel,
 			Summary: "fixture",
 			Tags:    tags[rel],
+			Aliases: aliases[rel],
 			Status:  "active",
 		}
 	}
@@ -172,7 +191,7 @@ func TestRecallCandidates_TagAndFulltext(t *testing.T) {
 		"design.md": {"design"},
 		"other.md":  {"misc"},
 	}
-	writeFixture(t, root, docs, tags)
+	writeFixture(t, root, docs, tags, nil)
 
 	metas, err := meta.ScanAll(root, "")
 	if err != nil {
@@ -193,6 +212,72 @@ func TestRecallCandidates_TagAndFulltext(t *testing.T) {
 	}
 }
 
+func TestRecallCandidates_Aliases(t *testing.T) {
+	root := t.TempDir()
+	docs := map[string]string{
+		"a.md": "unit testing guide",
+		"b.md": "cooking recipes",
+	}
+	tags := map[string][]string{
+		"a.md": {"unit-test"},
+		"b.md": {"food"},
+	}
+	aliases := map[string][]string{
+		"a.md": {"test", "testing"},
+	}
+	writeFixture(t, root, docs, tags, aliases)
+
+	metas, _ := meta.ScanAll(root, "")
+	got := recallCandidates(metas, root, []string{"test"}, "")
+	if len(got) == 0 {
+		t.Fatal("expected a.md via alias match")
+	}
+	if got[0].relPath != "a.md" {
+		t.Errorf("expected a.md first, got %q", got[0].relPath)
+	}
+	if got[0].aliasHits == 0 {
+		t.Errorf("expected aliasHits > 0, got %d", got[0].aliasHits)
+	}
+}
+
+func TestRecallCandidates_TitleAndSummary(t *testing.T) {
+	root := t.TempDir()
+	docs := map[string]string{
+		"a.md": "content a",
+		"b.md": "content b",
+	}
+	// Write fixture with custom meta to set title/summary.
+	if err := os.MkdirAll(filepath.Join(root, ".mindstack"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	store := map[string]*meta.DocumentMeta{
+		"a.md": {Title: "Retry Policy Guide", Summary: "how to retry failed requests", Tags: []string{}, Status: "active"},
+		"b.md": {Title: "Cooking Basics", Summary: "how to cook pasta", Tags: []string{}, Status: "active"},
+	}
+	for rel := range docs {
+		full := filepath.Join(root, rel)
+		if err := os.WriteFile(full, []byte(docs[rel]), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, _ := json.MarshalIndent(store, "", "  ")
+	if err := os.WriteFile(filepath.Join(root, ".mindstack", "meta.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	metas, _ := meta.ScanAll(root, "")
+	got := recallCandidates(metas, root, nil, "retry")
+	if len(got) == 0 {
+		t.Fatal("expected a.md via title/summary match")
+	}
+	if got[0].relPath != "a.md" {
+		t.Errorf("expected a.md first, got %q", got[0].relPath)
+	}
+	if got[0].titleHits == 0 && got[0].summaryHits == 0 {
+		t.Errorf("expected titleHits or summaryHits > 0")
+	}
+}
+
 func TestRecallCandidates_TopRecallCap(t *testing.T) {
 	root := t.TempDir()
 	docs := map[string]string{}
@@ -202,7 +287,7 @@ func TestRecallCandidates_TopRecallCap(t *testing.T) {
 		docs[name] = "matched content here"
 		tags[name] = []string{"api"}
 	}
-	writeFixture(t, root, docs, tags)
+	writeFixture(t, root, docs, tags, nil)
 	metas, _ := meta.ScanAll(root, "")
 	got := recallCandidates(metas, root, []string{"api"}, "matched")
 	if len(got) > topRecall {
@@ -210,23 +295,93 @@ func TestRecallCandidates_TopRecallCap(t *testing.T) {
 	}
 }
 
+func TestExtractSnippetsLocal(t *testing.T) {
+	content := "line 1\nline 2\nretry policy here\nline 4\nline 5\nuse exponential backoff\nline 7\nline 8\nline 9"
+	snippets := extractSnippetsLocal("retry", "/tmp/test.md", content, 0.9)
+	if len(snippets) == 0 {
+		t.Fatal("expected at least one snippet")
+	}
+	sn := snippets[0]
+	if !strings.Contains(sn.Content, "retry policy") {
+		t.Errorf("snippet should contain 'retry policy', got %q", sn.Content)
+	}
+	if sn.Score != 0.9 {
+		t.Errorf("score = %f, want 0.9", sn.Score)
+	}
+	// Verify context lines are included.
+	if !strings.Contains(sn.Content, "line 2") {
+		t.Errorf("snippet missing upper context")
+	}
+}
+
+func TestExtractSnippetsLocal_NoMatch(t *testing.T) {
+	snippets := extractSnippetsLocal("nonexistent", "/tmp/test.md", "foo bar baz", 0.5)
+	if len(snippets) != 0 {
+		t.Errorf("expected 0 snippets, got %d", len(snippets))
+	}
+}
+
+func TestExtractSnippetsLocal_CapPerDoc(t *testing.T) {
+	// Create content with many scattered hits to test maxSnippetsPerDoc cap.
+	var lines []string
+	for i := 0; i < 50; i++ {
+		if i%10 == 0 {
+			lines = append(lines, "retry policy here")
+		} else {
+			lines = append(lines, "filler line")
+		}
+	}
+	content := strings.Join(lines, "\n")
+	snippets := extractSnippetsLocal("retry", "/tmp/test.md", content, 0.8)
+	if len(snippets) > maxSnippetsPerDoc {
+		t.Errorf("expected at most %d snippets, got %d", maxSnippetsPerDoc, len(snippets))
+	}
+}
+
+func TestRerankCandidates(t *testing.T) {
+	llm := &fakeLLM{
+		responses: []fakeResp{
+			{match: "候选文档", body: `[{"path":"b.md","score":0.9},{"path":"a.md","score":0.7}]`},
+		},
+	}
+	previews := []string{"path: a.md\n标题: A", "path: b.md\n标题: B"}
+	got := rerankCandidates(context.Background(), llm, "test", previews, "zh", 2)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(got))
+	}
+	if got[0].Path != "b.md" {
+		t.Errorf("expected b.md first, got %q", got[0].Path)
+	}
+	if got[0].Score != 0.9 {
+		t.Errorf("score = %f, want 0.9", got[0].Score)
+	}
+}
+
+func TestRerankCandidates_EmptyPreviews(t *testing.T) {
+	llm := &fakeLLM{}
+	got := rerankCandidates(context.Background(), llm, "test", nil, "zh", 2)
+	if len(got) != 0 {
+		t.Errorf("expected empty, got %d", len(got))
+	}
+}
+
 func TestAck_FullPipeline(t *testing.T) {
 	root := t.TempDir()
 	apiContent := "# API Guide\n\nRetry uses exponential backoff.\nDefault 3 attempts.\nTimeout 30s.\n"
 	docs := map[string]string{
-		"api.md":     apiContent,
+		"api.md":       apiContent,
 		"unrelated.md": "this document is about cooking recipes",
 	}
 	tags := map[string][]string{
 		"api.md":       {"api", "retry"},
 		"unrelated.md": {"food"},
 	}
-	writeFixture(t, root, docs, tags)
+	writeFixture(t, root, docs, tags, nil)
 
 	llm := &fakeLLM{
 		responses: []fakeResp{
 			{match: "可用的标签", body: `["api","retry"]`},
-			{match: "提取证据", body: `{"snippets":[{"start":3,"end":5,"score":0.9}]}`},
+			{match: "候选文档", body: `[{"path":"api.md","score":0.95}]`},
 			{match: "证据片段", body: "Use exponential backoff with up to 3 attempts and a 30s timeout."},
 		},
 	}
@@ -243,9 +398,6 @@ func TestAck_FullPipeline(t *testing.T) {
 	if sn.Path != wantPath {
 		t.Errorf("Path = %q, want %q", sn.Path, wantPath)
 	}
-	if sn.StartLine != 3 || sn.EndLine != 5 {
-		t.Errorf("range = %d-%d, want 3-5", sn.StartLine, sn.EndLine)
-	}
 	if !strings.Contains(sn.Content, "exponential backoff") {
 		t.Errorf("content missing expected line: %q", sn.Content)
 	}
@@ -255,6 +407,10 @@ func TestAck_FullPipeline(t *testing.T) {
 	if len(res.Tags) != 2 {
 		t.Errorf("tags = %v, want 2", res.Tags)
 	}
+	// Verify LLM call count: tag + rerank + summary = 3.
+	if llm.calls != 3 {
+		t.Errorf("expected 3 LLM calls, got %d", llm.calls)
+	}
 }
 
 func TestAck_NoCandidates(t *testing.T) {
@@ -263,7 +419,7 @@ func TestAck_NoCandidates(t *testing.T) {
 		"a.md": "totally different topic",
 	}, map[string][]string{
 		"a.md": {"foo"},
-	})
+	}, nil)
 
 	llm := &fakeLLM{responses: []fakeResp{
 		{match: "可用的标签", body: `[]`},
@@ -279,9 +435,140 @@ func TestAck_NoCandidates(t *testing.T) {
 
 func TestAck_EmptyQuery(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, map[string]string{}, map[string][]string{})
+	writeFixture(t, root, map[string]string{}, map[string][]string{}, nil)
 	if _, err := Ack(context.Background(), &fakeLLM{}, root, "  ", "zh"); err == nil {
 		t.Error("expected error for empty query")
+	}
+}
+
+func TestMakeDocPreview(t *testing.T) {
+	root := t.TempDir()
+	rel := "doc.md"
+	full := filepath.Join(root, rel)
+
+	// Create content with more than 20 lines.
+	var lines []string
+	for i := 0; i < 25; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i+1))
+	}
+	content := strings.Join(lines, "\n")
+	if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &meta.DocumentMeta{
+		Title:   "Test Title",
+		Tags:    []string{"tag1", "tag2"},
+		Aliases: []string{"alias1", "alias2"},
+		Summary: "This is a summary.",
+	}
+
+	preview, err := makeDocPreview(root, rel, m, "zh")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(preview, "路径:") {
+		t.Errorf("missing Chinese label 路径")
+	}
+	if !strings.Contains(preview, "标题:") {
+		t.Errorf("missing Chinese label 标题")
+	}
+	if !strings.Contains(preview, "标签:") {
+		t.Errorf("missing Chinese label 标签")
+	}
+	if !strings.Contains(preview, "别名:") {
+		t.Errorf("missing Chinese label 别名")
+	}
+	if !strings.Contains(preview, "摘要:") {
+		t.Errorf("missing Chinese label 摘要")
+	}
+	if !strings.Contains(preview, "正文预览:") {
+		t.Errorf("missing Chinese label 正文预览")
+	}
+	if !strings.Contains(preview, "Test Title") {
+		t.Errorf("missing title content")
+	}
+	if !strings.Contains(preview, "tag1, tag2") {
+		t.Errorf("missing tags content")
+	}
+	if !strings.Contains(preview, "alias1, alias2") {
+		t.Errorf("missing aliases content")
+	}
+	if !strings.Contains(preview, "This is a summary.") {
+		t.Errorf("missing summary content")
+	}
+	if !strings.Contains(preview, "... [truncated]") {
+		t.Errorf("missing truncated marker")
+	}
+
+	// Verify only first 20 lines are shown.
+	lineCount := strings.Count(preview, "\n")
+	// Preview header has 6 lines (路径, 标题, 标签, 别名, 摘要, 正文预览) + 20 body lines + truncated line.
+	if lineCount != 27 {
+		t.Errorf("expected 27 lines in preview, got %d", lineCount)
+	}
+}
+
+func TestMakeDocPreview_English(t *testing.T) {
+	root := t.TempDir()
+	rel := "doc.md"
+	full := filepath.Join(root, rel)
+
+	// Create content with more than 20 lines.
+	var lines []string
+	for i := 0; i < 25; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i+1))
+	}
+	content := strings.Join(lines, "\n")
+	if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &meta.DocumentMeta{
+		Title:   "Test Title",
+		Tags:    []string{"tag1", "tag2"},
+		Aliases: []string{"alias1", "alias2"},
+		Summary: "This is a summary.",
+	}
+
+	preview, err := makeDocPreview(root, rel, m, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(preview, "Path:") {
+		t.Errorf("missing English label Path")
+	}
+	if !strings.Contains(preview, "Title:") {
+		t.Errorf("missing English label Title")
+	}
+	if !strings.Contains(preview, "Tags:") {
+		t.Errorf("missing English label Tags")
+	}
+	if !strings.Contains(preview, "Aliases:") {
+		t.Errorf("missing English label Aliases")
+	}
+	if !strings.Contains(preview, "Summary:") {
+		t.Errorf("missing English label Summary")
+	}
+	if !strings.Contains(preview, "Preview:") {
+		t.Errorf("missing English label Preview")
+	}
+	if !strings.Contains(preview, "Test Title") {
+		t.Errorf("missing title content")
+	}
+	if !strings.Contains(preview, "tag1, tag2") {
+		t.Errorf("missing tags content")
+	}
+	if !strings.Contains(preview, "alias1, alias2") {
+		t.Errorf("missing aliases content")
+	}
+	if !strings.Contains(preview, "This is a summary.") {
+		t.Errorf("missing summary content")
+	}
+	if !strings.Contains(preview, "... [truncated]") {
+		t.Errorf("missing truncated marker")
 	}
 }
 
@@ -291,12 +578,12 @@ func TestAck_TagExtractionFailureFallsBackToFulltext(t *testing.T) {
 		"a.md": "the magic phrase appears here",
 	}, map[string][]string{
 		"a.md": {"foo"},
-	})
+	}, nil)
 
 	llm := &fakeLLM{
 		responses: []fakeResp{
 			{match: "可用的标签", body: "not json"},
-			{match: "提取证据", body: `{"snippets":[{"start":1,"end":1,"score":0.5}]}`},
+			{match: "候选文档", body: `[{"path":"a.md","score":0.8}]`},
 			{match: "证据片段", body: "The magic phrase appears in a.md."},
 		},
 	}
@@ -304,8 +591,8 @@ func TestAck_TagExtractionFailureFallsBackToFulltext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Snippets) != 1 {
-		t.Fatalf("expected 1 snippet from fulltext fallback, got %d", len(res.Snippets))
+	if len(res.Snippets) == 0 {
+		t.Fatalf("expected snippets from fulltext fallback, got none")
 	}
 	if len(res.Tags) != 0 {
 		t.Errorf("expected empty tags after extraction failure, got %v", res.Tags)
