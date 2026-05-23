@@ -18,8 +18,6 @@ import (
 	einoschema "github.com/cloudwego/eino/schema"
 )
 
-const maxContentLength = 8000
-
 // SyncProgress is emitted for each step processed.
 type SyncProgress struct {
 	File    string `json:"file"`
@@ -43,6 +41,7 @@ func SyncWorkspace(
 	ctx context.Context,
 	llmSvc *llm.Service,
 	rootPath string,
+	force bool,
 	onProgress func(SyncProgress),
 ) error {
 	if onProgress == nil {
@@ -114,7 +113,7 @@ func SyncWorkspace(
 
 		hash := computeHash(content)
 		existing, _ := meta.LoadMeta(rootPath, relPath)
-		if existing != nil && existing.ContentHash == hash {
+		if !force && existing != nil && existing.ContentHash == hash && len(existing.Headings) > 0 {
 			onProgress(SyncProgress{
 				File:    relPath,
 				Current: i + 1,
@@ -125,8 +124,7 @@ func SyncWorkspace(
 			continue
 		}
 
-		truncated := truncateContent(string(content), maxContentLength)
-		result, err := generateMeta(ctx, llmSvc, relPath, truncated)
+		result, err := generateMeta(ctx, llmSvc, relPath, string(content))
 		if err != nil {
 			onProgress(SyncProgress{
 				File:    relPath,
@@ -301,13 +299,13 @@ Document content:
 %s
 
 Respond with ONLY a JSON object (no markdown, no code fences) with these fields:
-- "title": a concise title for the document (string)
 - "summary": a 1-3 sentence summary of the document's content (string)
 - "tags": an array of 3-7 relevant tags (array of strings, lowercase, use hyphens for multi-word tags)
 - "aliases": an array of alternative names or synonyms for the tags (array of strings, lowercase). For example, if tags includes "unit-test", aliases might include ["test", "testing", "ut"]. Include shorthand forms and common abbreviations.
+- "headings": an array of ALL section headings in the document, starting from level 1 (the top-level heading). Each item is an object with "level" (integer 1-6, where 1 is the document's main heading) and "text" (string, the heading text). Preserve the original heading hierarchy and include every meaningful heading. Skip generic headings like "Introduction", "Summary", or "Conclusion". Merge closely related subsections when appropriate.
 
 Example response:
-{"title":"REST API Design Guide","summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["api","rest","design","backend"],"aliases":["restful","http"]}`, filename, content)
+{"summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["api","rest","design","backend"],"aliases":["restful","http"],"headings":[{"level":1,"text":"Overview"},{"level":2,"text":"URL Structure"},{"level":2,"text":"Status Codes"},{"level":3,"text":"Pagination"}]}`, filename, content)
 
 	messages := []*einoschema.Message{
 		{Role: einoschema.User, Content: prompt},
@@ -321,21 +319,30 @@ Example response:
 	cleaned := stripCodeFences(resp)
 
 	var parsed struct {
-		Title   string   `json:"title"`
-		Summary string   `json:"summary"`
-		Tags    []string `json:"tags"`
-		Aliases []string `json:"aliases"`
+		Summary  string         `json:"summary"`
+		Tags     []string       `json:"tags"`
+		Aliases  []string       `json:"aliases"`
+		Headings []meta.Heading `json:"headings"`
 	}
 	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
 		return nil, fmt.Errorf("parse LLM response: %w (raw: %s)", err, resp)
 	}
 
+	title := ""
+	if len(parsed.Headings) > 0 {
+		title = parsed.Headings[0].Text
+	}
+	if title == "" {
+		title = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+	}
+
 	return &meta.DocumentMeta{
-		Title:   parsed.Title,
-		Summary: parsed.Summary,
-		Tags:    parsed.Tags,
-		Aliases: parsed.Aliases,
-		Status:  "active",
+		Title:    title,
+		Summary:  parsed.Summary,
+		Tags:     parsed.Tags,
+		Aliases:  parsed.Aliases,
+		Headings: parsed.Headings,
+		Status:   "active",
 	}, nil
 }
 
@@ -357,11 +364,13 @@ func analyzeDocRelations(
 		if m == nil {
 			continue
 		}
-		candidateBuilder.WriteString(fmt.Sprintf("- %q | summary: %s | tags: %v | shared tags: %v\n", c.path, m.Summary, m.Tags, c.sharedTags))
+		candidateBuilder.WriteString(fmt.Sprintf("- %q | title: %s | headings: %q | summary: %s | tags: %v | shared tags: %v\n", c.path, m.Title, headingTexts(m.Headings), m.Summary, m.Tags, c.sharedTags))
 	}
 
 	prompt := fmt.Sprintf(`Given the following document:
 - path: %q
+- title: %s
+- headings: [%s]
 - summary: %s
 - tags: %v
 
@@ -377,7 +386,7 @@ Rules:
 - Score 0 means unrelated, 1 means highly related
 - Reason should be one concise sentence
 - Type should be a brief semantic relationship type (e.g., "references", "extends", "contrasts", "depends-on", "is-prerequisite-for"). Use lowercase with hyphens. Be specific and descriptive.
-- Use the exact file paths from the candidate list`, docPath, doc.Summary, doc.Tags, candidateBuilder.String())
+- Use the exact file paths from the candidate list`, docPath, doc.Title, headingTexts(doc.Headings), doc.Summary, doc.Tags, candidateBuilder.String())
 
 	messages := []*einoschema.Message{
 		{Role: einoschema.User, Content: prompt},
@@ -540,14 +549,6 @@ func computeHash(data []byte) string {
 	return fmt.Sprintf("%x", h)
 }
 
-func truncateContent(content string, maxLen int) string {
-	runes := []rune(content)
-	if len(runes) <= maxLen {
-		return content
-	}
-	return string(runes[:maxLen]) + "\n... [truncated]"
-}
-
 func stripCodeFences(s string) string {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "```json") {
@@ -591,4 +592,15 @@ func listMarkdownFiles(rootPath string) []string {
 		return nil
 	})
 	return files
+}
+
+// headingTexts extracts the text from a slice of Heading values.
+func headingTexts(headings []meta.Heading) []string {
+	out := make([]string, 0, len(headings))
+	for _, h := range headings {
+		if h.Text != "" {
+			out = append(out, h.Text)
+		}
+	}
+	return out
 }

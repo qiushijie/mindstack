@@ -12,15 +12,22 @@ import (
 
 const maxMetaSize = 2 * 1024 * 1024 // 2MB
 
+// Heading represents a document section heading with its hierarchy level.
+type Heading struct {
+	Level int    `json:"level"`
+	Text  string `json:"text"`
+}
+
 // DocumentMeta holds metadata for a single markdown document.
 type DocumentMeta struct {
-	Path        string   `yaml:"-" json:"path,omitempty"`
-	Title       string   `yaml:"title" json:"title"`
-	Summary     string   `yaml:"summary" json:"summary"`
-	Tags        []string `yaml:"tags" json:"tags"`
-	Aliases     []string `yaml:"aliases" json:"aliases"`
-	Status      string   `yaml:"status" json:"status"`
-	ContentHash string   `yaml:"-" json:"contentHash,omitempty"`
+	Path        string    `yaml:"-" json:"path,omitempty"`
+	Title       string    `yaml:"title" json:"title"`
+	Summary     string    `yaml:"summary" json:"summary"`
+	Tags        []string  `yaml:"tags" json:"tags"`
+	Aliases     []string  `yaml:"aliases" json:"aliases"`
+	Headings    []Heading `yaml:"headings" json:"headings"`
+	Status      string    `yaml:"status" json:"status"`
+	ContentHash string    `yaml:"-" json:"contentHash,omitempty"`
 }
 
 // metaStore is the on-disk format: map from doc path to metadata.

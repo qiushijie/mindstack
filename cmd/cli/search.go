@@ -31,9 +31,12 @@ Full text search:
 
 		if searchFulltext {
 			type resultItem struct {
-				Path       string `json:"path"`
-				Title      string `json:"title"`
-				MatchCount int    `json:"matchCount"`
+				Path          string `json:"path"`
+				Title         string `json:"title"`
+				Score         int    `json:"score"`
+				MatchTitle    int    `json:"matchTitle"`
+				MatchSummary  int    `json:"matchSummary"`
+				MatchHeadings int    `json:"matchHeadings"`
 			}
 
 			query := strings.ToLower(args[0])
@@ -50,12 +53,22 @@ Full text search:
 					continue
 				}
 				content := strings.ToLower(string(data))
-				count := strings.Count(content, query)
-				if count > 0 {
+				titleHits := strings.Count(strings.ToLower(m.Title), query)
+				summaryHits := strings.Count(strings.ToLower(m.Summary), query)
+				headingsHits := 0
+				for _, h := range m.Headings {
+					headingsHits += strings.Count(strings.ToLower(h.Text), query)
+				}
+				contentHits := strings.Count(content, query)
+				score := titleHits*4 + summaryHits*3 + headingsHits*3 + contentHits
+				if score > 0 {
 					results = append(results, resultItem{
-						Path:       absPath,
-						Title:      m.Title,
-						MatchCount: count,
+						Path:          absPath,
+						Title:         m.Title,
+						Score:         score,
+						MatchTitle:    titleHits,
+						MatchSummary:  summaryHits,
+						MatchHeadings: headingsHits,
 					})
 				}
 			}

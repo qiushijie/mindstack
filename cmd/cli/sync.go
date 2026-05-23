@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var syncForce bool
+
 var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Sync workspace (generate metadata and relations)",
@@ -27,7 +29,7 @@ var syncCmd = &cobra.Command{
 		var processed, skipped int
 		var errs []string
 
-		err := syncpkg.SyncWorkspace(context.Background(), svc, root, func(p syncpkg.SyncProgress) {
+		err := syncpkg.SyncWorkspace(context.Background(), svc, root, syncForce, func(p syncpkg.SyncProgress) {
 			switch p.Status {
 			case "done":
 				processed++
@@ -52,4 +54,8 @@ var syncCmd = &cobra.Command{
 			"errors":         errs,
 		})
 	},
+}
+
+func init() {
+	syncCmd.Flags().BoolVar(&syncForce, "force", false, "force reprocess all files, ignoring existing metadata")
 }

@@ -209,8 +209,9 @@ type candidate struct {
 	relPath      string
 	tagHits      int
 	aliasHits    int
-	summaryHits  int
 	titleHits    int
+	summaryHits  int
+	headingsHits int
 	fulltextHits int
 	score        int
 }
@@ -249,6 +250,9 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags []st
 		if queryLower != "" {
 			c.titleHits = strings.Count(strings.ToLower(m.Title), queryLower)
 			c.summaryHits = strings.Count(strings.ToLower(m.Summary), queryLower)
+			for _, h := range m.Headings {
+				c.headingsHits += strings.Count(strings.ToLower(h.Text), queryLower)
+			}
 		}
 
 		scored[m.Path] = c
@@ -274,7 +278,7 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags []st
 
 	var list []candidate
 	for _, c := range scored {
-		c.score = 5*c.tagHits + 4*c.aliasHits + 3*c.summaryHits + 2*c.titleHits + 1*c.fulltextHits
+		c.score = 5*c.tagHits + 4*c.aliasHits + 4*c.titleHits + 3*c.summaryHits + 3*c.headingsHits + 1*c.fulltextHits
 		if c.score == 0 {
 			continue
 		}

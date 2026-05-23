@@ -19,58 +19,6 @@ import (
 	einoschema "github.com/cloudwego/eino/schema"
 )
 
-// --- truncateContent tests ---
-
-func TestTruncateContent_ShortContent(t *testing.T) {
-	got := truncateContent("hello", 10)
-	if got != "hello" {
-		t.Fatalf("expected %q, got %q", "hello", got)
-	}
-}
-
-func TestTruncateContent_LongContent(t *testing.T) {
-	content := strings.Repeat("a", 100)
-	got := truncateContent(content, 50)
-	expected := strings.Repeat("a", 50) + "\n... [truncated]"
-	if got != expected {
-		t.Fatalf("expected truncated string of length %d, got length %d", len(expected), len(got))
-	}
-}
-
-func TestTruncateContent_EmptyString(t *testing.T) {
-	got := truncateContent("", 10)
-	if got != "" {
-		t.Fatalf("expected empty string, got %q", got)
-	}
-}
-
-func TestTruncateContent_MultiByteUTF8(t *testing.T) {
-	// Each Chinese character is 3 bytes but 1 rune.
-	// 10 Chinese runes = 30 bytes, truncate at 5 runes.
-	content := "你好世界你好世界你好世界"
-	got := truncateContent(content, 5)
-	expected := "你好世界你" + "\n... [truncated]"
-	if got != expected {
-		t.Fatalf("expected %q, got %q", expected, got)
-	}
-}
-
-func TestTruncateContent_ExactLength(t *testing.T) {
-	content := "abcde"
-	got := truncateContent(content, 5)
-	if got != "abcde" {
-		t.Fatalf("expected %q, got %q", "abcde", got)
-	}
-}
-
-func TestTruncateContent_ZeroMaxLen(t *testing.T) {
-	got := truncateContent("hello", 0)
-	expected := "\n... [truncated]"
-	if got != expected {
-		t.Fatalf("expected %q, got %q", expected, got)
-	}
-}
-
 // --- stripCodeFences tests ---
 
 func TestStripCodeFences_PlainJSON(t *testing.T) {
@@ -267,7 +215,7 @@ func TestSyncWorkspace_NoFiles(t *testing.T) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, onProgress)
+	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -284,7 +232,7 @@ func TestSyncWorkspace_NilOnProgress(t *testing.T) {
 	svc := newNilLLMService()
 
 	// Should not panic with nil onProgress
-	err := SyncWorkspace(context.Background(), svc, dir, nil)
+	err := SyncWorkspace(context.Background(), svc, dir, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -297,7 +245,7 @@ func TestSyncWorkspace_NilOnProgressWithFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "test.md"), []byte("# Test"), 0644)
 
 	// Should not panic with nil onProgress even when processing files
-	err := SyncWorkspace(context.Background(), svc, dir, nil)
+	err := SyncWorkspace(context.Background(), svc, dir, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -315,7 +263,7 @@ func TestSyncWorkspace_LLMError_ReportsError(t *testing.T) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, onProgress)
+	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -368,7 +316,7 @@ func TestSyncWorkspace_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	err := SyncWorkspace(ctx, svc, dir, func(SyncProgress) {})
+	err := SyncWorkspace(ctx, svc, dir, false, func(SyncProgress) {})
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -390,7 +338,7 @@ func TestSyncWorkspace_ContextCancellationBetweenFiles(t *testing.T) {
 	defer cancel()
 	// Context will expire almost immediately
 
-	_ = SyncWorkspace(ctx, svc, dir, func(SyncProgress) {})
+	_ = SyncWorkspace(ctx, svc, dir, false, func(SyncProgress) {})
 	// The function should return ctx.Err() at some point during iteration.
 	// We don't assert the exact error because timing is non-deterministic,
 	// but it should not panic.
@@ -407,7 +355,7 @@ func TestSyncWorkspace_ReportsProgressOrder(t *testing.T) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, onProgress)
+	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -494,7 +442,7 @@ func TestSyncWorkspace_ReadFileError_ReportsError(t *testing.T) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, onProgress)
+	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -608,7 +556,7 @@ func newMockLLMService(t *testing.T, responseContent string) (*llm.Service, *htt
 }
 
 func TestGenerateMeta_Success(t *testing.T) {
-	content := `{"title":"Test Document","summary":"A test document for unit testing.","tags":["test","unit-test","mock"],"aliases":["testing"]}`
+	content := `{"summary":"A test document for unit testing.","tags":["test","unit-test","mock"],"aliases":["testing"],"headings":[{"level":1,"text":"Test Document"}]}`
 	svc, server := newMockLLMService(t, content)
 	defer server.Close()
 
@@ -620,7 +568,7 @@ func TestGenerateMeta_Success(t *testing.T) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, onProgress)
+	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -713,7 +661,7 @@ func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 				title = "Second Doc"
 				summary = "The second document."
 			}
-			responseContent = `{"title":"` + title + `","summary":"` + summary + `","tags":["test"]}`
+			responseContent = `{"summary":"` + summary + `","tags":["test"],"headings":[{"level":1,"text":"` + title + `"}]}`
 		}
 
 		resp := openaiResponse{
@@ -764,7 +712,7 @@ func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0644)
 	os.WriteFile(filepath.Join(dir, "b.md"), []byte("# B"), 0644)
 
-	err = SyncWorkspace(context.Background(), svc, dir, func(SyncProgress) {})
+	err = SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -806,7 +754,7 @@ func TestGenerateMeta_InvalidJSONResponse(t *testing.T) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, onProgress)
+	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -834,7 +782,7 @@ func TestGenerateMeta_InvalidJSONResponse(t *testing.T) {
 
 func TestGenerateMeta_CodeFencedJSONResponse(t *testing.T) {
 	// Return valid JSON wrapped in code fences (common LLM behavior)
-	inner := `{"title":"Fenced","summary":"A fenced response.","tags":["fenced"]}`
+	inner := `{"summary":"A fenced response.","tags":["fenced"],"headings":[{"level":1,"text":"Fenced"}]}`
 	content := "```json\n" + inner + "\n```"
 	svc, server := newMockLLMService(t, content)
 	defer server.Close()
@@ -842,7 +790,7 @@ func TestGenerateMeta_CodeFencedJSONResponse(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	os.WriteFile(filepath.Join(dir, "fenced.md"), []byte("# Fenced"), 0644)
 
-	err := SyncWorkspace(context.Background(), svc, dir, func(SyncProgress) {})
+	err := SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -860,7 +808,7 @@ func TestGenerateMeta_CodeFencedJSONResponse(t *testing.T) {
 }
 
 func TestGenerateMeta_PreservesExistingStatus(t *testing.T) {
-	content := `{"title":"Updated","summary":"Updated summary.","tags":["updated"]}`
+	content := `{"summary":"Updated summary.","tags":["updated"],"headings":[{"level":1,"text":"Updated"}]}`
 	svc, server := newMockLLMService(t, content)
 	defer server.Close()
 
@@ -878,7 +826,7 @@ func TestGenerateMeta_PreservesExistingStatus(t *testing.T) {
 		t.Fatalf("failed to save existing meta: %v", err)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, func(SyncProgress) {})
+	err := SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -915,7 +863,7 @@ func TestSyncWorkspace_SkipsUnchangedFiles(t *testing.T) {
 			}{{Index: 0, Message: struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
-			}{Role: "assistant", Content: `{"title":"Doc","summary":"A doc.","tags":["test"]}`}, FinishReason: "stop"}},
+			}{Role: "assistant", Content: `{"summary":"A doc.","tags":["test"],"headings":[{"level":1,"text":"Introduction"}]}`}, FinishReason: "stop"}},
 			Usage: struct {
 				PromptTokens     int `json:"prompt_tokens"`
 				CompletionTokens int `json:"completion_tokens"`
@@ -936,7 +884,7 @@ func TestSyncWorkspace_SkipsUnchangedFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc"), 0644)
 
 	// First sync: should process the file
-	err := SyncWorkspace(context.Background(), svc, dir, func(SyncProgress) {})
+	err := SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
 	if err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
@@ -944,7 +892,7 @@ func TestSyncWorkspace_SkipsUnchangedFiles(t *testing.T) {
 
 	// Second sync: should skip (content unchanged)
 	var progresses []SyncProgress
-	err = SyncWorkspace(context.Background(), svc, dir, func(p SyncProgress) {
+	err = SyncWorkspace(context.Background(), svc, dir, false, func(p SyncProgress) {
 		progresses = append(progresses, p)
 	})
 	if err != nil {
@@ -969,6 +917,76 @@ func TestSyncWorkspace_SkipsUnchangedFiles(t *testing.T) {
 	}
 }
 
+func TestSyncWorkspace_ForceReprocessesUnchangedFile(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		resp := openaiResponse{
+			ID: "test-id", Object: "chat.completion",
+			Choices: []struct {
+				Index   int `json:"index"`
+				Message struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
+			}{{Index: 0, Message: struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			}{Role: "assistant", Content: `{"summary":"A doc.","tags":["test"],"headings":[{"level":1,"text":"Doc"}]}`}, FinishReason: "stop"}},
+			Usage: struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+				TotalTokens      int `json:"total_tokens"`
+			}{PromptTokens: 10, CompletionTokens: 20, TotalTokens: 30},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	svc := llm.NewService(t.TempDir())
+	svc.UpdateModel(&llm.ActiveModelConfig{
+		ID: "test", Model: "test-model", ApiURL: server.URL, ApiKey: "test-key",
+	})
+
+	dir := setupTestWorkspace(t)
+	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc"), 0644)
+
+	// First sync: should process the file
+	err := SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
+	if err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+	firstCallCount := callCount
+
+	// Second sync with force=true: should reprocess even though content unchanged
+	var progresses []SyncProgress
+	err = SyncWorkspace(context.Background(), svc, dir, true, func(p SyncProgress) {
+		progresses = append(progresses, p)
+	})
+	if err != nil {
+		t.Fatalf("second sync with force: %v", err)
+	}
+
+	// Should have additional LLM calls
+	if callCount == firstCallCount {
+		t.Fatal("expected additional LLM calls with force=true")
+	}
+
+	// Should have done status (not skipped)
+	found := false
+	for _, p := range progresses {
+		if p.Status == "done" && p.Phase == "meta" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected done status for force reprocess")
+	}
+}
+
 func TestSyncWorkspace_ReprocessesChangedFile(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -989,7 +1007,7 @@ func TestSyncWorkspace_ReprocessesChangedFile(t *testing.T) {
 			}{{Index: 0, Message: struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
-			}{Role: "assistant", Content: `{"title":"` + title + `","summary":"A doc.","tags":["test"]}`}, FinishReason: "stop"}},
+			}{Role: "assistant", Content: `{"summary":"A doc.","tags":["test"],"headings":[{"level":1,"text":"` + title + `"}]}`}, FinishReason: "stop"}},
 			Usage: struct {
 				PromptTokens     int `json:"prompt_tokens"`
 				CompletionTokens int `json:"completion_tokens"`
@@ -1010,14 +1028,14 @@ func TestSyncWorkspace_ReprocessesChangedFile(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc v1"), 0644)
 
 	// First sync
-	SyncWorkspace(context.Background(), svc, dir, func(SyncProgress) {})
+	SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
 
 	// Modify the file
 	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc v2 - updated"), 0644)
 
 	// Second sync: should reprocess
 	var progresses []SyncProgress
-	SyncWorkspace(context.Background(), svc, dir, func(p SyncProgress) {
+	SyncWorkspace(context.Background(), svc, dir, false, func(p SyncProgress) {
 		progresses = append(progresses, p)
 	})
 

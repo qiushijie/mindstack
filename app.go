@@ -550,7 +550,7 @@ func (a *App) SyncWorkspace() string {
 
 	go func() {
 		defer atomic.StoreInt32(&a.syncing, 0)
-		err := syncpkg.SyncWorkspace(a.ctx, a.llm, root, func(p syncpkg.SyncProgress) {
+		err := syncpkg.SyncWorkspace(a.ctx, a.llm, root, false, func(p syncpkg.SyncProgress) {
 			data, _ := json.Marshal(p)
 			runtime.EventsEmit(a.ctx, "sync:progress", string(data))
 		})
