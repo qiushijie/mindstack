@@ -21,6 +21,17 @@ var syncCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		root := requireRoot()
 
+		if syncForce {
+			fmt.Fprintln(os.Stderr, "WARNING: --force will reprocess ALL files and overwrite existing metadata. This may consume significant LLM tokens.")
+			fmt.Fprint(os.Stderr, "Are you sure you want to continue? [Y/n] ")
+			var input string
+			fmt.Scanln(&input)
+			if input != "Y" {
+				fmt.Fprintln(os.Stderr, "Aborted.")
+				os.Exit(0)
+			}
+		}
+
 		svc := llm.NewService(config.ResolveConfigPath())
 		if err := svc.InitFromConfig(); err != nil {
 			writeError(3, "LLM_UNAVAILABLE", fmt.Sprintf("cannot init LLM service: %v", err))
