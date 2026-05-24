@@ -10,6 +10,10 @@ export function AddRecentEntry(arg1, arg2) {
   return window['go']['main']['App']['AddRecentEntry'](arg1, arg2);
 }
 
+export function BuildWorkspace() {
+  return window['go']['main']['App']['BuildWorkspace']();
+}
+
 export function Chat(arg1) {
   return window['go']['main']['App']['Chat'](arg1);
 }
@@ -192,10 +196,6 @@ export function StreamChat(arg1) {
 
 export function StreamChatWithHistory(arg1) {
   return window['go']['main']['App']['StreamChatWithHistory'](arg1);
-}
-
-export function BuildWorkspace() {
-  return window['go']['main']['App']['BuildWorkspace']();
 }
 
 export function WindowClose() {

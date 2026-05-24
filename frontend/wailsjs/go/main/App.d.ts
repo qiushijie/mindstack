@@ -6,6 +6,8 @@ export function Ack(arg1:string):Promise<string>;
 
 export function AddRecentEntry(arg1:string,arg2:boolean):Promise<void>;
 
+export function BuildWorkspace():Promise<string>;
+
 export function Chat(arg1:string):Promise<string>;
 
 export function ChatCreateSession(arg1:string):Promise<string>;
@@ -97,8 +99,6 @@ export function SetWorkspaceRoot(arg1:string):Promise<void>;
 export function StreamChat(arg1:string):Promise<string>;
 
 export function StreamChatWithHistory(arg1:string):Promise<string>;
-
-export function BuildWorkspace():Promise<string>;
 
 export function WindowClose():Promise<void>;
 
