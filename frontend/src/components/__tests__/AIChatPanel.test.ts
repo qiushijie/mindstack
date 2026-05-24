@@ -10,7 +10,7 @@ vi.mock('../../../wailsjs/runtime/runtime', () => ({
   EventsOn: mockEventsOn,
 }))
 
-// Track progress callback from syncWorkspace for manual triggering
+// Track progress callback from buildWorkspace for manual triggering
 let onProgressCb: ((data: any) => void) | undefined
 
 // Mock composables
@@ -26,12 +26,12 @@ vi.mock('../../composables/useLLM', () => ({
   }),
 }))
 
-const mockSyncWorkspace = vi.fn()
-vi.mock('../../composables/useSync', () => ({
-  useSync: () => ({
-    syncWorkspace: mockSyncWorkspace,
-    syncLoading: { value: false },
-    syncError: { value: '' },
+const mockBuildWorkspace = vi.fn()
+vi.mock('../../composables/useBuild', () => ({
+  useBuild: () => ({
+    buildWorkspace: mockBuildWorkspace,
+    buildLoading: { value: false },
+    buildError: { value: '' },
   }),
 }))
 
@@ -263,7 +263,7 @@ describe('AIChatPanel', () => {
       expect(items).toHaveLength(3)
       expect(items[0].text()).toContain('Search')
       expect(items[1].text()).toContain('Git Sync')
-      expect(items[2].text()).toContain('Sync')
+      expect(items[2].text()).toContain('Build')
     })
 
     it('selects search tool and focuses input', async () => {
@@ -283,7 +283,7 @@ describe('AIChatPanel', () => {
       expect((wrapper.find('.chat-input').element as HTMLTextAreaElement).placeholder).toBe('Enter tags to search...')
     })
 
-    it('triggers sync when sync tool is selected', async () => {
+    it('triggers build when build tool is selected', async () => {
       const wrapper = mountComponent()
 
       await wrapper.find('.tool-btn').trigger('click')
@@ -292,11 +292,11 @@ describe('AIChatPanel', () => {
       await wrapper.findAll('.tool-menu-item')[2].trigger('click')
       await nextTick()
 
-      expect(mockSyncWorkspace).toHaveBeenCalledOnce()
-      // Should show user message "/sync" and assistant placeholder
+      expect(mockBuildWorkspace).toHaveBeenCalledOnce()
+      // Should show user message "/build" and assistant placeholder
       const messages = wrapper.findAll('.message')
       expect(messages).toHaveLength(2)
-      expect(messages[0].find('.bubble').text()).toBe('/sync')
+      expect(messages[0].find('.bubble').text()).toBe('/build')
     })
 
     it('clears tool selection when tool button is clicked with active selection', async () => {
@@ -480,16 +480,16 @@ describe('AIChatPanel', () => {
     })
   })
 
-  describe('sync progress', () => {
+  describe('build progress', () => {
     beforeEach(() => {
       onProgressCb = undefined
       // Capture the onProgress callback so tests can simulate progress
-      mockSyncWorkspace.mockImplementation((onProgress: (data: any) => void) => {
+      mockBuildWorkspace.mockImplementation((onProgress: (data: any) => void) => {
         onProgressCb = onProgress
       })
     })
 
-    it('updates message with sync progress', async () => {
+    it('updates message with build progress', async () => {
       const wrapper = mountComponent()
 
       await wrapper.find('.tool-btn').trigger('click')
@@ -497,7 +497,7 @@ describe('AIChatPanel', () => {
       await wrapper.findAll('.tool-menu-item')[2].trigger('click')
       await nextTick()
 
-      // Simulate a sync progress event
+      // Simulate a build progress event
       onProgressCb!({ file: 'test.md', current: 1, total: 3, status: 'processing', phase: 'meta' })
 
       await nextTick()
@@ -507,7 +507,7 @@ describe('AIChatPanel', () => {
       expect(lastMsg.find('.bubble').text()).toContain('test.md')
     })
 
-    it('shows completion message when sync finishes', async () => {
+    it('shows completion message when build finishes', async () => {
       const wrapper = mountComponent()
 
       await wrapper.find('.tool-btn').trigger('click')
@@ -521,10 +521,10 @@ describe('AIChatPanel', () => {
 
       const messages = wrapper.findAll('.message')
       const lastMsg = messages[messages.length - 1]
-      expect(lastMsg.find('.bubble').text()).toContain('Sync complete')
+      expect(lastMsg.find('.bubble').text()).toContain('Build complete')
     })
 
-    it('shows no files message when sync finds nothing', async () => {
+    it('shows no files message when build finds nothing', async () => {
       const wrapper = mountComponent()
 
       await wrapper.find('.tool-btn').trigger('click')

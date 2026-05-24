@@ -251,7 +251,7 @@ export default {
     title: '文档关联',
     searchPlaceholder: '搜索文档...',
     loading: '加载中...',
-    empty: '未找到文档，请先执行同步。',
+    empty: '未找到文档，请先执行构建。',
     selectedDocument: '已选文档',
     relations: '关联',
     noRelations: '未找到关联',

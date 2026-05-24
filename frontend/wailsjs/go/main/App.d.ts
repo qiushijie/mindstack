@@ -98,7 +98,7 @@ export function StreamChat(arg1:string):Promise<string>;
 
 export function StreamChatWithHistory(arg1:string):Promise<string>;
 
-export function SyncWorkspace():Promise<string>;
+export function BuildWorkspace():Promise<string>;
 
 export function WindowClose():Promise<void>;
 

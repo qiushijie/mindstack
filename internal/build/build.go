@@ -1,4 +1,4 @@
-package sync
+package build
 
 import (
 	"context"
@@ -18,8 +18,8 @@ import (
 	einoschema "github.com/cloudwego/eino/schema"
 )
 
-// SyncProgress is emitted for each step processed.
-type SyncProgress struct {
+// BuildProgress is emitted for each step processed.
+type BuildProgress struct {
 	File    string `json:"file"`
 	Current int    `json:"current"`
 	Total   int    `json:"total"`
@@ -34,18 +34,18 @@ type candidateInfo struct {
 	sharedTags []string
 }
 
-// SyncWorkspace scans all markdown files under rootPath and generates
+// BuildWorkspace scans all markdown files under rootPath and generates
 // summary + tags metadata for each one using the LLM service,
 // then analyzes document relations based on shared tags.
-func SyncWorkspace(
+func BuildWorkspace(
 	ctx context.Context,
 	llmSvc *llm.Service,
 	rootPath string,
 	force bool,
-	onProgress func(SyncProgress),
+	onProgress func(BuildProgress),
 ) error {
 	if onProgress == nil {
-		onProgress = func(SyncProgress) {}
+		onProgress = func(BuildProgress) {}
 	}
 
 	files := listMarkdownFiles(rootPath)
@@ -58,24 +58,24 @@ func SyncWorkspace(
 	}
 	removed, err := meta.RemoveStale(rootPath, existingSet)
 	if err != nil {
-		onProgress(SyncProgress{Status: "error", Error: fmt.Sprintf("cleanup meta: %v", err), Phase: "meta"})
+		onProgress(BuildProgress{Status: "error", Error: fmt.Sprintf("cleanup meta: %v", err), Phase: "meta"})
 	}
 	if len(removed) > 0 {
 		store, err := relation.Load(rootPath)
 		if err != nil {
-			onProgress(SyncProgress{Status: "error", Error: fmt.Sprintf("load relations for cleanup: %v", err), Phase: "meta"})
+			onProgress(BuildProgress{Status: "error", Error: fmt.Sprintf("load relations for cleanup: %v", err), Phase: "meta"})
 		} else {
 			for _, p := range removed {
 				relation.RemoveByDoc(store, p)
 			}
 			if err := relation.Save(rootPath, store); err != nil {
-				onProgress(SyncProgress{Status: "error", Error: fmt.Sprintf("save relations after cleanup: %v", err), Phase: "meta"})
+				onProgress(BuildProgress{Status: "error", Error: fmt.Sprintf("save relations after cleanup: %v", err), Phase: "meta"})
 			}
 		}
 	}
 
 	if total == 0 {
-		onProgress(SyncProgress{Status: "complete", Total: 0, Current: 0, Phase: "meta"})
+		onProgress(BuildProgress{Status: "complete", Total: 0, Current: 0, Phase: "meta"})
 		return nil
 	}
 
@@ -89,7 +89,7 @@ func SyncWorkspace(
 		default:
 		}
 
-		onProgress(SyncProgress{
+		onProgress(BuildProgress{
 			File:    relPath,
 			Current: i + 1,
 			Total:   total,
@@ -100,7 +100,7 @@ func SyncWorkspace(
 		absPath := filepath.Join(rootPath, relPath)
 		content, err := os.ReadFile(absPath)
 		if err != nil {
-			onProgress(SyncProgress{
+			onProgress(BuildProgress{
 				File:    relPath,
 				Current: i + 1,
 				Total:   total,
@@ -114,7 +114,7 @@ func SyncWorkspace(
 		hash := computeHash(content)
 		existing, _ := meta.LoadMeta(rootPath, relPath)
 		if !force && existing != nil && existing.ContentHash == hash && len(existing.Headings) > 0 {
-			onProgress(SyncProgress{
+			onProgress(BuildProgress{
 				File:    relPath,
 				Current: i + 1,
 				Total:   total,
@@ -126,7 +126,7 @@ func SyncWorkspace(
 
 		result, err := generateMeta(ctx, llmSvc, relPath, string(content))
 		if err != nil {
-			onProgress(SyncProgress{
+			onProgress(BuildProgress{
 				File:    relPath,
 				Current: i + 1,
 				Total:   total,
@@ -144,7 +144,7 @@ func SyncWorkspace(
 		result.ContentHash = hash
 
 		if err := meta.SaveMeta(rootPath, relPath, result); err != nil {
-			onProgress(SyncProgress{
+			onProgress(BuildProgress{
 				File:    relPath,
 				Current: i + 1,
 				Total:   total,
@@ -157,7 +157,7 @@ func SyncWorkspace(
 
 		changedDocs[relPath] = true
 
-		onProgress(SyncProgress{
+		onProgress(BuildProgress{
 			File:    relPath,
 			Current: i + 1,
 			Total:   total,
@@ -167,7 +167,7 @@ func SyncWorkspace(
 		})
 	}
 
-	onProgress(SyncProgress{
+	onProgress(BuildProgress{
 		Current: total,
 		Total:   total,
 		Status:  "complete",
@@ -189,7 +189,7 @@ func SyncWorkspace(
 
 	// Phase 2: Relation analysis
 	if err := analyzeRelations(ctx, llmSvc, rootPath, changedDocs, onProgress); err != nil {
-		onProgress(SyncProgress{
+		onProgress(BuildProgress{
 			Status: "error",
 			Error:  fmt.Sprintf("relation analysis: %v", err),
 			Phase:  "relation",
@@ -204,10 +204,10 @@ func analyzeRelations(
 	llmSvc *llm.Service,
 	rootPath string,
 	changedDocs map[string]bool,
-	onProgress func(SyncProgress),
+	onProgress func(BuildProgress),
 ) error {
 	if len(changedDocs) == 0 {
-		onProgress(SyncProgress{Status: "complete", Phase: "relation"})
+		onProgress(BuildProgress{Status: "complete", Phase: "relation"})
 		return nil
 	}
 
@@ -218,7 +218,7 @@ func analyzeRelations(
 
 	candidates := findCandidateDocs(allMetas, changedDocs)
 	if len(candidates) == 0 {
-		onProgress(SyncProgress{Status: "complete", Phase: "relation"})
+		onProgress(BuildProgress{Status: "complete", Phase: "relation"})
 		return nil
 	}
 
@@ -245,7 +245,7 @@ func analyzeRelations(
 		default:
 		}
 
-		onProgress(SyncProgress{
+		onProgress(BuildProgress{
 			File:    docPath,
 			Current: i + 1,
 			Total:   totalDocs,
@@ -256,7 +256,7 @@ func analyzeRelations(
 
 		relations, err := analyzeDocRelations(ctx, llmSvc, docPath, candidates[docPath], metaMap)
 		if err != nil {
-			onProgress(SyncProgress{
+			onProgress(BuildProgress{
 				File:    docPath,
 				Current: i + 1,
 				Total:   totalDocs,
@@ -269,7 +269,7 @@ func analyzeRelations(
 
 		relation.AddRelations(store, relations)
 
-		onProgress(SyncProgress{
+		onProgress(BuildProgress{
 			File:    docPath,
 			Current: i + 1,
 			Total:   totalDocs,
@@ -283,7 +283,7 @@ func analyzeRelations(
 		return fmt.Errorf("save relations: %w", err)
 	}
 
-	onProgress(SyncProgress{
+	onProgress(BuildProgress{
 		Status: "complete",
 		Phase:  "relation",
 	})
@@ -563,7 +563,7 @@ func stripCodeFences(s string) string {
 }
 
 // listMarkdownFiles collects all markdown files under rootPath as relative paths.
-// WalkDir error is intentionally ignored because the caller (SyncWorkspace) handles
+// WalkDir error is intentionally ignored because the caller (BuildWorkspace) handles
 // the case where no files are found (e.g. rootPath does not exist).
 func listMarkdownFiles(rootPath string) []string {
 	var files []string

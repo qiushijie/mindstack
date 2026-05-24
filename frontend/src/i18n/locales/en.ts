@@ -251,7 +251,7 @@ export default {
     title: 'Document Relations',
     searchPlaceholder: 'Search documents...',
     loading: 'Loading...',
-    empty: 'No documents found. Run a sync first.',
+    empty: 'No documents found. Run a build first.',
     selectedDocument: 'SELECTED DOCUMENT',
     relations: 'RELATIONS',
     noRelations: 'No relations found',

@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { SyncProgress } from '../useSync'
+import type { BuildProgress } from '../useBuild'
 
 // Capture the listener registered via EventsOn so tests can emit events
 let progressListener: ((data: string) => void) | null = null
 
 vi.mock('../../../wailsjs/go/main/App', () => ({
-  SyncWorkspace: vi.fn(),
+  BuildWorkspace: vi.fn(),
 }))
 
 vi.mock('../../../wailsjs/runtime/runtime', () => ({
@@ -15,33 +15,33 @@ vi.mock('../../../wailsjs/runtime/runtime', () => ({
   EventsOff: vi.fn(),
 }))
 
-import { SyncWorkspace } from '../../../wailsjs/go/main/App'
+import { BuildWorkspace } from '../../../wailsjs/go/main/App'
 import { EventsOff } from '../../../wailsjs/runtime/runtime'
-import { useSync } from '../useSync'
+import { useBuild } from '../useBuild'
 
 beforeEach(() => {
   progressListener = null
-  vi.mocked(SyncWorkspace).mockReset()
+  vi.mocked(BuildWorkspace).mockReset()
   vi.mocked(EventsOff).mockReset()
 })
 
-describe('useSync', () => {
-  describe('syncWorkspace', () => {
+describe('useBuild', () => {
+  describe('buildWorkspace', () => {
     it('calls onProgress for each progress event', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue('')
+      vi.mocked(BuildWorkspace).mockResolvedValue('')
 
-      const { syncWorkspace, syncLoading } = useSync()
+      const { buildWorkspace, buildLoading } = useBuild()
       const onProgress = vi.fn()
       const onDone = vi.fn()
       const onError = vi.fn()
 
-      syncWorkspace(onProgress, onDone, onError)
+      buildWorkspace(onProgress, onDone, onError)
 
-      expect(syncLoading.value).toBe(true)
+      expect(buildLoading.value).toBe(true)
       expect(progressListener).not.toBeNull()
 
-      const progress1: SyncProgress = { file: 'a.md', current: 1, total: 3, status: 'processing', phase: 'meta' }
-      const progress2: SyncProgress = { file: 'b.md', current: 2, total: 3, status: 'processing', phase: 'meta' }
+      const progress1: BuildProgress = { file: 'a.md', current: 1, total: 3, status: 'processing', phase: 'meta' }
+      const progress2: BuildProgress = { file: 'b.md', current: 2, total: 3, status: 'processing', phase: 'meta' }
 
       progressListener!(JSON.stringify(progress1))
       progressListener!(JSON.stringify(progress2))
@@ -49,86 +49,86 @@ describe('useSync', () => {
       expect(onProgress).toHaveBeenCalledTimes(2)
       expect(onProgress).toHaveBeenCalledWith(progress1)
       expect(onProgress).toHaveBeenCalledWith(progress2)
-      expect(syncLoading.value).toBe(true)
+      expect(buildLoading.value).toBe(true)
     })
 
     it('calls onDone and cleans up when relation phase completes', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue('')
+      vi.mocked(BuildWorkspace).mockResolvedValue('')
 
-      const { syncWorkspace, syncLoading } = useSync()
+      const { buildWorkspace, buildLoading } = useBuild()
       const onProgress = vi.fn()
       const onDone = vi.fn()
       const onError = vi.fn()
 
-      syncWorkspace(onProgress, onDone, onError)
+      buildWorkspace(onProgress, onDone, onError)
 
-      const metaComplete: SyncProgress = { file: '', current: 3, total: 3, status: 'complete', phase: 'meta' }
+      const metaComplete: BuildProgress = { file: '', current: 3, total: 3, status: 'complete', phase: 'meta' }
       progressListener!(JSON.stringify(metaComplete))
 
       expect(onProgress).toHaveBeenCalledWith(metaComplete)
       expect(onDone).not.toHaveBeenCalled()
-      expect(syncLoading.value).toBe(true)
+      expect(buildLoading.value).toBe(true)
 
-      const relationComplete: SyncProgress = { file: '', current: 3, total: 3, status: 'complete', phase: 'relation' }
+      const relationComplete: BuildProgress = { file: '', current: 3, total: 3, status: 'complete', phase: 'relation' }
       progressListener!(JSON.stringify(relationComplete))
 
       expect(onProgress).toHaveBeenCalledWith(relationComplete)
       expect(onDone).toHaveBeenCalled()
-      expect(syncLoading.value).toBe(false)
-      expect(EventsOff).toHaveBeenCalledWith('sync:progress')
+      expect(buildLoading.value).toBe(false)
+      expect(EventsOff).toHaveBeenCalledWith('build:progress')
     })
 
     it('does not call onDone on meta phase complete', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue('')
+      vi.mocked(BuildWorkspace).mockResolvedValue('')
 
-      const { syncWorkspace, syncLoading } = useSync()
+      const { buildWorkspace, buildLoading } = useBuild()
       const onProgress = vi.fn()
       const onDone = vi.fn()
       const onError = vi.fn()
 
-      syncWorkspace(onProgress, onDone, onError)
+      buildWorkspace(onProgress, onDone, onError)
 
-      const metaComplete: SyncProgress = { file: '', current: 3, total: 3, status: 'complete', phase: 'meta' }
+      const metaComplete: BuildProgress = { file: '', current: 3, total: 3, status: 'complete', phase: 'meta' }
       progressListener!(JSON.stringify(metaComplete))
 
       expect(onProgress).toHaveBeenCalledWith(metaComplete)
       expect(onDone).not.toHaveBeenCalled()
-      expect(syncLoading.value).toBe(true)
+      expect(buildLoading.value).toBe(true)
     })
 
     it('calls onError and cleans up when fatal error is received', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue('')
+      vi.mocked(BuildWorkspace).mockResolvedValue('')
 
-      const { syncWorkspace, syncLoading, syncError } = useSync()
+      const { buildWorkspace, buildLoading, buildError } = useBuild()
       const onProgress = vi.fn()
       const onDone = vi.fn()
       const onError = vi.fn()
 
-      syncWorkspace(onProgress, onDone, onError)
+      buildWorkspace(onProgress, onDone, onError)
 
-      const errorProgress: SyncProgress = {
+      const errorProgress: BuildProgress = {
         file: '', current: 0, total: 0, status: 'error', error: 'Git not initialized', phase: 'meta',
       }
       progressListener!(JSON.stringify(errorProgress))
 
       expect(onError).toHaveBeenCalledWith('Git not initialized')
-      expect(syncError.value).toBe('Git not initialized')
-      expect(syncLoading.value).toBe(false)
-      expect(EventsOff).toHaveBeenCalledWith('sync:progress')
+      expect(buildError.value).toBe('Git not initialized')
+      expect(buildLoading.value).toBe(false)
+      expect(EventsOff).toHaveBeenCalledWith('build:progress')
       expect(onProgress).not.toHaveBeenCalled()
     })
 
     it('reports file-level errors as progress, not fatal', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue('')
+      vi.mocked(BuildWorkspace).mockResolvedValue('')
 
-      const { syncWorkspace } = useSync()
+      const { buildWorkspace } = useBuild()
       const onProgress = vi.fn()
       const onDone = vi.fn()
       const onError = vi.fn()
 
-      syncWorkspace(onProgress, onDone, onError)
+      buildWorkspace(onProgress, onDone, onError)
 
-      const fileError: SyncProgress = {
+      const fileError: BuildProgress = {
         file: 'broken.md', current: 2, total: 5, status: 'error', error: 'Parse error', phase: 'meta',
       }
       progressListener!(JSON.stringify(fileError))
@@ -137,73 +137,73 @@ describe('useSync', () => {
       expect(onError).not.toHaveBeenCalled()
     })
 
-    it('calls onError when SyncWorkspace promise rejects', async () => {
-      vi.mocked(SyncWorkspace).mockRejectedValue(new Error('Disk full'))
+    it('calls onError when BuildWorkspace promise rejects', async () => {
+      vi.mocked(BuildWorkspace).mockRejectedValue(new Error('Disk full'))
 
-      const { syncWorkspace, syncLoading, syncError } = useSync()
+      const { buildWorkspace, buildLoading, buildError } = useBuild()
       const onProgress = vi.fn()
       const onDone = vi.fn()
       const onError = vi.fn()
 
-      syncWorkspace(onProgress, onDone, onError)
+      buildWorkspace(onProgress, onDone, onError)
 
       await vi.waitFor(() => {
         expect(onError).toHaveBeenCalled()
       })
 
       expect(onError).toHaveBeenCalledWith('Disk full')
-      expect(syncError.value).toBe('Disk full')
-      expect(syncLoading.value).toBe(false)
+      expect(buildError.value).toBe('Disk full')
+      expect(buildLoading.value).toBe(false)
     })
 
-    it('handles SyncWorkspace rejection with non-Error object', async () => {
-      vi.mocked(SyncWorkspace).mockRejectedValue('raw failure')
+    it('handles BuildWorkspace rejection with non-Error object', async () => {
+      vi.mocked(BuildWorkspace).mockRejectedValue('raw failure')
 
-      const { syncWorkspace, syncError } = useSync()
+      const { buildWorkspace, buildError } = useBuild()
       const onError = vi.fn()
 
-      syncWorkspace(vi.fn(), vi.fn(), onError)
+      buildWorkspace(vi.fn(), vi.fn(), onError)
 
       await vi.waitFor(() => {
         expect(onError).toHaveBeenCalled()
       })
 
-      expect(syncError.value).toBe('Sync failed')
+      expect(buildError.value).toBe('Build failed')
     })
 
     it('calls onError and cleans up on malformed JSON', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue('')
+      vi.mocked(BuildWorkspace).mockResolvedValue('')
 
-      const { syncWorkspace, syncLoading, syncError } = useSync()
+      const { buildWorkspace, buildLoading, buildError } = useBuild()
       const onProgress = vi.fn()
       const onDone = vi.fn()
       const onError = vi.fn()
 
-      syncWorkspace(onProgress, onDone, onError)
+      buildWorkspace(onProgress, onDone, onError)
 
       progressListener!('invalid-json')
 
-      expect(onError).toHaveBeenCalledWith('Failed to parse sync progress data')
-      expect(syncError.value).toBe('Failed to parse sync progress data')
-      expect(syncLoading.value).toBe(false)
-      expect(EventsOff).toHaveBeenCalledWith('sync:progress')
+      expect(onError).toHaveBeenCalledWith('Failed to parse build progress data')
+      expect(buildError.value).toBe('Failed to parse build progress data')
+      expect(buildLoading.value).toBe(false)
+      expect(EventsOff).toHaveBeenCalledWith('build:progress')
     })
 
     it('uses default error message when fatal error has no error field', () => {
-      vi.mocked(SyncWorkspace).mockResolvedValue('')
+      vi.mocked(BuildWorkspace).mockResolvedValue('')
 
-      const { syncWorkspace, syncError } = useSync()
+      const { buildWorkspace, buildError } = useBuild()
       const onError = vi.fn()
 
-      syncWorkspace(vi.fn(), vi.fn(), onError)
+      buildWorkspace(vi.fn(), vi.fn(), onError)
 
-      const errorProgress: SyncProgress = {
+      const errorProgress: BuildProgress = {
         file: '', current: 0, total: 0, status: 'error', phase: 'meta',
       }
       progressListener!(JSON.stringify(errorProgress))
 
-      expect(onError).toHaveBeenCalledWith('Sync failed')
-      expect(syncError.value).toBe('Sync failed')
+      expect(onError).toHaveBeenCalledWith('Build failed')
+      expect(buildError.value).toBe('Build failed')
     })
   })
 })

@@ -23,7 +23,7 @@ import (
 	"mindstack/internal/meta"
 	"mindstack/internal/relation"
 	"mindstack/internal/search"
-	syncpkg "mindstack/internal/sync"
+	buildpkg "mindstack/internal/build"
 	"mindstack/internal/watcher"
 
 	einoschema "github.com/cloudwego/eino/schema"
@@ -49,7 +49,7 @@ type App struct {
 	fileServerPort   int
 	recentEntries    []RecentEntry
 	streaming        int32
-	syncing          int32
+	building          int32
 	locale           string
 	pendingOpenPath  string
 	frontendReady    bool
@@ -534,7 +534,7 @@ func (a *App) StreamChat(messagesJSON string) string {
 	return ""
 }
 
-func (a *App) SyncWorkspace() string {
+func (a *App) BuildWorkspace() string {
 	a.mu.RLock()
 	root := a.rootPath
 	a.mu.RUnlock()
@@ -543,20 +543,20 @@ func (a *App) SyncWorkspace() string {
 		return `{"error":"no workspace open"}`
 	}
 
-	if !atomic.CompareAndSwapInt32(&a.syncing, 0, 1) {
-		out, _ := json.Marshal(map[string]string{"error": "sync already in progress"})
+	if !atomic.CompareAndSwapInt32(&a.building, 0, 1) {
+		out, _ := json.Marshal(map[string]string{"error": "build already in progress"})
 		return string(out)
 	}
 
 	go func() {
-		defer atomic.StoreInt32(&a.syncing, 0)
-		err := syncpkg.SyncWorkspace(a.ctx, a.llm, root, false, func(p syncpkg.SyncProgress) {
+		defer atomic.StoreInt32(&a.building, 0)
+		err := buildpkg.BuildWorkspace(a.ctx, a.llm, root, false, func(p buildpkg.BuildProgress) {
 			data, _ := json.Marshal(p)
-			runtime.EventsEmit(a.ctx, "sync:progress", string(data))
+			runtime.EventsEmit(a.ctx, "build:progress", string(data))
 		})
 		if err != nil {
-			errMsg, _ := json.Marshal(syncpkg.SyncProgress{Status: "error", Error: err.Error()})
-			runtime.EventsEmit(a.ctx, "sync:progress", string(errMsg))
+			errMsg, _ := json.Marshal(buildpkg.BuildProgress{Status: "error", Error: err.Error()})
+			runtime.EventsEmit(a.ctx, "build:progress", string(errMsg))
 		}
 	}()
 

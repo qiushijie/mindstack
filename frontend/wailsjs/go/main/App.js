@@ -194,8 +194,8 @@ export function StreamChatWithHistory(arg1) {
   return window['go']['main']['App']['StreamChatWithHistory'](arg1);
 }
 
-export function SyncWorkspace() {
-  return window['go']['main']['App']['SyncWorkspace']();
+export function BuildWorkspace() {
+  return window['go']['main']['App']['BuildWorkspace']();
 }
 
 export function WindowClose() {

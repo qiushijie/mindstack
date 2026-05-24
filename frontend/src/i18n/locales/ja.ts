@@ -249,7 +249,7 @@ export default {
     title: 'ドキュメント関連',
     searchPlaceholder: 'ドキュメントを検索...',
     loading: '読み込み中...',
-    empty: 'ドキュメントが見つかりません。先に同期を実行してください。',
+    empty: 'ドキュメントが見つかりません。先にビルドを実行してください。',
     selectedDocument: '選択中のドキュメント',
     relations: '関連',
     noRelations: '関連が見つかりません',

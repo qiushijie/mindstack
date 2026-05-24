@@ -40,7 +40,7 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Open Developer Tools",
 		"help":             "Help",
 		"about":            "About MindStack",
-		"sync":             "Synchronize",
+		"sync":             "Build",
 		"syncPull":         "Git Pull",
 		"syncCommit":       "Git Commit",
 		"syncPush":         "Git Push",
@@ -69,7 +69,7 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "開発者ツールを開く",
 		"help":             "ヘルプ",
 		"about":            "MindStack について",
-		"sync":             "同期",
+		"sync":             "ビルド",
 		"syncPull":         "Git Pull",
 		"syncCommit":       "Git Commit",
 		"syncPush":         "Git Push",
@@ -98,7 +98,7 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Ouvrir les outils de développement",
 		"help":             "Aide",
 		"about":            "À propos de MindStack",
-		"sync":             "Synchroniser",
+		"sync":             "Construire",
 		"syncPull":         "Git Pull",
 		"syncCommit":       "Git Commit",
 		"syncPush":         "Git Push",
@@ -127,7 +127,7 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Entwicklertools öffnen",
 		"help":             "Hilfe",
 		"about":            "Über MindStack",
-		"sync":             "Synchronisieren",
+		"sync":             "Bauen",
 		"syncPull":         "Git Pull",
 		"syncCommit":       "Git Commit",
 		"syncPush":         "Git Push",
@@ -156,7 +156,7 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Abrir herramientas de desarrollo",
 		"help":             "Ayuda",
 		"about":            "Acerca de MindStack",
-		"sync":             "Sincronizar",
+		"sync":             "Construir",
 		"syncPull":         "Git Pull",
 		"syncCommit":       "Git Commit",
 		"syncPush":         "Git Push",
@@ -185,7 +185,7 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "Открыть инструменты разработчика",
 		"help":             "Справка",
 		"about":            "О MindStack",
-		"sync":             "Синхронизация",
+		"sync":             "Сборка",
 		"syncPull":         "Git Pull",
 		"syncCommit":       "Git Commit",
 		"syncPush":         "Git Push",
@@ -214,7 +214,7 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "개발자 도구 열기",
 		"help":             "도움말",
 		"about":            "MindStack 정보",
-		"sync":             "동기화",
+		"sync":             "빌드",
 		"syncPull":         "Git Pull",
 		"syncCommit":       "Git Commit",
 		"syncPush":         "Git Push",
@@ -243,7 +243,7 @@ var menuLabels = map[string]map[string]string{
 		"openDevTools":     "打开开发者工具",
 		"help":             "帮助",
 		"about":            "关于 MindStack",
-		"sync":             "同步",
+		"sync":             "构建",
 		"syncPull":         "Git Pull",
 		"syncCommit":       "Git Commit",
 		"syncPush":         "Git Push",
@@ -355,14 +355,14 @@ func (a *App) buildMenu() *menu.Menu {
 		runtime.EventsEmit(a.ctx, "menu:edit:paste")
 	})
 
-	syncMenu := appMenu.AddSubmenu(a.menuText("sync"))
-	syncMenu.AddText(a.menuText("syncPull"), nil, func(_ *menu.CallbackData) {
+	buildMenu := appMenu.AddSubmenu(a.menuText("sync"))
+	buildMenu.AddText(a.menuText("syncPull"), nil, func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:sync:pull")
 	})
-	syncMenu.AddText(a.menuText("syncCommit"), nil, func(_ *menu.CallbackData) {
+	buildMenu.AddText(a.menuText("syncCommit"), nil, func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:sync:commit")
 	})
-	syncMenu.AddText(a.menuText("syncPush"), nil, func(_ *menu.CallbackData) {
+	buildMenu.AddText(a.menuText("syncPush"), nil, func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:sync:push")
 	})
 

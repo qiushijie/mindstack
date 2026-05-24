@@ -172,32 +172,32 @@ func TestStreamChat_AlreadyInProgress(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// SyncWorkspace — state conflicts and empty root
+// BuildWorkspace — state conflicts and empty root
 // ---------------------------------------------------------------------------
 
-func TestSyncWorkspace_EmptyRootPath(t *testing.T) {
+func TestBuildWorkspace_EmptyRootPath(t *testing.T) {
 	app := NewApp()
-	result := app.SyncWorkspace()
+	result := app.BuildWorkspace()
 	if result != `{"error":"no workspace open"}` {
 		t.Fatalf("expected 'no workspace open' error, got %q", result)
 	}
 }
 
-func TestSyncWorkspace_AlreadyInProgress(t *testing.T) {
+func TestBuildWorkspace_AlreadyInProgress(t *testing.T) {
 	app := NewApp()
 	app.SetRootPath("/tmp/some-workspace")
 	app.llm = newTestLLMService(t)
 
-	atomic.StoreInt32(&app.syncing, 1)
-	defer atomic.StoreInt32(&app.syncing, 0)
+	atomic.StoreInt32(&app.building, 1)
+	defer atomic.StoreInt32(&app.building, 0)
 
-	result := app.SyncWorkspace()
+	result := app.BuildWorkspace()
 	var m map[string]string
 	if err := json.Unmarshal([]byte(result), &m); err != nil {
 		t.Fatalf("result is not valid JSON: %v", err)
 	}
-	if m["error"] != "sync already in progress" {
-		t.Fatalf("expected 'sync already in progress', got %q", m["error"])
+	if m["error"] != "build already in progress" {
+		t.Fatalf("expected 'build already in progress', got %q", m["error"])
 	}
 }
 

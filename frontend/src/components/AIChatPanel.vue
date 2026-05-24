@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useLLM, type ChatMessage } from '../composables/useLLM'
-import { useSync } from '../composables/useSync'
+import { useBuild } from '../composables/useBuild'
 import { useSearch } from '../composables/useSearch'
 import { type AckSnippet } from '../composables/useAck'
 import { useSettings } from '../composables/useSettings'
@@ -32,7 +32,7 @@ interface DisplayMessage {
 const emit = defineEmits<{ close: []; openFile: [path: string] }>()
 
 const { streamChat, streamChatWithHistory, cancelStream } = useLLM()
-const { syncWorkspace } = useSync()
+const { buildWorkspace } = useBuild()
 const { searchDocs } = useSearch()
 const { defaultBranch } = useSettings()
 const { sessions, currentSessionId, loadSessions, createSession, loadHistory, deleteSession, switchSession } = useChatHistory()
@@ -171,7 +171,7 @@ watch(rootPath, (newPath) => {
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
-  EventsOff('sync:progress')
+  EventsOff('build:progress')
   EventsOff('chat:edit:chunk')
   if (gitSyncTimer.value) clearTimeout(gitSyncTimer.value)
   stopStreaming()
@@ -325,7 +325,7 @@ interface ToolMenuItem {
 const toolMenuItems: ToolMenuItem[] = [
   { command: '/search', label: 'Search', icon: 'search', placeholder: 'Enter tags to search...' },
   { command: '/git', label: 'Git Sync', icon: 'git-branch', placeholder: 'Enter "push" or "pull"...' },
-  { command: '/sync', label: 'Sync', icon: 'refresh-cw', placeholder: '' },
+  { command: '/build', label: 'Build', icon: 'refresh-cw', placeholder: '' },
 ]
 
 const selectedTool = ref<ToolMenuItem | null>(null)
@@ -337,8 +337,8 @@ function toggleToolMenu() {
 function selectToolItem(item: ToolMenuItem) {
   showToolMenu.value = false
   selectedTool.value = item
-  if (item.command === '/sync') {
-    runSync()
+  if (item.command === '/build') {
+    runBuild()
     return
   }
   if (item.command === '/git') {
@@ -364,30 +364,30 @@ function clearToolSelection() {
   selectedTool.value = null
 }
 
-function runSync() {
+function runBuild() {
   inputText.value = ''
   selectedTool.value = null
   isStreaming.value = true
 
-  messages.value.push({ role: 'user', content: '/sync' })
+  messages.value.push({ role: 'user', content: '/build' })
 
   const idx = messages.value.length
-  messages.value.push({ role: 'assistant', content: 'Starting sync...', isStreaming: true })
+  messages.value.push({ role: 'assistant', content: 'Starting build...', isStreaming: true })
   activeStreamIdx.value = idx
 
-  syncWorkspace(
+  buildWorkspace(
     (progress) => {
       if (activeStreamIdx.value !== idx) return
       if (progress.phase === 'meta') {
         if (progress.status === 'processing') {
-          messages.value[idx].content = `Syncing (${progress.current}/${progress.total}): ${progress.file}...`
+          messages.value[idx].content = `Building (${progress.current}/${progress.total}): ${progress.file}...`
         } else if (progress.status === 'done') {
-          messages.value[idx].content = `Synced (${progress.current}/${progress.total}): ${progress.file}`
+          messages.value[idx].content = `Built (${progress.current}/${progress.total}): ${progress.file}`
         } else if (progress.status === 'skipped') {
           messages.value[idx].content = `No changes (${progress.current}/${progress.total}): ${progress.file}`
         } else if (progress.status === 'complete') {
           messages.value[idx].content = progress.total > 0
-            ? `Meta sync complete. Analyzing relations...`
+            ? `Meta build complete. Analyzing relations...`
             : 'No markdown files found in workspace.'
         } else if (progress.status === 'error') {
           messages.value[idx].content += `\nError on ${progress.file}: ${progress.error}`
@@ -398,7 +398,7 @@ function runSync() {
         } else if (progress.status === 'done') {
           messages.value[idx].content = `Analyzed (${progress.current}/${progress.total}): ${progress.file}`
         } else if (progress.status === 'complete') {
-          messages.value[idx].content = 'Sync complete.'
+          messages.value[idx].content = 'Build complete.'
         } else if (progress.status === 'error') {
           messages.value[idx].content += `\nRelation error on ${progress.file}: ${progress.error}`
         }
@@ -408,7 +408,7 @@ function runSync() {
     () => finishStream(idx),
     (err) => {
       if (activeStreamIdx.value === idx && messages.value[idx]) {
-        messages.value[idx].content += `\n\nSync error: ${err}`
+        messages.value[idx].content += `\n\nBuild error: ${err}`
       }
       finishStream(idx)
     },

@@ -41,7 +41,7 @@ func init() {
 	rootCmd.AddCommand(docCmd)
 	rootCmd.AddCommand(tagsCmd)
 	rootCmd.AddCommand(searchCmd)
-	rootCmd.AddCommand(syncCmd)
+	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(ackCmd)
 }
 

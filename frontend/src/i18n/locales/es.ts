@@ -249,7 +249,7 @@ export default {
     title: 'Relaciones entre documentos',
     searchPlaceholder: 'Buscar documentos...',
     loading: 'Cargando...',
-    empty: 'No se encontraron documentos. Ejecute una sincronización primero.',
+    empty: 'No se encontraron documentos. Ejecute un build primero.',
     selectedDocument: 'DOCUMENTO SELECCIONADO',
     relations: 'RELACIONES',
     noRelations: 'No se encontraron relaciones',

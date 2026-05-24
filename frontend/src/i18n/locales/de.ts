@@ -249,7 +249,7 @@ export default {
     title: 'Dokumentbeziehungen',
     searchPlaceholder: 'Dokumente suchen...',
     loading: 'Laden...',
-    empty: 'Keine Dokumente gefunden. Führen Sie zuerst eine Synchronisierung durch.',
+    empty: 'Keine Dokumente gefunden. Führen Sie zuerst einen Build durch.',
     selectedDocument: 'AUSGEWÄHLTES DOKUMENT',
     relations: 'BEZIEHUNGEN',
     noRelations: 'Keine Beziehungen gefunden',

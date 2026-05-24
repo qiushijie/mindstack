@@ -8,20 +8,20 @@ import (
 
 	"mindstack/internal/config"
 	"mindstack/internal/llm"
-	syncpkg "mindstack/internal/sync"
+	buildpkg "mindstack/internal/build"
 
 	"github.com/spf13/cobra"
 )
 
-var syncForce bool
+var buildForce bool
 
-var syncCmd = &cobra.Command{
-	Use:   "sync",
-	Short: "Sync workspace (generate metadata and relations)",
+var buildCmd = &cobra.Command{
+	Use:   "build",
+	Short: "Build workspace (generate metadata and relations)",
 	Run: func(cmd *cobra.Command, args []string) {
 		root := requireRoot()
 
-		if syncForce {
+		if buildForce {
 			fmt.Fprintln(os.Stderr, "WARNING: --force will reprocess ALL files and overwrite existing metadata. This may consume significant LLM tokens.")
 			fmt.Fprint(os.Stderr, "Are you sure you want to continue? [Y/n] ")
 			var input string
@@ -40,7 +40,7 @@ var syncCmd = &cobra.Command{
 		var processed, skipped int
 		var errs []string
 
-		err := syncpkg.SyncWorkspace(context.Background(), svc, root, syncForce, func(p syncpkg.SyncProgress) {
+		err := buildpkg.BuildWorkspace(context.Background(), svc, root, buildForce, func(p buildpkg.BuildProgress) {
 			switch p.Status {
 			case "done":
 				processed++
@@ -54,7 +54,7 @@ var syncCmd = &cobra.Command{
 		})
 
 		if err != nil {
-			writeError(1, "SYNC_FAILED", err.Error())
+			writeError(1, "BUILD_FAILED", err.Error())
 		}
 
 		writeJSON(map[string]interface{}{
@@ -68,5 +68,5 @@ var syncCmd = &cobra.Command{
 }
 
 func init() {
-	syncCmd.Flags().BoolVar(&syncForce, "force", false, "force reprocess all files, ignoring existing metadata")
+	buildCmd.Flags().BoolVar(&buildForce, "force", false, "force reprocess all files, ignoring existing metadata")
 }

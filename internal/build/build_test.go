@@ -1,4 +1,4 @@
-package sync
+package build
 
 import (
 	"context"
@@ -190,7 +190,7 @@ func TestListMarkdownFiles_MarkdownExtension(t *testing.T) {
 	}
 }
 
-// --- SyncWorkspace tests ---
+// --- BuildWorkspace tests ---
 
 // setupTestWorkspace creates a temp directory with .mindstack subdirectory.
 func setupTestWorkspace(t *testing.T) string {
@@ -206,16 +206,16 @@ func newNilLLMService() *llm.Service {
 	return llm.NewService("")
 }
 
-func TestSyncWorkspace_NoFiles(t *testing.T) {
+func TestBuildWorkspace_NoFiles(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	svc := newNilLLMService()
 
-	var progresses []SyncProgress
-	onProgress := func(p SyncProgress) {
+	var progresses []BuildProgress
+	onProgress := func(p BuildProgress) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
+	err := BuildWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -227,43 +227,43 @@ func TestSyncWorkspace_NoFiles(t *testing.T) {
 	}
 }
 
-func TestSyncWorkspace_NilOnProgress(t *testing.T) {
+func TestBuildWorkspace_NilOnProgress(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	svc := newNilLLMService()
 
 	// Should not panic with nil onProgress
-	err := SyncWorkspace(context.Background(), svc, dir, false, nil)
+	err := BuildWorkspace(context.Background(), svc, dir, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestSyncWorkspace_NilOnProgressWithFiles(t *testing.T) {
+func TestBuildWorkspace_NilOnProgressWithFiles(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	svc := newNilLLMService()
 
 	os.WriteFile(filepath.Join(dir, "test.md"), []byte("# Test"), 0644)
 
 	// Should not panic with nil onProgress even when processing files
-	err := SyncWorkspace(context.Background(), svc, dir, false, nil)
+	err := BuildWorkspace(context.Background(), svc, dir, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestSyncWorkspace_LLMError_ReportsError(t *testing.T) {
+func TestBuildWorkspace_LLMError_ReportsError(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	svc := newNilLLMService() // no model configured, Chat() returns error
 
 	os.WriteFile(filepath.Join(dir, "doc1.md"), []byte("# Doc 1"), 0644)
 	os.WriteFile(filepath.Join(dir, "doc2.md"), []byte("# Doc 2"), 0644)
 
-	var progresses []SyncProgress
-	onProgress := func(p SyncProgress) {
+	var progresses []BuildProgress
+	onProgress := func(p BuildProgress) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
+	err := BuildWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestSyncWorkspace_LLMError_ReportsError(t *testing.T) {
 	}
 }
 
-func TestSyncWorkspace_ContextCancellation(t *testing.T) {
+func TestBuildWorkspace_ContextCancellation(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	svc := newNilLLMService()
 
@@ -316,7 +316,7 @@ func TestSyncWorkspace_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	err := SyncWorkspace(ctx, svc, dir, false, func(SyncProgress) {})
+	err := BuildWorkspace(ctx, svc, dir, false, func(BuildProgress) {})
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -325,7 +325,7 @@ func TestSyncWorkspace_ContextCancellation(t *testing.T) {
 	}
 }
 
-func TestSyncWorkspace_ContextCancellationBetweenFiles(t *testing.T) {
+func TestBuildWorkspace_ContextCancellationBetweenFiles(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	svc := newNilLLMService()
 
@@ -338,24 +338,24 @@ func TestSyncWorkspace_ContextCancellationBetweenFiles(t *testing.T) {
 	defer cancel()
 	// Context will expire almost immediately
 
-	_ = SyncWorkspace(ctx, svc, dir, false, func(SyncProgress) {})
+	_ = BuildWorkspace(ctx, svc, dir, false, func(BuildProgress) {})
 	// The function should return ctx.Err() at some point during iteration.
 	// We don't assert the exact error because timing is non-deterministic,
 	// but it should not panic.
 }
 
-func TestSyncWorkspace_ReportsProgressOrder(t *testing.T) {
+func TestBuildWorkspace_ReportsProgressOrder(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	svc := newNilLLMService()
 
 	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0644)
 
-	var progresses []SyncProgress
-	onProgress := func(p SyncProgress) {
+	var progresses []BuildProgress
+	onProgress := func(p BuildProgress) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
+	err := BuildWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -408,7 +408,7 @@ func (m *mockChatModel) BindTools(tools []*einoschema.ToolInfo) error {
 }
 
 // newMockLLMService creates an *llm.Service with an injected mock chatModel.
-// Since we are in a different package (sync) we cannot access unexported fields
+// Since we are in a different package (build) we cannot access unexported fields
 // directly. Instead we use a test helper that constructs the service via
 // exported methods. But UpdateModel creates a real OpenAI client.
 //
@@ -417,17 +417,17 @@ func (m *mockChatModel) BindTools(tools []*einoschema.ToolInfo) error {
 //
 // Actually, since chatModel is unexported on llm.Service, we truly cannot
 // inject from this package. So we test generateMeta indirectly through
-// SyncWorkspace with a real nil-model service (error path only).
+// BuildWorkspace with a real nil-model service (error path only).
 //
 // For successful generateMeta path, we rely on integration tests.
 
-// --- SyncWorkspace success path with real model injection ---
+// --- BuildWorkspace success path with real model injection ---
 // Since llm.Service.chatModel is unexported, we test the success path by
 // verifying the overall flow when the LLM returns valid JSON.
 // We use a small helper that creates a service via exported API but
 // points to a fake endpoint - so this only tests error handling.
 
-func TestSyncWorkspace_ReadFileError_ReportsError(t *testing.T) {
+func TestBuildWorkspace_ReadFileError_ReportsError(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	svc := newNilLLMService()
 
@@ -437,12 +437,12 @@ func TestSyncWorkspace_ReadFileError_ReportsError(t *testing.T) {
 	os.Chmod(mdPath, 0000)
 	defer os.Chmod(mdPath, 0644) // restore for cleanup
 
-	var progresses []SyncProgress
-	onProgress := func(p SyncProgress) {
+	var progresses []BuildProgress
+	onProgress := func(p BuildProgress) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
+	err := BuildWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestSyncWorkspace_ReadFileError_ReportsError(t *testing.T) {
 	}
 
 	// Find error events
-	var errorEvents []SyncProgress
+	var errorEvents []BuildProgress
 	for _, p := range progresses {
 		if p.Status == "error" {
 			errorEvents = append(errorEvents, p)
@@ -563,12 +563,12 @@ func TestGenerateMeta_Success(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	os.WriteFile(filepath.Join(dir, "example.md"), []byte("# Example\n\nSome content here."), 0644)
 
-	var progresses []SyncProgress
-	onProgress := func(p SyncProgress) {
+	var progresses []BuildProgress
+	onProgress := func(p BuildProgress) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
+	err := BuildWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -712,7 +712,7 @@ func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A"), 0644)
 	os.WriteFile(filepath.Join(dir, "b.md"), []byte("# B"), 0644)
 
-	err = SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
+	err = BuildWorkspace(context.Background(), svc, dir, false, func(BuildProgress) {})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -749,12 +749,12 @@ func TestGenerateMeta_InvalidJSONResponse(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	os.WriteFile(filepath.Join(dir, "broken.md"), []byte("# Broken"), 0644)
 
-	var progresses []SyncProgress
-	onProgress := func(p SyncProgress) {
+	var progresses []BuildProgress
+	onProgress := func(p BuildProgress) {
 		progresses = append(progresses, p)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, false, onProgress)
+	err := BuildWorkspace(context.Background(), svc, dir, false, onProgress)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -790,7 +790,7 @@ func TestGenerateMeta_CodeFencedJSONResponse(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	os.WriteFile(filepath.Join(dir, "fenced.md"), []byte("# Fenced"), 0644)
 
-	err := SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
+	err := BuildWorkspace(context.Background(), svc, dir, false, func(BuildProgress) {})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -826,7 +826,7 @@ func TestGenerateMeta_PreservesExistingStatus(t *testing.T) {
 		t.Fatalf("failed to save existing meta: %v", err)
 	}
 
-	err := SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
+	err := BuildWorkspace(context.Background(), svc, dir, false, func(BuildProgress) {})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -845,9 +845,9 @@ func TestGenerateMeta_PreservesExistingStatus(t *testing.T) {
 	}
 }
 
-// --- Incremental sync tests ---
+// --- Incremental build tests ---
 
-func TestSyncWorkspace_SkipsUnchangedFiles(t *testing.T) {
+func TestBuildWorkspace_SkipsUnchangedFiles(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
@@ -883,20 +883,20 @@ func TestSyncWorkspace_SkipsUnchangedFiles(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc"), 0644)
 
-	// First sync: should process the file
-	err := SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
+	// First build: should process the file
+	err := BuildWorkspace(context.Background(), svc, dir, false, func(BuildProgress) {})
 	if err != nil {
-		t.Fatalf("first sync: %v", err)
+		t.Fatalf("first build: %v", err)
 	}
 	firstCallCount := callCount
 
-	// Second sync: should skip (content unchanged)
-	var progresses []SyncProgress
-	err = SyncWorkspace(context.Background(), svc, dir, false, func(p SyncProgress) {
+	// Second build: should skip (content unchanged)
+	var progresses []BuildProgress
+	err = BuildWorkspace(context.Background(), svc, dir, false, func(p BuildProgress) {
 		progresses = append(progresses, p)
 	})
 	if err != nil {
-		t.Fatalf("second sync: %v", err)
+		t.Fatalf("second build: %v", err)
 	}
 
 	// No additional LLM calls
@@ -917,7 +917,7 @@ func TestSyncWorkspace_SkipsUnchangedFiles(t *testing.T) {
 	}
 }
 
-func TestSyncWorkspace_ForceReprocessesUnchangedFile(t *testing.T) {
+func TestBuildWorkspace_ForceReprocessesUnchangedFile(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
@@ -953,20 +953,20 @@ func TestSyncWorkspace_ForceReprocessesUnchangedFile(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc"), 0644)
 
-	// First sync: should process the file
-	err := SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
+	// First build: should process the file
+	err := BuildWorkspace(context.Background(), svc, dir, false, func(BuildProgress) {})
 	if err != nil {
-		t.Fatalf("first sync: %v", err)
+		t.Fatalf("first build: %v", err)
 	}
 	firstCallCount := callCount
 
-	// Second sync with force=true: should reprocess even though content unchanged
-	var progresses []SyncProgress
-	err = SyncWorkspace(context.Background(), svc, dir, true, func(p SyncProgress) {
+	// Second build with force=true: should reprocess even though content unchanged
+	var progresses []BuildProgress
+	err = BuildWorkspace(context.Background(), svc, dir, true, func(p BuildProgress) {
 		progresses = append(progresses, p)
 	})
 	if err != nil {
-		t.Fatalf("second sync with force: %v", err)
+		t.Fatalf("second build with force: %v", err)
 	}
 
 	// Should have additional LLM calls
@@ -987,7 +987,7 @@ func TestSyncWorkspace_ForceReprocessesUnchangedFile(t *testing.T) {
 	}
 }
 
-func TestSyncWorkspace_ReprocessesChangedFile(t *testing.T) {
+func TestBuildWorkspace_ReprocessesChangedFile(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
@@ -1027,15 +1027,15 @@ func TestSyncWorkspace_ReprocessesChangedFile(t *testing.T) {
 	dir := setupTestWorkspace(t)
 	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc v1"), 0644)
 
-	// First sync
-	SyncWorkspace(context.Background(), svc, dir, false, func(SyncProgress) {})
+	// First build
+	BuildWorkspace(context.Background(), svc, dir, false, func(BuildProgress) {})
 
 	// Modify the file
 	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc v2 - updated"), 0644)
 
-	// Second sync: should reprocess
-	var progresses []SyncProgress
-	SyncWorkspace(context.Background(), svc, dir, false, func(p SyncProgress) {
+	// Second build: should reprocess
+	var progresses []BuildProgress
+	BuildWorkspace(context.Background(), svc, dir, false, func(p BuildProgress) {
 		progresses = append(progresses, p)
 	})
 

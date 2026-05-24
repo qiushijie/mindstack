@@ -249,7 +249,7 @@ export default {
     title: '문서 관계',
     searchPlaceholder: '문서 검색...',
     loading: '로딩 중...',
-    empty: '문서를 찾을 수 없습니다. 먼저 동기화를 실행하세요.',
+    empty: '문서를 찾을 수 없습니다. 먼저 빌드를 실행하세요.',
     selectedDocument: '선택된 문서',
     relations: '관계',
     noRelations: '관계를 찾을 수 없습니다',
