@@ -263,23 +263,30 @@ export const tableEditHandler = EditorView.domEventHandlers({
 
 export const tablePlugin = StateField.define<DecorationSet>({
   create(state) {
-    return computeTableDeco(state.doc, syntaxTree(state))
+    return computeTableDeco(state.doc, syntaxTree(state), state.selection.main)
   },
   update(deco, tr) {
-    if (tr.docChanged) {
-      return computeTableDeco(tr.state.doc, syntaxTree(tr.state))
+    if (tr.docChanged || tr.selection) {
+      return computeTableDeco(tr.state.doc, syntaxTree(tr.state), tr.state.selection.main)
     }
     return deco.map(tr.changes)
   },
   provide: f => EditorView.decorations.from(f),
 })
 
-function computeTableDeco(doc: Text, tree: ReturnType<typeof syntaxTree>): DecorationSet {
+function computeTableDeco(
+  doc: Text,
+  tree: ReturnType<typeof syntaxTree>,
+  selection?: { from: number; to: number },
+): DecorationSet {
   const ranges: Range<Decoration>[] = []
 
   tree.iterate({
     enter(node) {
       if (node.name !== 'Table') return
+
+      // Skip widget when selection overlaps with table so users can select/edit source
+      if (selection && selection.from < node.to && selection.to > node.from) return
 
       const headers: string[] = []
       const rows: string[][] = []

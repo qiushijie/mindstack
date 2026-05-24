@@ -123,6 +123,19 @@ describe('tablePlugin - core rendering chain', () => {
     view.destroy()
   })
 
+  it('no decoration when selection overlaps table range', () => {
+    const view = createView(TABLE_DOC, [tablePlugin])
+
+    // Dispatch a selection change to place cursor inside the table (position 5 is within first header cell)
+    view.dispatch({ selection: { anchor: 5 } })
+
+    const deco = view.state.field(tablePlugin)
+    let count = 0
+    deco.between(0, TABLE_DOC.length, () => { count++ })
+    expect(count).toBe(0)
+    view.destroy()
+  })
+
   it('no decoration for non-table content', () => {
     const view = createView('Hello World', [tablePlugin])
     const deco = view.state.field(tablePlugin)

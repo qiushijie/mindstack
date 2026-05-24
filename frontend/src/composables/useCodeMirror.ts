@@ -1,5 +1,5 @@
 import { ref, shallowRef, onMounted, onUnmounted, watch, type Ref } from 'vue'
-import { EditorView, ViewUpdate, drawSelection } from '@codemirror/view'
+import { EditorView, ViewUpdate } from '@codemirror/view'
 import { EditorState, Extension, Compartment } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
@@ -93,7 +93,6 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       search(),
       currentFilePathExtension(),
       richCompartment.of(getRichExtensions()),
-      drawSelection(),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (update.docChanged) {
