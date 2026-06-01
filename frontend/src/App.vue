@@ -99,6 +99,15 @@ onMounted(async () => {
   ;(window as any).__setRawMode = (v: boolean) => { rawMode.value = v }
   // Expose showCommitDialog for E2E tests to open commit dialog without menu
   ;(window as any).__testShowCommitDialog = () => { showCommitDialog.value = true }
+  // Expose toggleAIChat for E2E tests to open/close AI chat panel without clicking the floating button
+  ;(window as any).__toggleAIChat = () => { showAIChat.value = !showAIChat.value }
+  // Expose showAboutDialog for E2E tests to open about dialog without menu
+  ;(window as any).__showAboutDialog = () => { aboutDialogVisible.value = true }
+  // Expose triggerConfirm for E2E tests to programmatically trigger confirm dialogs
+  ;(window as any).__triggerConfirm = (opts: any): Promise<boolean> => {
+    const { confirm } = useConfirmDialog()
+    return confirm(opts)
+  }
 
   // HMR dev mode: Wails runtime may not be ready yet (window.go undefined),
   // causing LoadConfig() to fail silently. Retry when the runtime connects

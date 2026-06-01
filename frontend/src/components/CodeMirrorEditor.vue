@@ -413,6 +413,12 @@ onMounted(() => {
   document.addEventListener('keydown', handleDocKeydown)
   containerRef.value?.addEventListener('editor:insert-image', handleInsertImage)
   containerRef.value?.addEventListener('editor:edit-image', handleEditImage)
+  // Expose toggleFindPanel for E2E tests to open/close find panel without keyboard shortcut
+  ;(window as any).__toggleFindPanel = () => { searchVisible.value = !searchVisible.value }
+  // Expose showImageDialog for E2E tests to open the image insert dialog
+  ;(window as any).__showImageDialog = () => {
+    containerRef.value?.dispatchEvent(new CustomEvent('editor:insert-image', { detail: { lineFrom: 0 } }))
+  }
 })
 
 onUnmounted(() => {
@@ -420,6 +426,8 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleDocKeydown)
   containerRef.value?.removeEventListener('editor:insert-image', handleInsertImage)
   containerRef.value?.removeEventListener('editor:edit-image', handleEditImage)
+  delete (window as any).__toggleFindPanel
+  delete (window as any).__showImageDialog
   clearEditorAdapter()
 })
 </script>

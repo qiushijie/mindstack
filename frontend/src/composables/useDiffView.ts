@@ -59,6 +59,8 @@ export function useDiffView() {
   // Expose for e2e tests
   if (import.meta.env.DEV) {
     (window as any).__testOpenDiffView = openDiffView
+    ;(window as any).__testAcceptAll = acceptAll
+    ;(window as any).__testCloseDiffView = closeDiffView
   }
 
   function clearDiffState() {

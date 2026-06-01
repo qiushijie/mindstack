@@ -62,6 +62,9 @@ export function useRelations() {
   const nodes = computed<DocNode[]>(() => {
     const result: DocNode[] = []
     let colorIndex = 0
+    for (const path of metas.value.keys()) {
+      if (colorMap.value.has(path)) colorIndex++
+    }
     for (const [path, meta] of metas.value) {
       if (!colorMap.value.has(path)) {
         colorMap.value.set(path, NODE_COLORS[colorIndex % NODE_COLORS.length])

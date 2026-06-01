@@ -114,6 +114,19 @@ onMounted(() => {
     loadSessions(rootPath.value)
   }
 
+  // E2E hooks
+  ;(window as any).__toggleToolMenu = () => {
+    showToolMenu.value = !showToolMenu.value
+  }
+  ;(window as any).__selectToolByIndex = (idx: number) => {
+    if (idx >= 0 && idx < toolMenuItems.length) {
+      selectToolItem(toolMenuItems[idx])
+    }
+  }
+  ;(window as any).__clearToolSelection = () => {
+    selectedTool.value = null
+  }
+
   // Set up edit listener once to avoid EventsOff/EventsOn race condition
   EventsOn('chat:edit:chunk', (data: string) => {
     let chunk: any
@@ -175,6 +188,9 @@ onBeforeUnmount(() => {
   EventsOff('chat:edit:chunk')
   if (gitSyncTimer.value) clearTimeout(gitSyncTimer.value)
   stopStreaming()
+  delete (window as any).__toggleToolMenu
+  delete (window as any).__selectToolByIndex
+  delete (window as any).__clearToolSelection
 })
 
 function sendMessage() {
