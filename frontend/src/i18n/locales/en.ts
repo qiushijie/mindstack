@@ -139,6 +139,7 @@ export default {
     update: 'Update',
   },
   editor: {
+    untitled: 'Untitled',
     tooltip: {
       addBlock: 'Add block',
       dragToReorder: 'Drag to reorder',

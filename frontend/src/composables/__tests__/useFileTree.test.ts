@@ -7,6 +7,7 @@ vi.mock('../../../wailsjs/go/main/App', () => ({
   ReadDirEntries: vi.fn(),
   ReadFileContent: vi.fn(),
   SaveFileContent: vi.fn(),
+  SaveFileDialog: vi.fn(),
   LoadConfig: vi.fn(),
   SaveConfig: vi.fn(),
   SetWorkspaceRoot: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('../useEditorState', () => ({
   useEditorState: () => ({
     editorView: { value: null },
   }),
+  focusEditor: vi.fn(),
 }))
 
 // Mock currentFilePath extension
@@ -72,7 +74,9 @@ import {
   ReadDirEntries,
   ReadFileContent,
   SaveFileContent,
+  SaveFileDialog,
   LoadConfig,
+  SaveConfig,
   AddRecentEntry,
 } from '../../../wailsjs/go/main/App'
 import { useFileTree } from '../useFileTree'
@@ -451,7 +455,7 @@ describe('useFileTree', () => {
 
       newFile()
 
-      expect(selectedFilePath.value).toBe('')
+      expect(selectedFilePath.value).toMatch(/^__untitled__\d+$/)
       expect(selectedFileContent.value).toBe('')
       expect(isDirty.value).toBe(false)
     })
@@ -467,10 +471,277 @@ describe('useFileTree', () => {
 
       newFile()
 
-      expect(selectedFilePath.value).toBe('')
+      expect(selectedFilePath.value).toMatch(/^__untitled__\d+$/)
       expect(selectedFileContent.value).toBe('')
       expect(isDirty.value).toBe(false)
       expect(mockAdapter.setContent).toHaveBeenCalledWith('')
+    })
+  })
+
+  describe('newFile + saveCurrentFile integration', () => {
+    it('creates untitled tab, edits, then saves with dialog', async () => {
+      vi.mocked(SaveFileDialog).mockResolvedValue('/root/new-note.md')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const {
+        newFile, saveCurrentFile,
+        selectedFilePath, selectedFileContent, isDirty,
+        setEditorAdapter, markDirty,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      // Step 1: create new file
+      newFile()
+      const untitledPath = selectedFilePath.value
+      expect(untitledPath).toMatch(/^__untitled__\d+$/)
+      expect(editorContent).toBe('')
+      expect(isDirty.value).toBe(false)
+
+      // Step 2: verify tab was created
+      const { tabs, activeTabIndex } = useTabs()
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0].path).toBe(untitledPath)
+      expect(activeTabIndex.value).toBe(0)
+
+      // Step 3: edit content
+      editorContent = '# Hello World'
+      selectedFileContent.value = '# Hello World'
+      markDirty()
+      expect(isDirty.value).toBe(true)
+
+      // Step 4: save — should trigger SaveFileDialog
+      await saveCurrentFile()
+
+      expect(SaveFileDialog).toHaveBeenCalledWith('untitled.md')
+      expect(SaveFileContent).toHaveBeenCalledWith('/root/new-note.md', '# Hello World')
+      expect(selectedFilePath.value).toBe('/root/new-note.md')
+      expect(isDirty.value).toBe(false)
+
+      // Tab path and title should be updated
+      expect(tabs.value[0].path).toBe('/root/new-note.md')
+      expect(tabs.value[0].title).toBe('new-note')
+    })
+
+    it('cancels save when SaveFileDialog is dismissed', async () => {
+      vi.mocked(SaveFileDialog).mockResolvedValue('')
+
+      const { newFile, saveCurrentFile, selectedFilePath, setEditorAdapter, markDirty } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      newFile()
+      editorContent = 'content'
+      markDirty()
+
+      await saveCurrentFile()
+
+      expect(SaveFileDialog).toHaveBeenCalled()
+      expect(SaveFileContent).not.toHaveBeenCalled()
+      // Path remains untitled
+      expect(selectedFilePath.value).toMatch(/^__untitled__\d+$/)
+    })
+
+    it('creates multiple untitled files with unique paths', () => {
+      const { newFile, selectedFilePath } = useFileTree()
+
+      newFile()
+      const first = selectedFilePath.value
+      newFile()
+      const second = selectedFilePath.value
+
+      expect(first).not.toBe(second)
+      expect(first).toMatch(/^__untitled__\d+$/)
+      expect(second).toMatch(/^__untitled__\d+$/)
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(2)
+      expect(tabs.value.map(t => t.path)).toEqual([first, second])
+    })
+
+    it('does not auto-save untitled files', async () => {
+      vi.useFakeTimers()
+      try {
+        vi.mocked(SaveFileContent).mockResolvedValue('')
+
+        const { newFile, setEditorAdapter, markDirty } = useFileTree()
+
+        let editorContent = ''
+        setEditorAdapter({
+          setContent: vi.fn((c: string) => { editorContent = c }),
+          getContent: () => editorContent,
+        })
+
+        newFile()
+        editorContent = 'content'
+        markDirty()
+
+        vi.advanceTimersByTime(5000)
+        await vi.runOnlyPendingTimersAsync()
+
+        expect(SaveFileContent).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('switches between untitled tab and real file tab', async () => {
+      vi.mocked(ReadFileContent).mockResolvedValue('real content')
+
+      const {
+        newFile, selectFile, switchToTab,
+        selectedFilePath, selectedFileContent,
+        setEditorAdapter,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      // Open real file
+      await selectFile('/root/real.md')
+      expect(selectedFilePath.value).toBe('/root/real.md')
+      expect(selectedFileContent.value).toBe('real content')
+
+      // Create untitled file
+      newFile()
+      const untitledPath = selectedFilePath.value
+      expect(untitledPath).toMatch(/^__untitled__\d+$/)
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(2)
+
+      // Switch back to real file
+      await switchToTab(0)
+      expect(selectedFilePath.value).toBe('/root/real.md')
+      expect(selectedFileContent.value).toBe('real content')
+
+      // Switch to untitled tab — content should be empty (no disk read)
+      await switchToTab(1)
+      expect(selectedFilePath.value).toBe(untitledPath)
+      expect(selectedFileContent.value).toBe('')
+    })
+
+    it('does not prompt save dialog when closing dirty untitled tab', async () => {
+      const { newFile, markDirty, closeFileTab, selectedFileContent, setEditorAdapter } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      newFile()
+      editorContent = 'untitled content'
+      selectedFileContent.value = 'untitled content'
+      markDirty()
+
+      // Close tab — confirmAndSaveDirtyTabs should skip untitled paths
+      // so no confirm dialog appears and no SaveFileContent is called
+      mockConfirmResult.value = true
+      await closeFileTab(0)
+
+      expect(SaveFileContent).not.toHaveBeenCalled()
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(0)
+    })
+
+    it('saves untitled file via dialog, then saves normally on second save', async () => {
+      vi.mocked(SaveFileDialog).mockResolvedValue('/root/saved.md')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+
+      const {
+        newFile, saveCurrentFile,
+        selectedFilePath, isDirty,
+        setEditorAdapter, markDirty,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      newFile()
+      editorContent = 'first save'
+      markDirty()
+
+      // First save — opens dialog
+      await saveCurrentFile()
+      expect(SaveFileDialog).toHaveBeenCalledTimes(1)
+      expect(selectedFilePath.value).toBe('/root/saved.md')
+
+      // Edit again
+      editorContent = 'second save'
+      markDirty()
+
+      // Second save — direct save, no dialog
+      await saveCurrentFile()
+      expect(SaveFileDialog).toHaveBeenCalledTimes(1) // no additional dialog
+      expect(SaveFileContent).toHaveBeenLastCalledWith('/root/saved.md', 'second save')
+      expect(isDirty.value).toBe(false)
+    })
+
+    it('does not save untitled path to app config via selectFile', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue('{}')
+      vi.mocked(SaveConfig).mockResolvedValue('')
+      vi.mocked(ReadFileContent).mockResolvedValue('content')
+
+      const { newFile, selectedFilePath, selectFile } = useFileTree()
+
+      newFile()
+      expect(selectedFilePath.value).toMatch(/^__untitled__\d+$/)
+
+      // selectFile triggers saveAppConfig internally
+      await selectFile('/root/real.md')
+
+      // The config saved during selectFile should have the real file path,
+      // not the untitled path
+      const lastCall = vi.mocked(SaveConfig).mock.calls.at(-1)
+      if (lastCall) {
+        const parsed = JSON.parse(lastCall[0])
+        expect(parsed.lastFilePath).toBe('/root/real.md')
+      }
+    })
+
+    it('refreshes file tree after saving untitled file', async () => {
+      vi.mocked(SaveFileDialog).mockResolvedValue('/root/new.md')
+      vi.mocked(SaveFileContent).mockResolvedValue('')
+      vi.mocked(ReadDirEntries).mockResolvedValue([
+        { name: 'new.md', path: '/root/new.md', isDir: false },
+      ])
+
+      const {
+        newFile, saveCurrentFile,
+        rootPath, treeData,
+        setEditorAdapter, markDirty,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      rootPath.value = '/root'
+      newFile()
+      editorContent = 'content'
+      markDirty()
+
+      await saveCurrentFile()
+
+      expect(ReadDirEntries).toHaveBeenCalledWith('/root')
+      expect(treeData.value.some(n => n.name === 'new.md')).toBe(true)
     })
   })
 
@@ -1412,6 +1683,243 @@ describe('useFileTree', () => {
       const { tabs } = useTabs()
       expect(tabs.value).toHaveLength(0)
       expect(SaveFileContent).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('closeTabsForDeletedPath', () => {
+    async function cleanOpen() {
+      vi.mocked(OpenFolderDialog).mockResolvedValueOnce('/__tabtest__')
+      vi.mocked(ReadDirEntries).mockResolvedValueOnce([])
+      const { openFolder } = useFileTree()
+      await openFolder()
+    }
+
+    it('deletes a single file tab and switches to neighbor', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b')
+
+      const {
+        selectedFilePath, selectedFileContent,
+        selectFile, closeTabsForDeletedPath, setEditorAdapter,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+      // Active tab is b.md (index 1), delete a.md's file
+      await closeTabsForDeletedPath('/root/a.md', false)
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0].path).toBe('/root/b.md')
+      // Active tab was b.md and it survived, so content stays
+      expect(selectedFilePath.value).toBe('/root/b.md')
+      expect(selectedFileContent.value).toBe('content-b')
+    })
+
+    it('deletes directory and closes all tabs under it', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('src-content')
+        .mockResolvedValueOnce('other-content')
+
+      const {
+        selectedFilePath, selectedFileContent,
+        selectFile, closeTabsForDeletedPath, setEditorAdapter,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/src/index.ts')
+      await selectFile('/root/other/readme.md')
+      // Delete /root/src directory — should close tabs under it
+      await closeTabsForDeletedPath('/root/src', true)
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0].path).toBe('/root/other/readme.md')
+      expect(selectedFilePath.value).toBe('/root/other/readme.md')
+      expect(selectedFileContent.value).toBe('other-content')
+    })
+
+    it('clears editor when last tab is deleted', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('only-content')
+
+      const {
+        selectedFilePath, selectedFileContent, isDirty,
+        selectFile, closeTabsForDeletedPath, setEditorAdapter, markDirty,
+      } = useFileTree()
+
+      const mockSetContent = vi.fn()
+      setEditorAdapter({
+        setContent: mockSetContent,
+        getContent: () => 'only-content',
+      })
+
+      await selectFile('/root/only.md')
+      markDirty()
+
+      await closeTabsForDeletedPath('/root/only.md', false)
+
+      expect(selectedFilePath.value).toBe('')
+      expect(selectedFileContent.value).toBe('')
+      expect(isDirty.value).toBe(false)
+      expect(mockSetContent).toHaveBeenLastCalledWith('')
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(0)
+    })
+
+    it('does nothing when deleted file has no open tab', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent).mockResolvedValue('content-a')
+
+      const {
+        selectedFilePath, selectedFileContent,
+        selectFile, closeTabsForDeletedPath, setEditorAdapter,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/a.md')
+
+      // Delete an unrelated file that has no open tab
+      await closeTabsForDeletedPath('/root/unrelated.md', false)
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0].path).toBe('/root/a.md')
+      expect(selectedFilePath.value).toBe('/root/a.md')
+      expect(selectedFileContent.value).toBe('content-a')
+    })
+
+    it('cleans up dirty state for deleted tabs', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b')
+
+      const {
+        dirtyTabs, selectFile, closeTabsForDeletedPath,
+        setEditorAdapter, markDirty, selectedFileContent,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/a.md')
+      await selectFile('/root/b.md')
+
+      // Make b.md dirty
+      selectedFileContent.value = 'dirty-b'
+      markDirty()
+      expect(dirtyTabs.value).toContain('/root/b.md')
+
+      // Delete b.md's file
+      await closeTabsForDeletedPath('/root/b.md', false)
+
+      expect(dirtyTabs.value).not.toContain('/root/b.md')
+      expect(dirtyTabs.value).toHaveLength(0)
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0].path).toBe('/root/a.md')
+    })
+
+    it('preserves untitled tabs when deleting a directory', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('file-content')
+
+      const {
+        selectedFilePath, selectedFileContent,
+        newFile, selectFile, closeTabsForDeletedPath, setEditorAdapter,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      // Open a real file under /root/src/
+      await selectFile('/root/src/app.ts')
+      // Create an untitled tab
+      newFile()
+      const untitledPath = selectedFilePath.value
+      expect(untitledPath).toMatch(/^__untitled__\d+$/)
+
+      const { tabs: tabsBefore } = useTabs()
+      expect(tabsBefore.value).toHaveLength(2)
+
+      // Delete /root/src directory
+      await closeTabsForDeletedPath('/root/src', true)
+
+      const { tabs } = useTabs()
+      // Only the untitled tab should survive
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0].path).toBe(untitledPath)
+      expect(selectedFilePath.value).toBe(untitledPath)
+    })
+
+    it('switches content when active tab is under deleted directory', async () => {
+      await cleanOpen()
+      vi.clearAllMocks()
+      vi.mocked(ReadFileContent)
+        .mockResolvedValueOnce('src-content')
+        .mockResolvedValueOnce('other-content')
+
+      const {
+        selectedFilePath, selectedFileContent,
+        selectFile, closeTabsForDeletedPath, setEditorAdapter, switchToTab,
+      } = useFileTree()
+
+      let editorContent = ''
+      setEditorAdapter({
+        setContent: vi.fn((c: string) => { editorContent = c }),
+        getContent: () => editorContent,
+      })
+
+      await selectFile('/root/src/main.ts')
+      await selectFile('/root/notes.md')
+
+      // Switch back to /root/src/main.ts so it's the active tab
+      await switchToTab(0)
+      expect(selectedFilePath.value).toBe('/root/src/main.ts')
+
+      // Delete /root/src — active tab is under it, should switch to /root/notes.md
+      await closeTabsForDeletedPath('/root/src', true)
+
+      const { tabs } = useTabs()
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0].path).toBe('/root/notes.md')
+      expect(selectedFilePath.value).toBe('/root/notes.md')
+      expect(selectedFileContent.value).toBe('other-content')
     })
   })
 

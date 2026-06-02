@@ -5,6 +5,7 @@ import { FileText, Folder, FolderOpen } from 'lucide-vue-next'
 import type { TreeNode } from '../types/file'
 import { ClipboardSetText, DeleteFile, ConfirmDelete } from '../../wailsjs/go/main/App'
 import { copiedFilePath, pasteToDirectory } from '../composables/useFileTree'
+import { useFileTree } from '../composables/useFileTree'
 
 const { t } = useI18n()
 
@@ -81,6 +82,8 @@ async function deleteItem() {
 
   const parentDir = props.node.path.substring(0, props.node.path.lastIndexOf('/'))
   await DeleteFile(props.node.path)
+  const { closeTabsForDeletedPath } = useFileTree()
+  await closeTabsForDeletedPath(props.node.path, props.node.isDir)
   menuVisible.value = false
   emit('refresh', parentDir)
 }

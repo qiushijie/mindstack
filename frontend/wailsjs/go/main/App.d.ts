@@ -88,6 +88,8 @@ export function SaveConfig(arg1:string):Promise<string>;
 
 export function SaveFileContent(arg1:string,arg2:string):Promise<string>;
 
+export function SaveFileDialog(arg1:string):Promise<string>;
+
 export function SearchDocs(arg1:string):Promise<string>;
 
 export function SetLocale(arg1:string):Promise<void>;

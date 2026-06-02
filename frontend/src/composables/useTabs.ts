@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import type { PageName } from './useNavigation'
+import { t } from '../i18n'
 
 export interface Tab {
   path: string
@@ -7,12 +8,23 @@ export interface Tab {
 }
 
 const PAGE_TABS = new Set<string>(['settings', 'relations', 'diff'])
+const UNTITLED_PREFIX = '__untitled__'
 
 const tabs = ref<Tab[]>([])
 const activeTabIndex = ref(-1)
+let untitledCounter = 0
 
 export function isPageTab(path: string): boolean {
   return PAGE_TABS.has(path)
+}
+
+export function isUntitledPath(path: string): boolean {
+  return path.startsWith(UNTITLED_PREFIX)
+}
+
+export function nextUntitledPath(): string {
+  untitledCounter++
+  return `${UNTITLED_PREFIX}${untitledCounter}`
 }
 
 export function openPageTab(pageName: PageName, title: string): { isNew: boolean; index: number } {
@@ -44,6 +56,16 @@ export function closeTabByPath(path: string): string | null {
   return tabs.value[activeTabIndex.value]?.path ?? null
 }
 
+export function closeTabsUnderDir(dirPath: string) {
+  const prefix = dirPath + '/'
+  tabs.value = tabs.value.filter(t => !t.path.startsWith(prefix))
+  if (tabs.value.length === 0) {
+    activeTabIndex.value = -1
+  } else if (activeTabIndex.value >= tabs.value.length) {
+    activeTabIndex.value = tabs.value.length - 1
+  }
+}
+
 export function useTabs() {
   const activeTab = computed(() => tabs.value[activeTabIndex.value] ?? null)
   const activeFilePath = computed(() => {
@@ -57,8 +79,13 @@ export function useTabs() {
       activeTabIndex.value = existing
       return { isNew: false, index: existing }
     }
-    const filename = path.split('/').pop() || 'Untitled'
-    const title = filename.lastIndexOf('.') > 0 ? filename.substring(0, filename.lastIndexOf('.')) : filename
+    let title: string
+    if (isUntitledPath(path)) {
+      title = t('editor.untitled')
+    } else {
+      const filename = path.split('/').pop() || 'Untitled'
+      title = filename.lastIndexOf('.') > 0 ? filename.substring(0, filename.lastIndexOf('.')) : filename
+    }
     tabs.value.push({ path, title })
     activeTabIndex.value = tabs.value.length - 1
     return { isNew: true, index: activeTabIndex.value }

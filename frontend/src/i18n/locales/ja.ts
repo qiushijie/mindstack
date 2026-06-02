@@ -139,6 +139,7 @@ export default {
     update: '更新',
   },
   editor: {
+    untitled: '無題',
     tooltip: {
       addBlock: 'ブロックを追加',
       dragToReorder: 'ドラッグして並べ替え',

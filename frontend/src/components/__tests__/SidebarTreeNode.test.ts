@@ -23,17 +23,22 @@ import {
 // vi.mock is hoisted — factory must not reference outer variables.
 vi.mock('../../composables/useFileTree', () => {
   const copiedFilePath = { value: '' }
+  const closeTabsForDeletedPath = vi.fn().mockResolvedValue(undefined)
   return {
     copiedFilePath,
+    closeTabsForDeletedPath,
     resolveUniqueFilePath: vi.fn().mockResolvedValue('/root/src/new.md'),
     resolvePasteFilePath: vi.fn().mockResolvedValue({ path: '/root/src/pasted.md', content: 'pasted' }),
     pasteToDirectory: vi.fn().mockImplementation(async (_targetDir: string) => {
       return !!copiedFilePath.value
     }),
+    useFileTree: vi.fn(() => ({
+      closeTabsForDeletedPath,
+    })),
   }
 })
 
-import { copiedFilePath as mockCopiedFilePath, pasteToDirectory } from '../../composables/useFileTree'
+import { copiedFilePath as mockCopiedFilePath, pasteToDirectory, closeTabsForDeletedPath } from '../../composables/useFileTree'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -304,10 +309,11 @@ describe('SidebarTreeNode', () => {
 
       const items = document.querySelectorAll('.tree-context-menu .menu-item')
       items[4].dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await nextTick()
+      await flushPromises()
 
       expect(ConfirmDelete).toHaveBeenCalledWith('README.md', false)
       expect(DeleteFile).toHaveBeenCalledWith('/root/README.md')
+      expect(closeTabsForDeletedPath).toHaveBeenCalledWith('/root/README.md', false)
       wrapper.unmount()
     })
 
@@ -323,6 +329,7 @@ describe('SidebarTreeNode', () => {
 
       expect(ConfirmDelete).toHaveBeenCalled()
       expect(DeleteFile).not.toHaveBeenCalled()
+      expect(closeTabsForDeletedPath).not.toHaveBeenCalled()
       wrapper.unmount()
     })
 
@@ -338,6 +345,7 @@ describe('SidebarTreeNode', () => {
 
       expect(wrapper.emitted('refresh')).toHaveLength(1)
       expect(wrapper.emitted('refresh')![0]).toEqual(['/root'])
+      expect(closeTabsForDeletedPath).toHaveBeenCalledWith('/root/README.md', false)
       wrapper.unmount()
     })
   })

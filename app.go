@@ -109,6 +109,7 @@ var dialogLabels = map[string]map[string]string{
 		"cancel":         "Cancel",
 		"file":           "file",
 		"folder":         "folder",
+		"saveFile":       "Save File",
 	},
 	"ja": {
 		"openFolder":     "フォルダを開く",
@@ -123,6 +124,7 @@ var dialogLabels = map[string]map[string]string{
 		"cancel":         "キャンセル",
 		"file":           "ファイル",
 		"folder":         "フォルダ",
+		"saveFile":       "ファイルを保存",
 	},
 	"fr": {
 		"openFolder":     "Ouvrir le dossier",
@@ -137,6 +139,7 @@ var dialogLabels = map[string]map[string]string{
 		"cancel":         "Annuler",
 		"file":           "fichier",
 		"folder":         "dossier",
+		"saveFile":       "Enregistrer le fichier",
 	},
 	"de": {
 		"openFolder":     "Ordner öffnen",
@@ -151,6 +154,7 @@ var dialogLabels = map[string]map[string]string{
 		"cancel":         "Abbrechen",
 		"file":           "Datei",
 		"folder":         "Ordner",
+		"saveFile":       "Datei speichern",
 	},
 	"es": {
 		"openFolder":     "Abrir carpeta",
@@ -165,6 +169,7 @@ var dialogLabels = map[string]map[string]string{
 		"cancel":         "Cancelar",
 		"file":           "archivo",
 		"folder":         "carpeta",
+		"saveFile":       "Guardar archivo",
 	},
 	"ru": {
 		"openFolder":     "Открыть папку",
@@ -179,6 +184,7 @@ var dialogLabels = map[string]map[string]string{
 		"cancel":         "Отмена",
 		"file":           "файл",
 		"folder":         "папка",
+		"saveFile":       "Сохранить файл",
 	},
 	"ko": {
 		"openFolder":     "폴더 열기",
@@ -193,6 +199,7 @@ var dialogLabels = map[string]map[string]string{
 		"cancel":         "취소",
 		"file":           "파일",
 		"folder":         "폴더",
+		"saveFile":       "파일 저장",
 	},
 	"zh": {
 		"openFolder":     "打开文件夹",
@@ -207,6 +214,7 @@ var dialogLabels = map[string]map[string]string{
 		"cancel":         "取消",
 		"file":           "文件",
 		"folder":         "文件夹",
+		"saveFile":       "保存文件",
 	},
 }
 
@@ -330,6 +338,26 @@ func (a *App) OpenImageFileDialog() string {
 func (a *App) OpenFileDialog() string {
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: a.dialogText("openFile"),
+		Filters: []runtime.FileFilter{
+			{DisplayName: a.dialogText("markdownFiles"), Pattern: "*.md"},
+			{DisplayName: a.dialogText("textFiles"), Pattern: "*.txt"},
+			{DisplayName: a.dialogText("allFiles"), Pattern: "*.*"},
+		},
+	})
+	if err != nil || path == "" {
+		return ""
+	}
+	return path
+}
+func (a *App) SaveFileDialog(defaultFilename string) string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:            a.dialogText("saveFile"),
+		DefaultDirectory: root,
+		DefaultFilename:  defaultFilename,
 		Filters: []runtime.FileFilter{
 			{DisplayName: a.dialogText("markdownFiles"), Pattern: "*.md"},
 			{DisplayName: a.dialogText("textFiles"), Pattern: "*.txt"},

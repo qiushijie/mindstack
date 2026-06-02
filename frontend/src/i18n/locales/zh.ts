@@ -139,6 +139,7 @@ export default {
     update: '更新',
   },
   editor: {
+    untitled: '未命名',
     tooltip: {
       addBlock: '添加块',
       dragToReorder: '拖动排序',

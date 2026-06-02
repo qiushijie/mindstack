@@ -1,10 +1,11 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import {
   OpenFolderDialog,
   OpenFileDialog,
   ReadDirEntries,
   ReadFileContent,
   SaveFileContent,
+  SaveFileDialog,
   LoadConfig,
   SaveConfig,
   SetWorkspaceRoot,
@@ -17,9 +18,9 @@ import { main } from '../../wailsjs/go/models'
 import type { TreeNode } from '../types/file'
 import { useSettings } from './useSettings'
 import { t } from '../i18n'
-import { useEditorState } from './useEditorState'
+import { useEditorState, focusEditor } from './useEditorState'
 import { setCurrentFilePath, setFileServerPort } from '../extensions/currentFilePath'
-import { useTabs, isPageTab, openPageTab } from './useTabs'
+import { useTabs, isPageTab, isUntitledPath, nextUntitledPath, openPageTab, closeTabByPath, closeTabsUnderDir } from './useTabs'
 import { useNavigation, type PageName } from './useNavigation'
 import { useConfirmDialog } from './useConfirmDialog'
 
@@ -112,6 +113,9 @@ function clearAutoSaveTimer() {
 
 async function confirmAndSaveDirtyTabs(paths: string[]): Promise<void> {
   if (paths.length === 0) return
+  // Skip untitled paths — they cannot be saved to disk without a dialog
+  const realPaths = paths.filter(p => !isUntitledPath(p))
+  if (realPaths.length === 0) return
   const { confirm } = useConfirmDialog()
   const shouldSave = await confirm({
     title: t('editor.confirmUnsaved.title'),
@@ -120,7 +124,7 @@ async function confirmAndSaveDirtyTabs(paths: string[]): Promise<void> {
     cancelText: t('editor.confirmUnsaved.discard'),
   })
   if (shouldSave) {
-    for (const path of paths) {
+    for (const path of realPaths) {
       const content = tabContentCache.get(path)
       if (content !== undefined) {
         await SaveFileContent(path, content)
@@ -225,7 +229,9 @@ export function useFileTree() {
 
   async function loadTabContent(path: string): Promise<string> {
     const cached = tabContentCache.get(path)
-    return cached !== undefined ? cached : await ReadFileContent(path)
+    if (cached !== undefined) return cached
+    if (isUntitledPath(path)) return ''
+    return await ReadFileContent(path)
   }
 
   function applyContent(path: string, content: string) {
@@ -244,7 +250,7 @@ export function useFileTree() {
       const raw = await LoadConfig()
       const config = JSON.parse(raw || '{}')
       config.lastFolderPath = rootPath.value
-      config.lastFilePath = selectedFilePath.value
+      config.lastFilePath = isUntitledPath(selectedFilePath.value) ? '' : selectedFilePath.value
       await SaveConfig(JSON.stringify(config))
     } catch (err) {
       // Wails bindings unavailable (e.g. dev mode without Go backend)
@@ -358,6 +364,38 @@ export function useFileTree() {
 
     clearAutoSaveTimer()
     const content = editorAdapter ? editorAdapter.getContent() : selectedFileContent.value
+
+    // Handle untitled files — prompt for save location
+    if (isUntitledPath(selectedFilePath.value)) {
+      const defaultName = 'untitled.md'
+      const savePath = await SaveFileDialog(defaultName)
+      if (!savePath) return
+
+      const err = await SaveFileContent(savePath, content)
+      if (!err) {
+        // Update tab path from untitled to the real file path
+        const oldPath = selectedFilePath.value
+        const tab = tabs.value.find(t => t.path === oldPath)
+        if (tab) {
+          const filename = savePath.split('/').pop() || 'Untitled'
+          tab.path = savePath
+          tab.title = filename.lastIndexOf('.') > 0 ? filename.substring(0, filename.lastIndexOf('.')) : filename
+        }
+
+        selectedFilePath.value = savePath
+        isDirty.value = false
+        dirtyTabs.value = dirtyTabs.value.filter(p => p !== oldPath)
+        tabContentCache.delete(oldPath)
+        tabContentCache.set(savePath, content)
+
+        // Refresh file tree and navigate
+        await refreshTree()
+        await saveAppConfig()
+        AddRecentEntry(savePath, false)
+      }
+      return
+    }
+
     const err = await SaveFileContent(selectedFilePath.value, content)
     if (!err) {
       isDirty.value = false
@@ -368,13 +406,21 @@ export function useFileTree() {
 
   function newFile() {
     clearAutoSaveTimer()
-    selectedFilePath.value = ''
+    saveCurrentToCache()
+
+    const untitledPath = nextUntitledPath()
+    openTab(untitledPath)
+
+    selectedFilePath.value = untitledPath
     selectedFileContent.value = ''
     isDirty.value = false
     if (editorAdapter) {
+      suppressDirtyMark = true
       editorAdapter.setContent('')
+      suppressDirtyMark = false
     }
     navigateTo('editor')
+    nextTick(focusEditor)
   }
 
   function markDirty() {
@@ -398,10 +444,11 @@ export function useFileTree() {
       }
     }
 
-    if (autoSave.value && path) {
+    // Auto-save only for files with a real path on disk
+    if (autoSave.value && path && !isUntitledPath(path)) {
       clearAutoSaveTimer()
       autoSaveTimer = setTimeout(() => {
-        saveCurrentFile()
+        saveCurrentFile().catch(err => console.warn('auto-save failed:', err))
       }, autoSaveDelay.value * 1000)
     }
   }
@@ -459,12 +506,13 @@ export function useFileTree() {
     // Invalidate cache for unmodified background tabs so they reload from disk on switch
     for (const tab of tabs.value) {
       if (isPageTab(tab.path)) continue
+      if (isUntitledPath(tab.path)) continue
       if (tab.path === currentPath) continue
       if (dirtyTabs.value.includes(tab.path)) continue
       tabContentCache.delete(tab.path)
     }
 
-    if (currentPath && !isDirty.value) {
+    if (currentPath && !isUntitledPath(currentPath) && !isDirty.value) {
       try {
         const diskContent = await ReadFileContent(currentPath)
         const cached = tabContentCache.get(currentPath)
@@ -653,10 +701,48 @@ export function useFileTree() {
     await saveAppConfig()
   }
 
+  async function closeTabsForDeletedPath(path: string, isDir: boolean) {
+    clearAutoSaveTimer()
+    saveCurrentToCache()
+
+    const removed = isDir
+      ? tabs.value.filter(t => t.path === path || t.path.startsWith(path + '/'))
+      : tabs.value.filter(t => t.path === path)
+
+    for (const tab of removed) {
+      if (!isPageTab(tab.path)) {
+        tabContentCache.delete(tab.path)
+        dirtyTabs.value = dirtyTabs.value.filter(p => p !== tab.path)
+      }
+    }
+
+    if (isDir) {
+      closeTabsUnderDir(path)
+    } else {
+      closeTabByPath(path)
+    }
+
+    if (tabs.value.length === 0) {
+      selectedFilePath.value = ''
+      selectedFileContent.value = ''
+      isDirty.value = false
+      if (editorAdapter) editorAdapter.setContent('')
+    } else if (!tabs.value.find(t => t.path === selectedFilePath.value)) {
+      const nextTab = tabs.value[activeTabIndex.value]
+      if (nextTab && !isPageTab(nextTab.path)) {
+        const content = await loadTabContent(nextTab.path)
+        applyContent(nextTab.path, content)
+      }
+    }
+
+    await saveAppConfig()
+  }
+
   watch(selectedFilePath, (newPath) => {
     const view = sharedView.value
     if (view) {
-      view.dispatch({ effects: setCurrentFilePath.of(newPath) })
+      const effectivePath = isUntitledPath(newPath) ? '' : newPath
+      view.dispatch({ effects: setCurrentFilePath.of(effectivePath) })
     }
   }, { flush: 'sync' })
 
@@ -687,5 +773,6 @@ export function useFileTree() {
     closeFileTab,
     closeOtherTabs,
     closeAllTabs,
+    closeTabsForDeletedPath,
   }
 }

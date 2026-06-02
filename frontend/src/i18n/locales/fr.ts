@@ -139,6 +139,7 @@ export default {
     update: 'Mettre à jour',
   },
   editor: {
+    untitled: 'Sans titre',
     tooltip: {
       addBlock: 'Ajouter un bloc',
       dragToReorder: 'Glisser pour réorganiser',

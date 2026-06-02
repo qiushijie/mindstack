@@ -139,6 +139,7 @@ export default {
     update: 'Обновить',
   },
   editor: {
+    untitled: 'Без названия',
     tooltip: {
       addBlock: 'Добавить блок',
       dragToReorder: 'Перетащить для изменения порядка',

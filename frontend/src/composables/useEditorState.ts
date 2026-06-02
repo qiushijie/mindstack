@@ -31,3 +31,7 @@ export function scrollToLine(lineNumber: number) {
     // ignore invalid line numbers
   }
 }
+
+export function focusEditor() {
+  sharedEditorView.value?.focus()
+}

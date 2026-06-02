@@ -139,6 +139,7 @@ export default {
     update: '업데이트',
   },
   editor: {
+    untitled: '제목 없음',
     tooltip: {
       addBlock: '블록 추가',
       dragToReorder: '드래그하여 재정렬',

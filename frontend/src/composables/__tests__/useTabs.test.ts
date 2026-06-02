@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useTabs, isPageTab, openPageTab } from '../useTabs'
+import { useTabs, isPageTab, openPageTab, closeTabByPath, closeTabsUnderDir } from '../useTabs'
 
 // useTabs uses module-level state; reset between tests via clearTabs
 describe('useTabs', () => {
@@ -330,6 +330,140 @@ describe('useTabs', () => {
       openTab('/root/doc.md')
 
       expect(activeFilePath.value).toBe('/root/doc.md')
+    })
+  })
+
+  describe('closeTabByPath', () => {
+    it('closes tab by path and returns next active path', () => {
+      const { tabs, activeTabIndex, openTab } = useTabs()
+
+      openTab('/root/a.md')
+      openTab('/root/b.md')
+      openTab('/root/c.md')
+      // active is c (index 2)
+
+      const result = closeTabByPath('/root/c.md')
+
+      expect(result).toBe('/root/b.md')
+      expect(tabs.value).toHaveLength(2)
+      expect(activeTabIndex.value).toBe(1)
+    })
+
+    it('returns null when path not found', () => {
+      const { tabs, openTab } = useTabs()
+
+      openTab('/root/a.md')
+
+      const result = closeTabByPath('/root/nonexistent.md')
+
+      expect(result).toBeNull()
+      expect(tabs.value).toHaveLength(1)
+    })
+
+    it('adjusts activeTabIndex when active tab is closed', () => {
+      const { tabs, activeTabIndex, openTab } = useTabs()
+
+      openTab('/root/a.md')
+      openTab('/root/b.md')
+      openTab('/root/c.md')
+      // active is c (index 2)
+
+      closeTabByPath('/root/c.md')
+
+      expect(activeTabIndex.value).toBe(1)
+      expect(tabs.value.map(t => t.path)).toEqual(['/root/a.md', '/root/b.md'])
+    })
+
+    it('returns null and resets when closing last remaining tab', () => {
+      const { tabs, activeTabIndex, openTab } = useTabs()
+
+      openTab('/root/a.md')
+
+      const result = closeTabByPath('/root/a.md')
+
+      expect(result).toBeNull()
+      expect(tabs.value).toEqual([])
+      expect(activeTabIndex.value).toBe(-1)
+    })
+
+    it('does not affect activeTabIndex when closing inactive tab', () => {
+      const { tabs, activeTabIndex, openTab } = useTabs()
+
+      openTab('/root/a.md')
+      openTab('/root/b.md')
+      openTab('/root/c.md')
+      // active is c (index 2)
+
+      closeTabByPath('/root/a.md')
+
+      expect(activeTabIndex.value).toBe(1) // c shifted from 2 to 1
+      expect(tabs.value.map(t => t.path)).toEqual(['/root/b.md', '/root/c.md'])
+    })
+  })
+
+  describe('closeTabsUnderDir', () => {
+    it('closes all tabs under a directory while keeping others', () => {
+      const { tabs, openTab } = useTabs()
+
+      openTab('/root/src/a.md')
+      openTab('/root/src/b.md')
+      openTab('/root/docs/c.md')
+
+      closeTabsUnderDir('/root/src')
+
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0].path).toBe('/root/docs/c.md')
+    })
+
+    it('adjusts activeTabIndex when active tab is under deleted directory', () => {
+      const { tabs, activeTabIndex, openTab, switchTab } = useTabs()
+
+      openTab('/root/docs/a.md')
+      openTab('/root/src/b.md')
+      openTab('/root/src/c.md')
+      switchTab(1) // active is /root/src/b.md (index 1)
+
+      closeTabsUnderDir('/root/src')
+
+      expect(activeTabIndex.value).toBe(0)
+      expect(tabs.value.map(t => t.path)).toEqual(['/root/docs/a.md'])
+    })
+
+    it('keeps activeTabIndex when active tab is not under deleted directory', () => {
+      const { tabs, activeTabIndex, openTab } = useTabs()
+
+      openTab('/root/docs/a.md')
+      openTab('/root/src/b.md')
+      // active is /root/src/b.md (index 1)
+
+      closeTabsUnderDir('/root/docs')
+
+      expect(activeTabIndex.value).toBe(0) // b shifted from 1 to 0
+      expect(tabs.value.map(t => t.path)).toEqual(['/root/src/b.md'])
+    })
+
+    it('resets to empty state when all tabs are under the deleted directory', () => {
+      const { tabs, activeTabIndex, openTab } = useTabs()
+
+      openTab('/root/src/a.md')
+      openTab('/root/src/b.md')
+
+      closeTabsUnderDir('/root/src')
+
+      expect(tabs.value).toEqual([])
+      expect(activeTabIndex.value).toBe(-1)
+    })
+
+    it('only matches exact directory prefix', () => {
+      const { tabs, openTab } = useTabs()
+
+      openTab('/root/src-file.md')
+      openTab('/root/src/a.md')
+
+      closeTabsUnderDir('/root/src')
+
+      expect(tabs.value).toHaveLength(1)
+      expect(tabs.value[0].path).toBe('/root/src-file.md')
     })
   })
 
