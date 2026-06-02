@@ -8,8 +8,8 @@
 //  3. Recall candidate documents locally by tag/alias union + title/summary/full-text
 //     hits using LLM-extracted keywords, ranked and capped to topRecall.
 //  4. Ask the LLM once to rerank the candidates and return relevance scores.
-//  5. For each top-ranked document, extract relevant snippets locally by keyword
-//     matching without further LLM calls.
+//  5. For each top-ranked document, extract relevant snippets via LLM with local
+//     keyword-matching fallback.
 //  6. Merge all extracted snippets, sort by score, and keep the top results.
 //  7. Ask the LLM once more to synthesize an overall summary from the kept
 //     snippets and the original query.
@@ -32,10 +32,10 @@ import (
 )
 
 const (
-	topRecall         = 10
+	topRecall         = 15
 	topSnippets       = 5
 	maxSnippetsPerDoc = 3
-	previewMaxLines   = 20
+	previewMaxLines   = 50
 	contextLines      = 2
 )
 
@@ -159,22 +159,50 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 		return &Result{Query: query, Tags: pickedTags, Keywords: keywords, Snippets: []Snippet{}}, nil
 	}
 
-	// Local snippet extraction from top-ranked documents using LLM-extracted keywords.
-	var all []Snippet
+	// Snippet extraction from top-ranked documents using LLM with local fallback.
+	type docContent struct {
+		path    string
+		content string
+		score   float64
+	}
+	var docs []docContent
 	for _, r := range ranked {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
 		absPath := filepath.Join(kbRoot, r.Path)
 		raw, err := os.ReadFile(absPath)
 		if err != nil {
 			continue
 		}
-		snippets := extractSnippetsLocal(keywords, absPath, string(raw), r.Score)
-		all = append(all, snippets...)
+		docs = append(docs, docContent{path: absPath, content: string(raw), score: r.Score})
+	}
+
+	// Parallel LLM snippet extraction with per-document fallback.
+	eg, ectx := errgroup.WithContext(ctx)
+	eg.SetLimit(3)
+	snippetCh := make(chan []Snippet, len(docs))
+	for _, d := range docs {
+		d := d
+		eg.Go(func() error {
+			select {
+			case <-ectx.Done():
+				return nil
+			default:
+			}
+			snippets := extractSnippetsLLM(ectx, llmSvc, query, d.path, d.content, lang, maxSnippetsPerDoc)
+			if snippets == nil {
+				snippets = extractSnippetsLocal(keywords, d.path, d.content, d.score)
+			}
+			if len(snippets) > 0 {
+				snippetCh <- snippets
+			}
+			return nil
+		})
+	}
+	_ = eg.Wait()
+	close(snippetCh)
+
+	var all []Snippet
+	for s := range snippetCh {
+		all = append(all, s...)
 	}
 
 	sort.SliceStable(all, func(i, j int) bool {
@@ -488,6 +516,56 @@ func extractSnippetsLocal(keywords []string, absPath, content string, docScore f
 		snippets = snippets[:maxSnippetsPerDoc]
 	}
 
+	return snippets
+}
+
+// extractSnippetItem is a single result from the LLM snippet extraction step.
+type extractSnippetItem struct {
+	StartLine int     `json:"startLine"`
+	EndLine   int     `json:"endLine"`
+	Score     float64 `json:"score"`
+}
+
+// extractSnippetsLLM asks the LLM to extract the most relevant snippets from a
+// single document. Returns nil on any error (caller should fallback to local).
+func extractSnippetsLLM(ctx context.Context, svc LLMClient, query, absPath, content, lang string, maxPerDoc int) []Snippet {
+	lines := splitLines(content)
+	if len(lines) == 0 {
+		return nil
+	}
+
+	var sb strings.Builder
+	for i, line := range lines {
+		fmt.Fprintf(&sb, "%d: %s\n", i+1, line)
+	}
+
+	prompt := fmt.Sprintf(loadPrompt("extract", lang), query, sb.String(), maxPerDoc)
+
+	resp, err := svc.Chat(ctx, []*schema.Message{{Role: schema.User, Content: prompt}})
+	if err != nil {
+		return nil
+	}
+
+	cleaned := stripJSONFences(resp)
+	var items []extractSnippetItem
+	if err := json.Unmarshal([]byte(cleaned), &items); err != nil {
+		return nil
+	}
+
+	var snippets []Snippet
+	for _, item := range items {
+		s, e, ok := clampRange(item.StartLine, item.EndLine, len(lines))
+		if !ok {
+			continue
+		}
+		snippets = append(snippets, Snippet{
+			Path:      absPath,
+			StartLine: s,
+			EndLine:   e,
+			Content:   joinLines(lines, s, e),
+			Score:     item.Score,
+		})
+	}
 	return snippets
 }
 

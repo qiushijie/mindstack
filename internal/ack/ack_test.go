@@ -343,6 +343,48 @@ func TestExtractSnippetsLocal_CapPerDoc(t *testing.T) {
 	}
 }
 
+func TestExtractSnippetsLLM(t *testing.T) {
+	content := "line 1\nline 2\nline 3\nline 4\nline 5\n"
+	llm := &fakeLLM{
+		responses: []fakeResp{
+			{match: "相关", body: `[{"startLine":2,"endLine":4,"score":0.9}]`},
+		},
+	}
+	snippets := extractSnippetsLLM(context.Background(), llm, "test query", "/tmp/test.md", content, "zh", 3)
+	if len(snippets) != 1 {
+		t.Fatalf("expected 1 snippet, got %d", len(snippets))
+	}
+	sn := snippets[0]
+	if sn.Path != "/tmp/test.md" {
+		t.Errorf("Path = %q, want %q", sn.Path, "/tmp/test.md")
+	}
+	if sn.StartLine != 2 {
+		t.Errorf("StartLine = %d, want 2", sn.StartLine)
+	}
+	if sn.EndLine != 4 {
+		t.Errorf("EndLine = %d, want 4", sn.EndLine)
+	}
+	if sn.Score != 0.9 {
+		t.Errorf("Score = %f, want 0.9", sn.Score)
+	}
+	if !strings.Contains(sn.Content, "line 2") || !strings.Contains(sn.Content, "line 3") || !strings.Contains(sn.Content, "line 4") {
+		t.Errorf("Content = %q, want lines 2-4", sn.Content)
+	}
+}
+
+func TestExtractSnippetsLLM_FallbackOnLLMError(t *testing.T) {
+	content := "line 1\nline 2\nline 3\n"
+	llm := &fakeLLM{
+		responses: []fakeResp{
+			{match: "相关", body: "not json"},
+		},
+	}
+	snippets := extractSnippetsLLM(context.Background(), llm, "test query", "/tmp/test.md", content, "zh", 3)
+	if snippets != nil {
+		t.Errorf("expected nil on invalid JSON, got %v", snippets)
+	}
+}
+
 func TestRerankCandidates(t *testing.T) {
 	llm := &fakeLLM{
 		responses: []fakeResp{
@@ -386,8 +428,9 @@ func TestAck_FullPipeline(t *testing.T) {
 	llm := &fakeLLM{
 		responses: []fakeResp{
 			{match: "可用的标签", body: `["api","retry"]`},
-			{match: "分词", body: `["retry","policy","exponential","backoff"]`},
+			{match: "英文关键词", body: `["retry","policy","exponential","backoff"]`},
 			{match: "候选文档", body: `[{"path":"api.md","score":0.95}]`},
+			{match: "提取", body: `[{"startLine":3,"endLine":5,"score":0.95}]`},
 			{match: "证据片段", body: "Use exponential backoff with up to 3 attempts and a 30s timeout."},
 		},
 	}
@@ -413,9 +456,9 @@ func TestAck_FullPipeline(t *testing.T) {
 	if len(res.Tags) != 2 {
 		t.Errorf("tags = %v, want 2", res.Tags)
 	}
-	// Verify LLM call count: tag + keyword + rerank + summary = 4.
-	if llm.calls != 4 {
-		t.Errorf("expected 4 LLM calls, got %d", llm.calls)
+	// Verify LLM call count: tag + keyword + rerank + extract + summary = 5.
+	if llm.calls != 5 {
+		t.Errorf("expected 5 LLM calls, got %d", llm.calls)
 	}
 }
 
@@ -429,7 +472,7 @@ func TestAck_NoCandidates(t *testing.T) {
 
 	llm := &fakeLLM{responses: []fakeResp{
 		{match: "可用的标签", body: `[]`},
-		{match: "分词", body: `["nothing","matches"]`},
+		{match: "关键词", body: `["nothing","matches"]`},
 	}}
 	res, err := Ack(context.Background(), llm, root, "nothing matches", "zh")
 	if err != nil {
@@ -453,9 +496,9 @@ func TestMakeDocPreview(t *testing.T) {
 	rel := "doc.md"
 	full := filepath.Join(root, rel)
 
-	// Create content with more than 20 lines.
+	// Create content with more than previewMaxLines lines.
 	var lines []string
-	for i := 0; i < 25; i++ {
+	for i := 0; i < 55; i++ {
 		lines = append(lines, fmt.Sprintf("line %d", i+1))
 	}
 	content := strings.Join(lines, "\n")
@@ -509,11 +552,12 @@ func TestMakeDocPreview(t *testing.T) {
 		t.Errorf("missing truncated marker")
 	}
 
-	// Verify only first 20 lines are shown.
+	// Verify only first previewMaxLines lines are shown.
 	lineCount := strings.Count(preview, "\n")
-	// Preview header has 6 lines (路径, 标题, 标签, 别名, 摘要, 正文预览) + 20 body lines + truncated line.
-	if lineCount != 27 {
-		t.Errorf("expected 27 lines in preview, got %d", lineCount)
+	// Preview header has 6 lines (路径, 标题, 标签, 别名, 摘要, 正文预览) + previewMaxLines body lines + truncated line.
+	expectedLines := 6 + previewMaxLines + 1
+	if lineCount != expectedLines {
+		t.Errorf("expected %d lines in preview, got %d", expectedLines, lineCount)
 	}
 }
 
@@ -522,9 +566,9 @@ func TestMakeDocPreview_English(t *testing.T) {
 	rel := "doc.md"
 	full := filepath.Join(root, rel)
 
-	// Create content with more than 20 lines.
+	// Create content with more than previewMaxLines lines.
 	var lines []string
-	for i := 0; i < 25; i++ {
+	for i := 0; i < 55; i++ {
 		lines = append(lines, fmt.Sprintf("line %d", i+1))
 	}
 	content := strings.Join(lines, "\n")
