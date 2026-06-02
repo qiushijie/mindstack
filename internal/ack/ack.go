@@ -4,9 +4,9 @@
 //
 // Pipeline:
 //  1. Scan all document metadata.
-//  2. Ask the LLM to map the query to a subset of existing tags (tags + aliases).
+//  2. Ask the LLM to map the query to existing tags AND extract search keywords.
 //  3. Recall candidate documents locally by tag/alias union + title/summary/full-text
-//     hits, ranked and capped to topRecall.
+//     hits using LLM-extracted keywords, ranked and capped to topRecall.
 //  4. Ask the LLM once to rerank the candidates and return relevance scores.
 //  5. For each top-ranked document, extract relevant snippets locally by keyword
 //     matching without further LLM calls.
@@ -27,7 +27,8 @@ import (
 
 	"mindstack/internal/meta"
 
-	einoschema "github.com/cloudwego/eino/schema"
+	"github.com/cloudwego/eino/schema"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -52,7 +53,6 @@ func loadPrompt(name, lang string) string {
 	if err != nil {
 		return ""
 	}
-	// Extract content after the first "---" separator to skip the markdown header.
 	s := string(data)
 	if idx := strings.Index(s, "\n---\n"); idx >= 0 {
 		return strings.TrimSpace(s[idx+5:])
@@ -73,6 +73,7 @@ type Snippet struct {
 type Result struct {
 	Query    string    `json:"query"`
 	Tags     []string  `json:"tags"`
+	Keywords []string  `json:"keywords"`
 	Summary  string    `json:"summary"`
 	Snippets []Snippet `json:"snippets"`
 }
@@ -80,7 +81,7 @@ type Result struct {
 // LLMClient is the subset of llm.Service used by Ack. Defined as an interface
 // to allow tests to inject a fake without touching the real LLM stack.
 type LLMClient interface {
-	Chat(ctx context.Context, messages []*einoschema.Message) (string, error)
+	Chat(ctx context.Context, messages []*schema.Message) (string, error)
 }
 
 // Ack runs the full /ack pipeline: tag extraction -> recall -> rerank ->
@@ -98,15 +99,40 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 	}
 
 	allTags := collectAllTags(metas)
-	pickedTags, err := extractTagsFromQuery(ctx, llmSvc, query, allTags, lang)
-	if err != nil {
-		// Tag extraction failure is non-fatal: fall back to full-text only.
-		pickedTags = nil
+
+	// Concurrent tag + keyword extraction via errgroup.
+	g, gctx := errgroup.WithContext(ctx)
+
+	var pickedTags []string
+	var keywords []string
+
+	g.Go(func() error {
+		tags, err := extractTagsFromQuery(gctx, llmSvc, query, allTags, lang)
+		if err != nil {
+			return nil // non-fatal: tags stay nil
+		}
+		pickedTags = tags
+		return nil
+	})
+
+	g.Go(func() error {
+		kws, err := extractKeywordsFromQuery(gctx, llmSvc, query, lang)
+		if err != nil || len(kws) == 0 {
+			return nil // non-fatal: keywords stay nil, will fallback below
+		}
+		keywords = kws
+		return nil
+	})
+
+	_ = g.Wait()
+
+	if keywords == nil {
+		keywords = []string{strings.ToLower(query)}
 	}
 
-	candidates := recallCandidates(metas, kbRoot, pickedTags, query)
+	candidates := recallCandidates(metas, kbRoot, pickedTags, keywords)
 	if len(candidates) == 0 {
-		return &Result{Query: query, Tags: pickedTags, Snippets: []Snippet{}}, nil
+		return &Result{Query: query, Tags: pickedTags, Keywords: keywords, Snippets: []Snippet{}}, nil
 	}
 
 	// Build document previews for rerank.
@@ -130,10 +156,10 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 	// Single LLM call to rerank all candidates.
 	ranked := rerankCandidates(ctx, llmSvc, query, previews, lang, topSnippets)
 	if len(ranked) == 0 {
-		return &Result{Query: query, Tags: pickedTags, Snippets: []Snippet{}}, nil
+		return &Result{Query: query, Tags: pickedTags, Keywords: keywords, Snippets: []Snippet{}}, nil
 	}
 
-	// Local snippet extraction from top-ranked documents.
+	// Local snippet extraction from top-ranked documents using LLM-extracted keywords.
 	var all []Snippet
 	for _, r := range ranked {
 		select {
@@ -147,7 +173,7 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 		if err != nil {
 			continue
 		}
-		snippets := extractSnippetsLocal(query, absPath, string(raw), r.Score)
+		snippets := extractSnippetsLocal(keywords, absPath, string(raw), r.Score)
 		all = append(all, snippets...)
 	}
 
@@ -171,6 +197,7 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 	return &Result{
 		Query:    query,
 		Tags:     pickedTags,
+		Keywords: keywords,
 		Summary:  summary,
 		Snippets: all,
 	}, nil
@@ -219,14 +246,18 @@ type candidate struct {
 // recallCandidates merges tag-based, alias-based, title/summary-based and
 // full-text recall over the meta set.
 // Tag/alias matching uses OR semantics across pickedTags.
+// Fulltext/title/summary/headings matching uses LLM-extracted keywords.
 // Documents are ranked by a weighted score and capped to topRecall.
-func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags []string, query string) []candidate {
+func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags, keywords []string) []candidate {
 	tagSet := make(map[string]struct{}, len(pickedTags))
 	for _, t := range pickedTags {
 		tagSet[strings.ToLower(strings.TrimSpace(t))] = struct{}{}
 	}
 
-	queryLower := strings.ToLower(query)
+	keywordLower := make([]string, 0, len(keywords))
+	for _, k := range keywords {
+		keywordLower = append(keywordLower, strings.ToLower(strings.TrimSpace(k)))
+	}
 
 	scored := make(map[string]*candidate, len(metas))
 
@@ -247,11 +278,16 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags []st
 			}
 		}
 
-		if queryLower != "" {
-			c.titleHits = strings.Count(strings.ToLower(m.Title), queryLower)
-			c.summaryHits = strings.Count(strings.ToLower(m.Summary), queryLower)
-			for _, h := range m.Headings {
-				c.headingsHits += strings.Count(strings.ToLower(h.Text), queryLower)
+		titleLower := strings.ToLower(m.Title)
+		summaryLower := strings.ToLower(m.Summary)
+		for _, term := range keywordLower {
+			c.titleHits += strings.Count(titleLower, term)
+			c.summaryHits += strings.Count(summaryLower, term)
+		}
+		for _, h := range m.Headings {
+			hLower := strings.ToLower(h.Text)
+			for _, term := range keywordLower {
+				c.headingsHits += strings.Count(hLower, term)
 			}
 		}
 
@@ -259,20 +295,22 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags []st
 	}
 
 	// Second pass: full-text (requires reading files).
-	if queryLower != "" {
-		for _, m := range metas {
-			absPath := filepath.Join(kbRoot, m.Path)
-			data, err := os.ReadFile(absPath)
-			if err != nil {
-				continue
-			}
-			hits := strings.Count(strings.ToLower(string(data)), queryLower)
-			if hits == 0 {
-				continue
-			}
-			if c, ok := scored[m.Path]; ok {
-				c.fulltextHits = hits
-			}
+	for _, m := range metas {
+		absPath := filepath.Join(kbRoot, m.Path)
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			continue
+		}
+		contentLower := strings.ToLower(string(data))
+		var hits int
+		for _, term := range keywordLower {
+			hits += strings.Count(contentLower, term)
+		}
+		if hits == 0 {
+			continue
+		}
+		if c, ok := scored[m.Path]; ok {
+			c.fulltextHits = hits
 		}
 	}
 
@@ -316,7 +354,7 @@ func rerankCandidates(ctx context.Context, svc LLMClient, query string, previews
 	}
 	prompt := fmt.Sprintf(loadPrompt("rerank", lang), query, sb.String(), topK)
 
-	resp, err := svc.Chat(ctx, []*einoschema.Message{{Role: einoschema.User, Content: prompt}})
+	resp, err := svc.Chat(ctx, []*schema.Message{{Role: schema.User, Content: prompt}})
 	if err != nil {
 		return nil
 	}
@@ -381,54 +419,25 @@ func makeDocPreview(kbRoot, relPath string, m *meta.DocumentMeta, lang string) (
 	return sb.String(), nil
 }
 
-// stopWords is a small set of common English words to skip when splitting
-// a multi-word query into search terms.
-var stopWords = map[string]bool{
-	"what": true, "is": true, "the": true, "a": true, "an": true,
-	"are": true, "how": true, "to": true, "do": true, "does": true,
-	"can": true, "will": true, "should": true, "would": true, "could": true,
-	"has": true, "have": true, "had": true, "was": true, "were": true,
-	"be": true, "been": true, "being": true, "am": true, "i": true,
-	"you": true, "he": true, "she": true, "it": true, "we": true, "they": true,
-	"this": true, "that": true, "these": true, "those": true,
-	"of": true, "in": true, "on": true, "at": true, "by": true,
-	"with": true, "from": true, "for": true, "about": true, "as": true,
-	"and": true, "but": true, "or": true, "yet": true, "so": true,
-}
-
 // extractSnippetsLocal extracts relevant snippets from a document by local
 // keyword matching without any LLM calls.
-func extractSnippetsLocal(query, absPath, content string, docScore float64) []Snippet {
-	queryLower := strings.ToLower(query)
+func extractSnippetsLocal(keywords []string, absPath, content string, docScore float64) []Snippet {
 	lines := splitLines(content)
-	if len(lines) == 0 {
+	if len(lines) == 0 || len(keywords) == 0 {
 		return nil
 	}
 
-	// Build search terms from query.
-	var terms []string
-	if strings.Contains(queryLower, " ") {
-		// Multi-word query: split and filter out common stop words.
-		for _, w := range strings.Fields(queryLower) {
-			w = strings.TrimSpace(w)
-			if w != "" && !stopWords[w] {
-				terms = append(terms, w)
-			}
-		}
-	} else {
-		// Single word or Chinese query: use as-is.
-		terms = append(terms, queryLower)
-	}
-	if len(terms) == 0 {
-		return nil
+	keywordLower := make([]string, 0, len(keywords))
+	for _, k := range keywords {
+		keywordLower = append(keywordLower, strings.ToLower(k))
 	}
 
-	// Find all lines containing any search term.
+	// Find all lines containing any keyword.
 	var hitLines []int
 	for i, line := range lines {
 		lineLower := strings.ToLower(line)
-		for _, term := range terms {
-			if strings.Contains(lineLower, term) {
+		for _, kw := range keywordLower {
+			if strings.Contains(lineLower, kw) {
 				hitLines = append(hitLines, i+1) // 1-based
 				break
 			}
@@ -494,7 +503,7 @@ func extractTagsFromQuery(ctx context.Context, svc LLMClient, query string, allT
 	}
 	prompt := fmt.Sprintf(loadPrompt("tag", lang), query, sb.String())
 
-	resp, err := svc.Chat(ctx, []*einoschema.Message{{Role: einoschema.User, Content: prompt}})
+	resp, err := svc.Chat(ctx, []*schema.Message{{Role: schema.User, Content: prompt}})
 	if err != nil {
 		return nil, err
 	}
@@ -519,6 +528,30 @@ func extractTagsFromQuery(ctx context.Context, svc LLMClient, query string, allT
 	return out, nil
 }
 
+func extractKeywordsFromQuery(ctx context.Context, svc LLMClient, query, lang string) ([]string, error) {
+	prompt := fmt.Sprintf(loadPrompt("keyword", lang), query)
+
+	resp, err := svc.Chat(ctx, []*schema.Message{{Role: schema.User, Content: prompt}})
+	if err != nil {
+		return nil, err
+	}
+
+	cleaned := stripJSONFences(resp)
+	var keywords []string
+	if err := json.Unmarshal([]byte(cleaned), &keywords); err != nil {
+		return nil, fmt.Errorf("parse keyword response: %w (raw: %s)", err, resp)
+	}
+
+	out := make([]string, 0, len(keywords))
+	for _, k := range keywords {
+		k = strings.TrimSpace(k)
+		if k != "" {
+			out = append(out, k)
+		}
+	}
+	return out, nil
+}
+
 func summarizeSnippets(ctx context.Context, svc LLMClient, query string, snippets []Snippet, lang string) (string, error) {
 	var sb strings.Builder
 	for i, s := range snippets {
@@ -526,7 +559,7 @@ func summarizeSnippets(ctx context.Context, svc LLMClient, query string, snippet
 	}
 	prompt := fmt.Sprintf(loadPrompt("summary", lang), query, sb.String())
 
-	resp, err := svc.Chat(ctx, []*einoschema.Message{{Role: einoschema.User, Content: prompt}})
+	resp, err := svc.Chat(ctx, []*schema.Message{{Role: schema.User, Content: prompt}})
 	if err != nil {
 		return "", err
 	}

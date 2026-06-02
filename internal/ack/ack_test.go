@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"mindstack/internal/meta"
@@ -19,6 +20,7 @@ import (
 type fakeLLM struct {
 	responses []fakeResp
 	calls     int
+	mu        sync.Mutex
 }
 
 type fakeResp struct {
@@ -28,12 +30,15 @@ type fakeResp struct {
 }
 
 func (f *fakeLLM) Chat(_ context.Context, messages []*einoschema.Message) (string, error) {
+	f.mu.Lock()
 	f.calls++
 	prompt := ""
 	if len(messages) > 0 {
 		prompt = messages[0].Content
 	}
-	for _, r := range f.responses {
+	responses := f.responses
+	f.mu.Unlock()
+	for _, r := range responses {
 		if strings.Contains(prompt, r.match) {
 			return r.body, r.err
 		}
@@ -198,7 +203,7 @@ func TestRecallCandidates_TagAndFulltext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := recallCandidates(metas, root, []string{"api"}, "retry policy")
+	got := recallCandidates(metas, root, []string{"api"}, []string{"retry", "policy"})
 	if len(got) == 0 {
 		t.Fatal("expected at least one candidate")
 	}
@@ -228,7 +233,7 @@ func TestRecallCandidates_Aliases(t *testing.T) {
 	writeFixture(t, root, docs, tags, aliases)
 
 	metas, _ := meta.ScanAll(root, "")
-	got := recallCandidates(metas, root, []string{"test"}, "")
+	got := recallCandidates(metas, root, []string{"test"}, nil)
 	if len(got) == 0 {
 		t.Fatal("expected a.md via alias match")
 	}
@@ -266,7 +271,7 @@ func TestRecallCandidates_TitleAndSummary(t *testing.T) {
 	}
 
 	metas, _ := meta.ScanAll(root, "")
-	got := recallCandidates(metas, root, nil, "retry")
+	got := recallCandidates(metas, root, nil, []string{"retry"})
 	if len(got) == 0 {
 		t.Fatal("expected a.md via title/summary match")
 	}
@@ -289,7 +294,7 @@ func TestRecallCandidates_TopRecallCap(t *testing.T) {
 	}
 	writeFixture(t, root, docs, tags, nil)
 	metas, _ := meta.ScanAll(root, "")
-	got := recallCandidates(metas, root, []string{"api"}, "matched")
+	got := recallCandidates(metas, root, []string{"api"}, []string{"matched"})
 	if len(got) > topRecall {
 		t.Errorf("expected cap at %d, got %d", topRecall, len(got))
 	}
@@ -297,7 +302,7 @@ func TestRecallCandidates_TopRecallCap(t *testing.T) {
 
 func TestExtractSnippetsLocal(t *testing.T) {
 	content := "line 1\nline 2\nretry policy here\nline 4\nline 5\nuse exponential backoff\nline 7\nline 8\nline 9"
-	snippets := extractSnippetsLocal("retry", "/tmp/test.md", content, 0.9)
+	snippets := extractSnippetsLocal([]string{"retry"}, "/tmp/test.md", content, 0.9)
 	if len(snippets) == 0 {
 		t.Fatal("expected at least one snippet")
 	}
@@ -315,7 +320,7 @@ func TestExtractSnippetsLocal(t *testing.T) {
 }
 
 func TestExtractSnippetsLocal_NoMatch(t *testing.T) {
-	snippets := extractSnippetsLocal("nonexistent", "/tmp/test.md", "foo bar baz", 0.5)
+	snippets := extractSnippetsLocal([]string{"nonexistent"}, "/tmp/test.md", "foo bar baz", 0.5)
 	if len(snippets) != 0 {
 		t.Errorf("expected 0 snippets, got %d", len(snippets))
 	}
@@ -332,7 +337,7 @@ func TestExtractSnippetsLocal_CapPerDoc(t *testing.T) {
 		}
 	}
 	content := strings.Join(lines, "\n")
-	snippets := extractSnippetsLocal("retry", "/tmp/test.md", content, 0.8)
+	snippets := extractSnippetsLocal([]string{"retry"}, "/tmp/test.md", content, 0.8)
 	if len(snippets) > maxSnippetsPerDoc {
 		t.Errorf("expected at most %d snippets, got %d", maxSnippetsPerDoc, len(snippets))
 	}
@@ -381,6 +386,7 @@ func TestAck_FullPipeline(t *testing.T) {
 	llm := &fakeLLM{
 		responses: []fakeResp{
 			{match: "可用的标签", body: `["api","retry"]`},
+			{match: "分词", body: `["retry","policy","exponential","backoff"]`},
 			{match: "候选文档", body: `[{"path":"api.md","score":0.95}]`},
 			{match: "证据片段", body: "Use exponential backoff with up to 3 attempts and a 30s timeout."},
 		},
@@ -407,9 +413,9 @@ func TestAck_FullPipeline(t *testing.T) {
 	if len(res.Tags) != 2 {
 		t.Errorf("tags = %v, want 2", res.Tags)
 	}
-	// Verify LLM call count: tag + rerank + summary = 3.
-	if llm.calls != 3 {
-		t.Errorf("expected 3 LLM calls, got %d", llm.calls)
+	// Verify LLM call count: tag + keyword + rerank + summary = 4.
+	if llm.calls != 4 {
+		t.Errorf("expected 4 LLM calls, got %d", llm.calls)
 	}
 }
 
@@ -423,6 +429,7 @@ func TestAck_NoCandidates(t *testing.T) {
 
 	llm := &fakeLLM{responses: []fakeResp{
 		{match: "可用的标签", body: `[]`},
+		{match: "分词", body: `["nothing","matches"]`},
 	}}
 	res, err := Ack(context.Background(), llm, root, "nothing matches", "zh")
 	if err != nil {

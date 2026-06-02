@@ -1,6 +1,6 @@
 module mindstack
 
-go 1.23.0
+go 1.25.0
 
 require (
 	github.com/cloudwego/eino v0.8.9
@@ -11,6 +11,7 @@ require (
 	github.com/spf13/pflag v1.0.9
 	github.com/wailsapp/wails/v2 v2.12.0
 	github.com/yuin/goldmark v1.7.4
+	golang.org/x/sync v0.20.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
