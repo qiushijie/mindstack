@@ -2,9 +2,7 @@ import { ref } from 'vue'
 import { Ack } from '../../wailsjs/go/main/App'
 
 export interface AckSnippet {
-  path: string
-  startLine: number
-  endLine: number
+  location: string
   content: string
   score: number
 }

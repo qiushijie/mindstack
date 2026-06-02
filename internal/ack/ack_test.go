@@ -154,6 +154,30 @@ func TestJoinLines(t *testing.T) {
 	}
 }
 
+func TestParseLocationLines(t *testing.T) {
+	cases := []struct {
+		input     string
+		wantStart int
+		wantEnd   int
+	}{
+		{"#10-20", 10, 20},
+		{"10-20", 10, 20},
+		{"#1-3", 1, 3},
+		{"", 0, 0},
+		{"#", 0, 0},
+		{"#10", 0, 0},
+		{"#abc-def", 0, 0},
+		{"##10-20", 0, 0},
+	}
+	for _, c := range cases {
+		start, end := parseLocationLines(c.input)
+		if start != c.wantStart || end != c.wantEnd {
+			t.Errorf("parseLocationLines(%q) = (%d, %d), want (%d, %d)",
+				c.input, start, end, c.wantStart, c.wantEnd)
+		}
+	}
+}
+
 // writeFixture lays out a minimal knowledge base under root with the given
 // docs (relPath -> content) and meta entries. tags map docPath -> []string.
 func writeFixture(t *testing.T, root string, docs map[string]string, tags map[string][]string, aliases map[string][]string) {
@@ -347,7 +371,7 @@ func TestExtractSnippetsLLM(t *testing.T) {
 	content := "line 1\nline 2\nline 3\nline 4\nline 5\n"
 	llm := &fakeLLM{
 		responses: []fakeResp{
-			{match: "相关", body: `[{"startLine":2,"endLine":4,"score":0.9}]`},
+			{match: "相关", body: `[{"location":"#2-4","score":0.9}]`},
 		},
 	}
 	snippets := extractSnippetsLLM(context.Background(), llm, "test query", "/tmp/test.md", content, "zh", 3)
@@ -355,14 +379,8 @@ func TestExtractSnippetsLLM(t *testing.T) {
 		t.Fatalf("expected 1 snippet, got %d", len(snippets))
 	}
 	sn := snippets[0]
-	if sn.Path != "/tmp/test.md" {
-		t.Errorf("Path = %q, want %q", sn.Path, "/tmp/test.md")
-	}
-	if sn.StartLine != 2 {
-		t.Errorf("StartLine = %d, want 2", sn.StartLine)
-	}
-	if sn.EndLine != 4 {
-		t.Errorf("EndLine = %d, want 4", sn.EndLine)
+	if sn.Location != "/tmp/test.md#2-4" {
+		t.Errorf("Location = %q, want %q", sn.Location, "/tmp/test.md#2-4")
 	}
 	if sn.Score != 0.9 {
 		t.Errorf("Score = %f, want 0.9", sn.Score)
@@ -430,7 +448,7 @@ func TestAck_FullPipeline(t *testing.T) {
 			{match: "可用的标签", body: `["api","retry"]`},
 			{match: "英文关键词", body: `["retry","policy","exponential","backoff"]`},
 			{match: "候选文档", body: `[{"path":"api.md","score":0.95}]`},
-			{match: "提取", body: `[{"startLine":3,"endLine":5,"score":0.95}]`},
+			{match: "提取", body: `[{"location":"#3-5","score":0.95}]`},
 			{match: "证据片段", body: "Use exponential backoff with up to 3 attempts and a 30s timeout."},
 		},
 	}
@@ -444,8 +462,8 @@ func TestAck_FullPipeline(t *testing.T) {
 	}
 	sn := res.Snippets[0]
 	wantPath := filepath.Join(root, "api.md")
-	if sn.Path != wantPath {
-		t.Errorf("Path = %q, want %q", sn.Path, wantPath)
+	if sn.Location != wantPath+"#3-5" {
+		t.Errorf("Location = %q, want %q", sn.Location, wantPath+"#3-5")
 	}
 	if !strings.Contains(sn.Content, "exponential backoff") {
 		t.Errorf("content missing expected line: %q", sn.Content)

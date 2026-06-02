@@ -696,14 +696,14 @@ function handleDeleteSession(sessionId: number, e: Event) {
             <div class="snippet-list">
               <div
                 v-for="(snippet, sIdx) in msg.snippets"
-                :key="`${snippet.path}-${snippet.startLine}-${sIdx}`"
+                :key="`${snippet.location}-${sIdx}`"
                 class="snippet-card"
               >
                 <a
                   class="snippet-link"
                   href="#"
-                  @click.prevent="emit('openFile', snippet.path)"
-                >{{ snippet.path }}:{{ snippet.startLine }}-{{ snippet.endLine }}</a>
+                  @click.prevent="emit('openFile', snippet.location.split('#')[0])"
+                >{{ snippet.location }}</a>
                 <pre class="snippet-content">{{ snippet.content }}</pre>
               </div>
             </div>

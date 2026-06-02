@@ -19,7 +19,7 @@ Extract up to %d most relevant contiguous snippets. Requirements:
 
 Return ONLY a JSON array (no markdown fences):
 [
-  {"startLine": 10, "endLine": 20, "score": 0.95}
+  {"location": "#10-20", "score": 0.95}
 ]
 
 If nothing is relevant, return [].

@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"mindstack/internal/meta"
@@ -62,11 +63,30 @@ func loadPrompt(name, lang string) string {
 
 // Snippet is a single excerpt returned by Ack.
 type Snippet struct {
-	Path      string  `json:"path"`
-	StartLine int     `json:"startLine"`
-	EndLine   int     `json:"endLine"`
-	Content   string  `json:"content"`
-	Score     float64 `json:"score"`
+	Location string  `json:"location"`
+	Content  string  `json:"content"`
+	Score    float64 `json:"score"`
+}
+
+// snippetLocation builds a location string in the form "path#startLine-endLine".
+func snippetLocation(path string, start, end int) string {
+	return fmt.Sprintf("%s#%d-%d", path, start, end)
+}
+
+// parseLocationLines parses a location string in the form "#startLine-endLine"
+// and returns the line numbers. Returns (0, 0) on failure.
+func parseLocationLines(loc string) (start, end int) {
+	loc = strings.TrimPrefix(loc, "#")
+	parts := strings.SplitN(loc, "-", 2)
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	s, err1 := strconv.Atoi(parts[0])
+	e, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return 0, 0
+	}
+	return s, e
 }
 
 // Result is the response payload of Ack.
@@ -499,19 +519,16 @@ func extractSnippetsLocal(keywords []string, absPath, content string, docScore f
 			continue
 		}
 		snippets = append(snippets, Snippet{
-			Path:      absPath,
-			StartLine: s,
-			EndLine:   e,
-			Content:   joinLines(lines, s, e),
-			Score:     docScore,
+			Location: snippetLocation(absPath, s, e),
+			Content:  joinLines(lines, s, e),
+			Score:    docScore,
 		})
 	}
 
-	// Cap per-document snippets by range length (longer = more informative).
+	// Cap per-document snippets by content length (longer = more informative).
 	if len(snippets) > maxSnippetsPerDoc {
 		sort.SliceStable(snippets, func(i, j int) bool {
-			return (snippets[i].EndLine - snippets[i].StartLine) >
-				(snippets[j].EndLine - snippets[j].StartLine)
+			return len(snippets[i].Content) > len(snippets[j].Content)
 		})
 		snippets = snippets[:maxSnippetsPerDoc]
 	}
@@ -521,9 +538,8 @@ func extractSnippetsLocal(keywords []string, absPath, content string, docScore f
 
 // extractSnippetItem is a single result from the LLM snippet extraction step.
 type extractSnippetItem struct {
-	StartLine int     `json:"startLine"`
-	EndLine   int     `json:"endLine"`
-	Score     float64 `json:"score"`
+	Location string  `json:"location"`
+	Score    float64 `json:"score"`
 }
 
 // extractSnippetsLLM asks the LLM to extract the most relevant snippets from a
@@ -554,16 +570,18 @@ func extractSnippetsLLM(ctx context.Context, svc LLMClient, query, absPath, cont
 
 	var snippets []Snippet
 	for _, item := range items {
-		s, e, ok := clampRange(item.StartLine, item.EndLine, len(lines))
+		start, end := parseLocationLines(item.Location)
+		if start == 0 {
+			continue
+		}
+		s, e, ok := clampRange(start, end, len(lines))
 		if !ok {
 			continue
 		}
 		snippets = append(snippets, Snippet{
-			Path:      absPath,
-			StartLine: s,
-			EndLine:   e,
-			Content:   joinLines(lines, s, e),
-			Score:     item.Score,
+			Location: snippetLocation(absPath, s, e),
+			Content:  joinLines(lines, s, e),
+			Score:    item.Score,
 		})
 	}
 	return snippets
@@ -633,7 +651,7 @@ func extractKeywordsFromQuery(ctx context.Context, svc LLMClient, query, lang st
 func summarizeSnippets(ctx context.Context, svc LLMClient, query string, snippets []Snippet, lang string) (string, error) {
 	var sb strings.Builder
 	for i, s := range snippets {
-		fmt.Fprintf(&sb, "[%d] %s:%d-%d\n%s\n\n", i+1, s.Path, s.StartLine, s.EndLine, s.Content)
+		fmt.Fprintf(&sb, "[%d] %s\n%s\n\n", i+1, s.Location, s.Content)
 	}
 	prompt := fmt.Sprintf(loadPrompt("summary", lang), query, sb.String())
 

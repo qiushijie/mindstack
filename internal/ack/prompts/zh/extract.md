@@ -19,7 +19,7 @@
 
 只返回 JSON 数组（不要 markdown 围栏）:
 [
-  {"startLine": 10, "endLine": 20, "score": 0.95}
+  {"location": "#10-20", "score": 0.95}
 ]
 
 如果没有相关内容，返回 []。
