@@ -73,12 +73,14 @@ Full text search:
 				}
 			}
 
-			writeJSON(map[string]interface{}{
+			ftResult := map[string]interface{}{
 				"query":   args[0],
 				"mode":    "fulltext",
 				"results": results,
 				"total":   len(results),
-			})
+			}
+			saveToHistory(root, args[0], ftResult)
+			writeJSON(ftResult)
 			return
 		}
 
@@ -86,12 +88,14 @@ Full text search:
 		if err != nil {
 			writeError(1, "SEARCH_FAILED", err.Error())
 		}
-		writeJSON(map[string]interface{}{
+		tagResult := map[string]interface{}{
 			"query":   args[0],
 			"mode":    "tag",
 			"results": result.Items,
 			"total":   result.Total,
-		})
+		}
+		saveToHistory(root, args[0], tagResult)
+		writeJSON(tagResult)
 	},
 }
 

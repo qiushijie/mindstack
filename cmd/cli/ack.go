@@ -28,6 +28,7 @@ var ackCmd = &cobra.Command{
 			writeError(1, "ACK_FAILED", err.Error())
 		}
 
+		saveToHistory(root, args[0], result)
 		writeJSON(result)
 	},
 }

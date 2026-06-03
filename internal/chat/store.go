@@ -109,6 +109,24 @@ func (s *Store) GetMessages(sessionID uint) ([]ChatMessage, error) {
 	return messages, nil
 }
 
+func (s *Store) CountMessages(sessionID uint) (int64, error) {
+	var count int64
+	if err := s.db.Model(&ChatMessage{}).Where("session_id = ?", sessionID).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count messages: %w", err)
+	}
+	return count, nil
+}
+
+func (s *Store) ListRecentSessions(workspacePath string, limit int) ([]ChatSession, error) {
+	var sessions []ChatSession
+	if err := s.db.Where("workspace_path = ?", workspacePath).
+		Order("updated_at DESC").Limit(limit).
+		Find(&sessions).Error; err != nil {
+		return nil, fmt.Errorf("list recent sessions: %w", err)
+	}
+	return sessions, nil
+}
+
 func (s *Store) GetLatestSession(workspacePath string) (*ChatSession, error) {
 	var session ChatSession
 	if err := s.db.Where("workspace_path = ?", workspacePath).Order("updated_at DESC").First(&session).Error; err != nil {

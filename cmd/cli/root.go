@@ -43,6 +43,7 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(ackCmd)
+	rootCmd.AddCommand(historyCmd)
 }
 
 // resolveRoot finds the knowledge base root path.

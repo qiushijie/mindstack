@@ -6,13 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"mindstack/internal/chat"
 	"mindstack/internal/config"
+	"mindstack/internal/db"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 type testExit struct {
@@ -795,6 +800,93 @@ func TestCmdAckEmptyQuery(t *testing.T) {
 	}
 }
 
+// --- history command ---
+
+func TestCmdHistoryShowInvalidID(t *testing.T) {
+	_ = setupTestKB(t)
+
+	_, stderr, code := runCmd(t, "history", "show", "abc")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("INVALID_ID")) {
+		t.Errorf("expected INVALID_ID, got: %s", stderr)
+	}
+}
+
+func TestCmdHistoryDelInvalidID(t *testing.T) {
+	setupTestKB(t)
+
+	_, stderr, code := runCmd(t, "history", "del", "abc")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("INVALID_ID")) {
+		t.Errorf("expected INVALID_ID, got: %s", stderr)
+	}
+}
+
+func TestCmdHistoryLs(t *testing.T) {
+	_ = setupTestKB(t)
+
+	stdout, _, code := runCmd(t, "history", "ls")
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if _, ok := result["sessions"]; !ok {
+		t.Errorf("expected sessions key in output, got %v", result)
+	}
+	if _, ok := result["total"]; !ok {
+		t.Errorf("expected total key in output, got %v", result)
+	}
+}
+
+func TestCmdHistoryLsNotInitialized(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(oldDir) })
+
+	_, stderr, code := runCmd(t, "history", "ls")
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_INITIALIZED")) {
+		t.Errorf("expected NOT_INITIALIZED, got: %s", stderr)
+	}
+}
+
+func TestCmdHistoryShowNotInitialized(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(oldDir) })
+
+	_, stderr, code := runCmd(t, "history", "show", "1")
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_INITIALIZED")) {
+		t.Errorf("expected NOT_INITIALIZED, got: %s", stderr)
+	}
+}
+
+func TestCmdHistoryDelNotInitialized(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(oldDir) })
+
+	_, stderr, code := runCmd(t, "history", "del", "1")
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_INITIALIZED")) {
+		t.Errorf("expected NOT_INITIALIZED, got: %s", stderr)
+	}
+}
+
 func TestCmdKBAmbiguous(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -826,5 +918,151 @@ func TestCmdKBAmbiguous(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(stderr), []byte("KB_AMBIGUOUS")) {
 		t.Errorf("expected KB_AMBIGUOUS, got: %s", stderr)
+	}
+}
+
+// --- history command (data tests) ---
+
+// setupTestDB creates an isolated SQLite database for history tests.
+// It resets the db singleton and sets a new one pointing at a temp file.
+func setupTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db.Reset()
+
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	d, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	t.Cleanup(func() {
+		db.Reset()
+	})
+
+	db.SetInstance(d)
+	return d
+}
+
+func TestCmdHistoryShowFound(t *testing.T) {
+	dir := setupTestKB(t)
+	d := setupTestDB(t)
+
+	// resolveSymlinks returns the real path (macOS /var -> /private/var)
+	resolveSymlinks := func(p string) string {
+		r, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			t.Fatalf("eval symlinks: %v", err)
+		}
+		return r
+	}
+	realDir := resolveSymlinks(dir)
+
+	store := chat.NewStore(d)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	session, err := store.CreateSession(realDir, "Test Session")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if _, err := store.AddMessage(session.ID, "user", "test query"); err != nil {
+		t.Fatalf("add user message: %v", err)
+	}
+	if _, err := store.AddMessage(session.ID, "assistant", `{"answer":"hello"}`); err != nil {
+		t.Fatalf("add assistant message: %v", err)
+	}
+
+	stdout, stderr, code := runCmd(t, "history", "show", strconv.FormatUint(uint64(session.ID), 10))
+	if code != 0 {
+		t.Fatalf("exit code %d, stderr: %s", code, stderr)
+	}
+	result := cmdParseJSON(stdout)
+	if result["id"] == nil {
+		t.Error("expected id field")
+	}
+	if result["title"] == nil {
+		t.Error("expected title field")
+	}
+	if result["query"] != "test query" {
+		t.Errorf("query = %v, want 'test query'", result["query"])
+	}
+	if result["result"] == nil {
+		t.Error("expected result field")
+	}
+}
+
+func TestCmdHistoryShowWrongWorkspace(t *testing.T) {
+	_ = setupTestKB(t)
+	d := setupTestDB(t)
+
+	store := chat.NewStore(d)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	session, err := store.CreateSession("/other/workspace", "Other Session")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	_, stderr, code := runCmd(t, "history", "show", strconv.FormatUint(uint64(session.ID), 10))
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_FOUND")) {
+		t.Errorf("expected NOT_FOUND, got: %s", stderr)
+	}
+}
+
+func TestCmdHistoryDelFound(t *testing.T) {
+	dir := setupTestKB(t)
+	d := setupTestDB(t)
+
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("eval symlinks: %v", err)
+	}
+
+	store := chat.NewStore(d)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	session, err := store.CreateSession(realDir, "Delete Me")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	stdout, stderr, code := runCmd(t, "history", "del", strconv.FormatUint(uint64(session.ID), 10))
+	if code != 0 {
+		t.Fatalf("exit code %d, stderr: %s", code, stderr)
+	}
+	result := cmdParseJSON(stdout)
+	if result["deleted"] != true {
+		t.Errorf("expected deleted=true, got %v", result["deleted"])
+	}
+}
+
+func TestCmdHistoryDelWrongWorkspace(t *testing.T) {
+	_ = setupTestKB(t)
+	d := setupTestDB(t)
+
+	store := chat.NewStore(d)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	session, err := store.CreateSession("/other/workspace", "Other Session")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	_, stderr, code := runCmd(t, "history", "del", strconv.FormatUint(uint64(session.ID), 10))
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_FOUND")) {
+		t.Errorf("expected NOT_FOUND, got: %s", stderr)
 	}
 }

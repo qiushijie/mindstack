@@ -41,3 +41,19 @@ func Get() *gorm.DB {
 	}
 	return instance
 }
+
+// Reset clears the singleton instance, useful for testing.
+func Reset() {
+	if instance != nil {
+		sqlDB, _ := instance.DB()
+		if sqlDB != nil {
+			sqlDB.Close()
+		}
+		instance = nil
+	}
+}
+
+// SetInstance sets the singleton instance, useful for testing.
+func SetInstance(db *gorm.DB) {
+	instance = db
+}

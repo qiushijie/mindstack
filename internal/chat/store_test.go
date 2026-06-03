@@ -356,6 +356,140 @@ func TestGetSessionPreloadsMessages(t *testing.T) {
 	}
 }
 
+func TestStore_CountMessages(t *testing.T) {
+	store := newTestStore(t)
+
+	session, err := store.CreateSession("/workspace/a", "Count Test")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// No messages → count 0
+	count, err := store.CountMessages(session.ID)
+	if err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 messages, got %d", count)
+	}
+
+	// Add messages and verify count
+	store.AddMessage(session.ID, "user", "m1")
+	store.AddMessage(session.ID, "assistant", "m2")
+	store.AddMessage(session.ID, "user", "m3")
+
+	count, err = store.CountMessages(session.ID)
+	if err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 messages, got %d", count)
+	}
+
+	// Non-existent session → count 0
+	count, err = store.CountMessages(9999)
+	if err != nil {
+		t.Fatalf("count messages for non-existent session: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 messages for non-existent session, got %d", count)
+	}
+}
+
+func TestStore_ListRecentSessions(t *testing.T) {
+	store := newTestStore(t)
+
+	// No sessions → empty list
+	sessions, err := store.ListRecentSessions("/workspace/a", 10)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected 0 sessions, got %d", len(sessions))
+	}
+
+	// Create sessions in different workspaces
+	s1, err := store.CreateSession("/workspace/a", "Session 1")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	s2, err := store.CreateSession("/workspace/a", "Session 2")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	_, err = store.CreateSession("/workspace/b", "Other Session")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	s3, err := store.CreateSession("/workspace/a", "Session 3")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// List with limit=2 should return only 2 most recent
+	sessions, err = store.ListRecentSessions("/workspace/a", 2)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions with limit=2, got %d", len(sessions))
+	}
+	if sessions[0].ID != s3.ID {
+		t.Fatalf("expected first session ID %d (most recent), got %d", s3.ID, sessions[0].ID)
+	}
+	if sessions[1].ID != s2.ID {
+		t.Fatalf("expected second session ID %d, got %d", s2.ID, sessions[1].ID)
+	}
+
+	// List with limit=0
+	sessions, err = store.ListRecentSessions("/workspace/a", 0)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected 0 sessions with limit=0, got %d", len(sessions))
+	}
+
+	// Other workspace sessions not affected
+	sessions, err = store.ListRecentSessions("/workspace/b", 10)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session for workspace b, got %d", len(sessions))
+	}
+
+	// Delete one session and verify it no longer appears
+	if err := store.DeleteSession(s2.ID); err != nil {
+		t.Fatalf("delete session: %v", err)
+	}
+	sessions, err = store.ListRecentSessions("/workspace/a", 10)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions after delete, got %d", len(sessions))
+	}
+
+	// Clean up remaining sessions to verify no-op delete doesn't break things
+	if err := store.DeleteSession(s1.ID); err != nil {
+		t.Fatalf("delete session: %v", err)
+	}
+	if err := store.DeleteSession(s3.ID); err != nil {
+		t.Fatalf("delete session: %v", err)
+	}
+	sessions, err = store.ListRecentSessions("/workspace/a", 10)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected 0 sessions after all deletes, got %d", len(sessions))
+	}
+}
+
 func TestAddMessageUpdatesSessionTime(t *testing.T) {
 	store := newTestStore(t)
 
