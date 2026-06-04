@@ -556,7 +556,7 @@ func newMockLLMService(t *testing.T, responseContent string) (*llm.Service, *htt
 }
 
 func TestGenerateMeta_Success(t *testing.T) {
-	content := `{"summary":"A test document for unit testing.","tags":["test","unit-test","mock"],"aliases":["testing"],"headings":[{"level":1,"text":"Test Document"}]}`
+	content := `{"summary":"A test document for unit testing.","tags":["test","unit-test","mock"],"headings":[{"level":1,"text":"Test Document"}]}`
 	svc, server := newMockLLMService(t, content)
 	defer server.Close()
 
@@ -1162,43 +1162,7 @@ func TestFindCandidateDocs_TagMatch(t *testing.T) {
 	}
 }
 
-func TestFindCandidateDocs_AliasMatch(t *testing.T) {
-	allMetas := []*meta.DocumentMeta{
-		{Path: "a.md", Tags: []string{"unit-test"}, Aliases: []string{"test", "testing"}},
-		{Path: "b.md", Tags: []string{"test"}},
-		{Path: "c.md", Tags: []string{"python"}},
-	}
-	changed := map[string]bool{"a.md": true}
-	result := findCandidateDocs(allMetas, changed)
-	if len(result["a.md"]) != 1 {
-		t.Fatalf("expected 1 candidate (alias match), got %d", len(result["a.md"]))
-	}
-	if result["a.md"][0].path != "b.md" {
-		t.Fatalf("expected b.md as candidate, got %s", result["a.md"][0].path)
-	}
-	if len(result["a.md"][0].sharedTags) != 1 || result["a.md"][0].sharedTags[0] != "test" {
-		t.Fatalf("expected sharedTags [test], got %v", result["a.md"][0].sharedTags)
-	}
-}
 
-func TestFindCandidateDocs_AliasBidirectional(t *testing.T) {
-	allMetas := []*meta.DocumentMeta{
-		{Path: "a.md", Tags: []string{"test"}},
-		{Path: "b.md", Tags: []string{"unit-test"}, Aliases: []string{"test", "testing"}},
-		{Path: "c.md", Tags: []string{"python"}},
-	}
-	changed := map[string]bool{"a.md": true}
-	result := findCandidateDocs(allMetas, changed)
-	if len(result["a.md"]) != 1 {
-		t.Fatalf("expected 1 candidate (reverse alias match), got %d", len(result["a.md"]))
-	}
-	if result["a.md"][0].path != "b.md" {
-		t.Fatalf("expected b.md as candidate, got %s", result["a.md"][0].path)
-	}
-	if len(result["a.md"][0].sharedTags) != 1 || result["a.md"][0].sharedTags[0] != "test" {
-		t.Fatalf("expected sharedTags [test], got %v", result["a.md"][0].sharedTags)
-	}
-}
 
 // --- analyzeDocRelations tests ---
 

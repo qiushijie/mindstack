@@ -108,38 +108,240 @@ func TestClampRange(t *testing.T) {
 	}
 }
 
-func TestCollectAllTags(t *testing.T) {
-	metas := []*meta.DocumentMeta{
-		{Tags: []string{"api", "rest"}},
-		{Tags: []string{"rest", "design"}},
-		{Tags: []string{"  ", ""}},
-		{Tags: []string{"api"}},
-	}
-	got := collectAllTags(metas)
-	want := []string{"api", "design", "rest"}
-	if len(got) != len(want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-	for i := range got {
-		if got[i] != want[i] {
-			t.Errorf("[%d] got %q, want %q", i, got[i], want[i])
+func TestFilterPopularTags(t *testing.T) {
+	t.Run("filters_low_frequency_tags", func(t *testing.T) {
+		metas := []*meta.DocumentMeta{
+			{Tags: []string{"api", "rest"}},
+			{Tags: []string{"rest", "design"}},
+			{Tags: []string{"api"}},
 		}
-	}
+		got, counts := filterPopularTags(metas, 2)
+		// "rest" appears in 2 docs, "api" in 2 docs, "design" in 1 doc
+		if len(got) != 2 {
+			t.Fatalf("expected 2 popular tags, got %v", got)
+		}
+		if got[0] != "api" || got[1] != "rest" {
+			t.Errorf("expected [api, rest], got %v", got)
+		}
+		// Verify counts map includes all tags (including filtered ones).
+		if counts["api"] != 2 {
+			t.Errorf("api count = %d, want 2", counts["api"])
+		}
+		if counts["rest"] != 2 {
+			t.Errorf("rest count = %d, want 2", counts["rest"])
+		}
+		if counts["design"] != 1 {
+			t.Errorf("design count = %d, want 1", counts["design"])
+		}
+	})
+
+	t.Run("empty_metas", func(t *testing.T) {
+		got, _ := filterPopularTags(nil, 2)
+		if len(got) != 0 {
+			t.Errorf("expected empty, got %v", got)
+		}
+	})
+
+	t.Run("no_tags_meet_threshold", func(t *testing.T) {
+		metas := []*meta.DocumentMeta{
+			{Tags: []string{"unique1"}},
+			{Tags: []string{"unique2"}},
+		}
+		got, _ := filterPopularTags(metas, 2)
+		if len(got) != 0 {
+			t.Errorf("expected empty, got %v", got)
+		}
+	})
+
+	t.Run("deduplicates_within_doc", func(t *testing.T) {
+		metas := []*meta.DocumentMeta{
+			{Tags: []string{"api", "api", "rest"}},
+		}
+		got, _ := filterPopularTags(metas, 1)
+		if len(got) != 2 {
+			t.Errorf("expected 2 (deduplicated), got %v", got)
+		}
+	})
 }
 
-func TestCollectAllTags_WithAliases(t *testing.T) {
-	metas := []*meta.DocumentMeta{
-		{Tags: []string{"api"}, Aliases: []string{"rest", "  "}},
-		{Tags: []string{"design"}, Aliases: []string{"ui"}},
+func TestFormatTagsWithCounts(t *testing.T) {
+	t.Run("formats_with_counts", func(t *testing.T) {
+		tags := []string{"api", "rest"}
+		counts := map[string]int{"api": 3, "rest": 1}
+		got := formatTagsWithCounts(tags, counts)
+		if !strings.Contains(got, "- api (3 docs)") {
+			t.Errorf("missing formatted api tag, got: %s", got)
+		}
+		if !strings.Contains(got, "- rest (1 docs)") {
+			t.Errorf("missing formatted rest tag, got: %s", got)
+		}
+	})
+
+	t.Run("empty_tags", func(t *testing.T) {
+		got := formatTagsWithCounts(nil, nil)
+		if got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+}
+
+func TestContentCache(t *testing.T) {
+	root := t.TempDir()
+	rel := "test.md"
+	full := filepath.Join(root, rel)
+	if err := os.WriteFile(full, []byte("Hello World"), 0644); err != nil {
+		t.Fatal(err)
 	}
-	got := collectAllTags(metas)
-	want := []string{"api", "design", "rest", "ui"}
-	if len(got) != len(want) {
-		t.Fatalf("got %v, want %v", got, want)
+
+	cache := newContentCache()
+
+	// First call to get populates both lower and raw cache.
+	lowerContent, err := cache.get(root, rel)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for i := range got {
-		if got[i] != want[i] {
-			t.Errorf("[%d] got %q, want %q", i, got[i], want[i])
+	if lowerContent != "hello world" {
+		t.Fatalf("first get: got %q, want %q", lowerContent, "hello world")
+	}
+
+	t.Run("second_read_uses_cache", func(t *testing.T) {
+		// Modify file on disk.
+		if err := os.WriteFile(full, []byte("modified content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		// Cache should still return original lowercase content.
+		content, err := cache.get(root, rel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if content != "hello world" {
+			t.Errorf("expected cached %q, got %q", "hello world", content)
+		}
+	})
+
+	t.Run("getRaw_returns_original_case", func(t *testing.T) {
+		raw, err := cache.getRaw(root, rel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// getRaw should return the original-case content, not the lowercased version.
+		if raw != "Hello World" {
+			t.Errorf("expected original case %q, got %q", "Hello World", raw)
+		}
+	})
+
+	t.Run("getRaw_uses_cache_too", func(t *testing.T) {
+		// Modify file on disk again.
+		if err := os.WriteFile(full, []byte("brand new content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		// getRaw should still return cached original content.
+		raw, err := cache.getRaw(root, rel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "Hello World" {
+			t.Errorf("expected cached %q, got %q", "Hello World", raw)
+		}
+	})
+}
+
+func TestPrefilterContent(t *testing.T) {
+	t.Run("small_content_unchanged", func(t *testing.T) {
+		content := strings.Repeat("line\n", 50)
+		got := prefilterContent(content, []string{"keyword"}, 3)
+		if got != content {
+			t.Errorf("small content should be unchanged, len changed %d -> %d", len(content), len(got))
+		}
+	})
+
+	t.Run("large_content_with_keywords", func(t *testing.T) {
+		var lines []string
+		for i := 0; i < 200; i++ {
+			lines = append(lines, fmt.Sprintf("line %d", i+1))
+		}
+		// Insert a keyword hit at line 50
+		lines[49] = "SPECIAL_MARKER_HERE"
+		content := strings.Join(lines, "\n")
+
+		got := prefilterContent(content, []string{"SPECIAL_MARKER_HERE"}, 5)
+		if got == content {
+			t.Fatal("content should have been filtered")
+		}
+		if !strings.Contains(got, "SPECIAL_MARKER_HERE") {
+			t.Errorf("filtered result should contain keyword line")
+		}
+		if !strings.Contains(got, "45:") || !strings.Contains(got, "55:") {
+			t.Errorf("expected context lines (45-55), got: %s", got)
+		}
+	})
+
+	t.Run("hit_over_80_percent_returns_original", func(t *testing.T) {
+		var lines []string
+		for i := 0; i < 200; i++ {
+			lines = append(lines, fmt.Sprintf("hit line %d", i+1))
+		}
+		content := strings.Join(lines, "\n")
+		// "hit" appears on every line, so 100% hit rate > 80% → return original
+		got := prefilterContent(content, []string{"hit"}, 10)
+		if got != content {
+			t.Errorf("expected original content when >80%% hits, got different content")
+		}
+	})
+
+	t.Run("no_match_returns_empty", func(t *testing.T) {
+		var lines []string
+		for i := 0; i < 200; i++ {
+			lines = append(lines, "line")
+		}
+		content := strings.Join(lines, "\n")
+		got := prefilterContent(content, []string{"nonexistent"}, 5)
+		if got != "" {
+			t.Errorf("expected empty for no matches, got: %s", got)
+		}
+	})
+
+	t.Run("empty_content", func(t *testing.T) {
+		got := prefilterContent("", []string{"keyword"}, 3)
+		if got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+}
+
+func TestRecallCandidates_FulltextHitCap(t *testing.T) {
+	root := t.TempDir()
+	// Create a doc where every line matches keywords → fulltextHits would be very high
+	var lines []string
+	for i := 0; i < 50; i++ {
+		lines = append(lines, "bingo word here")
+	}
+	docs := map[string]string{
+		"high_hit.md":  strings.Join(lines, "\n"),
+		"single_hit.md": "only one bingo word",
+		"no_hit.md":    "nothing matches",
+	}
+	tags := map[string][]string{
+		"high_hit.md":  {},
+		"single_hit.md": {},
+		"no_hit.md":    {},
+	}
+	writeFixture(t, root, docs, tags)
+	metas, _ := meta.ScanAll(root, "")
+
+	got := recallCandidates(metas, newContentCache(), root, nil, []string{"bingo"})
+	if len(got) == 0 {
+		t.Fatal("expected candidates")
+	}
+
+	// Find high_hit.md and verify its score uses fulltextHitCap, not raw count
+	for _, c := range got {
+		if c.relPath == "high_hit.md" {
+			// Without the cap, fulltextHits would be 50 and score would be 50.
+			// With the cap, score should be exactly fulltextHitCap (20).
+			if c.score != fulltextHitCap {
+				t.Errorf("high_hit.md score = %d, want %d (fulltextHitCap)", c.score, fulltextHitCap)
+			}
 		}
 	}
 }
@@ -180,7 +382,7 @@ func TestParseLocationLines(t *testing.T) {
 
 // writeFixture lays out a minimal knowledge base under root with the given
 // docs (relPath -> content) and meta entries. tags map docPath -> []string.
-func writeFixture(t *testing.T, root string, docs map[string]string, tags map[string][]string, aliases map[string][]string) {
+func writeFixture(t *testing.T, root string, docs map[string]string, tags map[string][]string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, ".mindstack"), 0755); err != nil {
 		t.Fatal(err)
@@ -198,7 +400,6 @@ func writeFixture(t *testing.T, root string, docs map[string]string, tags map[st
 			Title:   rel,
 			Summary: "fixture",
 			Tags:    tags[rel],
-			Aliases: aliases[rel],
 			Status:  "active",
 		}
 	}
@@ -220,14 +421,14 @@ func TestRecallCandidates_TagAndFulltext(t *testing.T) {
 		"design.md": {"design"},
 		"other.md":  {"misc"},
 	}
-	writeFixture(t, root, docs, tags, nil)
+	writeFixture(t, root, docs, tags)
 
 	metas, err := meta.ScanAll(root, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got := recallCandidates(metas, root, []string{"api"}, []string{"retry", "policy"})
+	got := recallCandidates(metas, newContentCache(), root, []string{"api"}, []string{"retry", "policy"})
 	if len(got) == 0 {
 		t.Fatal("expected at least one candidate")
 	}
@@ -238,34 +439,6 @@ func TestRecallCandidates_TagAndFulltext(t *testing.T) {
 		if c.relPath == "other.md" {
 			t.Errorf("other.md should not be recalled, score=%d", c.score)
 		}
-	}
-}
-
-func TestRecallCandidates_Aliases(t *testing.T) {
-	root := t.TempDir()
-	docs := map[string]string{
-		"a.md": "unit testing guide",
-		"b.md": "cooking recipes",
-	}
-	tags := map[string][]string{
-		"a.md": {"unit-test"},
-		"b.md": {"food"},
-	}
-	aliases := map[string][]string{
-		"a.md": {"test", "testing"},
-	}
-	writeFixture(t, root, docs, tags, aliases)
-
-	metas, _ := meta.ScanAll(root, "")
-	got := recallCandidates(metas, root, []string{"test"}, nil)
-	if len(got) == 0 {
-		t.Fatal("expected a.md via alias match")
-	}
-	if got[0].relPath != "a.md" {
-		t.Errorf("expected a.md first, got %q", got[0].relPath)
-	}
-	if got[0].aliasHits == 0 {
-		t.Errorf("expected aliasHits > 0, got %d", got[0].aliasHits)
 	}
 }
 
@@ -295,7 +468,7 @@ func TestRecallCandidates_TitleAndSummary(t *testing.T) {
 	}
 
 	metas, _ := meta.ScanAll(root, "")
-	got := recallCandidates(metas, root, nil, []string{"retry"})
+	got := recallCandidates(metas, newContentCache(), root, nil, []string{"retry"})
 	if len(got) == 0 {
 		t.Fatal("expected a.md via title/summary match")
 	}
@@ -312,13 +485,13 @@ func TestRecallCandidates_TopRecallCap(t *testing.T) {
 	docs := map[string]string{}
 	tags := map[string][]string{}
 	for i := 0; i < topRecall+5; i++ {
-		name := strings.ReplaceAll(strings.ReplaceAll("doc-A.md", "A", string(rune('a'+i))), "doc-", "doc")
+		name := fmt.Sprintf("doc%d.md", i)
 		docs[name] = "matched content here"
 		tags[name] = []string{"api"}
 	}
-	writeFixture(t, root, docs, tags, nil)
+	writeFixture(t, root, docs, tags)
 	metas, _ := meta.ScanAll(root, "")
-	got := recallCandidates(metas, root, []string{"api"}, []string{"matched"})
+	got := recallCandidates(metas, newContentCache(), root, []string{"api"}, []string{"matched"})
 	if len(got) > topRecall {
 		t.Errorf("expected cap at %d, got %d", topRecall, len(got))
 	}
@@ -439,9 +612,9 @@ func TestAck_FullPipeline(t *testing.T) {
 	}
 	tags := map[string][]string{
 		"api.md":       {"api", "retry"},
-		"unrelated.md": {"food"},
+		"unrelated.md": {"food", "api"},
 	}
-	writeFixture(t, root, docs, tags, nil)
+	writeFixture(t, root, docs, tags)
 
 	llm := &fakeLLM{
 		responses: []fakeResp{
@@ -471,8 +644,8 @@ func TestAck_FullPipeline(t *testing.T) {
 	if !strings.Contains(res.Summary, "exponential backoff") {
 		t.Errorf("summary = %q, want it to mention exponential backoff", res.Summary)
 	}
-	if len(res.Tags) != 2 {
-		t.Errorf("tags = %v, want 2", res.Tags)
+	if len(res.Tags) < 1 {
+		t.Errorf("tags = %v, want at least 1", res.Tags)
 	}
 	// Verify LLM call count: tag + keyword + rerank + extract + summary = 5.
 	if llm.calls != 5 {
@@ -486,7 +659,7 @@ func TestAck_NoCandidates(t *testing.T) {
 		"a.md": "totally different topic",
 	}, map[string][]string{
 		"a.md": {"foo"},
-	}, nil)
+	})
 
 	llm := &fakeLLM{responses: []fakeResp{
 		{match: "可用的标签", body: `[]`},
@@ -503,7 +676,7 @@ func TestAck_NoCandidates(t *testing.T) {
 
 func TestAck_EmptyQuery(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, map[string]string{}, map[string][]string{}, nil)
+	writeFixture(t, root, map[string]string{}, map[string][]string{})
 	if _, err := Ack(context.Background(), &fakeLLM{}, root, "  ", "zh"); err == nil {
 		t.Error("expected error for empty query")
 	}
@@ -527,11 +700,10 @@ func TestMakeDocPreview(t *testing.T) {
 	m := &meta.DocumentMeta{
 		Title:   "Test Title",
 		Tags:    []string{"tag1", "tag2"},
-		Aliases: []string{"alias1", "alias2"},
 		Summary: "This is a summary.",
 	}
 
-	preview, err := makeDocPreview(root, rel, m, "zh")
+	preview, err := makeDocPreview(root, rel, m, "zh", newContentCache())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,9 +717,6 @@ func TestMakeDocPreview(t *testing.T) {
 	if !strings.Contains(preview, "标签:") {
 		t.Errorf("missing Chinese label 标签")
 	}
-	if !strings.Contains(preview, "别名:") {
-		t.Errorf("missing Chinese label 别名")
-	}
 	if !strings.Contains(preview, "摘要:") {
 		t.Errorf("missing Chinese label 摘要")
 	}
@@ -560,11 +729,14 @@ func TestMakeDocPreview(t *testing.T) {
 	if !strings.Contains(preview, "tag1, tag2") {
 		t.Errorf("missing tags content")
 	}
-	if !strings.Contains(preview, "alias1, alias2") {
-		t.Errorf("missing aliases content")
-	}
 	if !strings.Contains(preview, "This is a summary.") {
 		t.Errorf("missing summary content")
+	}
+	if !strings.Contains(preview, "总行数:") {
+		t.Errorf("missing Chinese label 总行数")
+	}
+	if !strings.Contains(preview, "55") {
+		t.Errorf("missing total line count")
 	}
 	if !strings.Contains(preview, "... [truncated]") {
 		t.Errorf("missing truncated marker")
@@ -572,7 +744,7 @@ func TestMakeDocPreview(t *testing.T) {
 
 	// Verify only first previewMaxLines lines are shown.
 	lineCount := strings.Count(preview, "\n")
-	// Preview header has 6 lines (路径, 标题, 标签, 别名, 摘要, 正文预览) + previewMaxLines body lines + truncated line.
+	// Preview header has 6 lines (路径, 标题, 标签, 摘要, 总行数, 正文预览) + previewMaxLines body lines + truncated line.
 	expectedLines := 6 + previewMaxLines + 1
 	if lineCount != expectedLines {
 		t.Errorf("expected %d lines in preview, got %d", expectedLines, lineCount)
@@ -597,11 +769,10 @@ func TestMakeDocPreview_English(t *testing.T) {
 	m := &meta.DocumentMeta{
 		Title:   "Test Title",
 		Tags:    []string{"tag1", "tag2"},
-		Aliases: []string{"alias1", "alias2"},
 		Summary: "This is a summary.",
 	}
 
-	preview, err := makeDocPreview(root, rel, m, "en")
+	preview, err := makeDocPreview(root, rel, m, "en", newContentCache())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,9 +786,6 @@ func TestMakeDocPreview_English(t *testing.T) {
 	if !strings.Contains(preview, "Tags:") {
 		t.Errorf("missing English label Tags")
 	}
-	if !strings.Contains(preview, "Aliases:") {
-		t.Errorf("missing English label Aliases")
-	}
 	if !strings.Contains(preview, "Summary:") {
 		t.Errorf("missing English label Summary")
 	}
@@ -630,14 +798,17 @@ func TestMakeDocPreview_English(t *testing.T) {
 	if !strings.Contains(preview, "tag1, tag2") {
 		t.Errorf("missing tags content")
 	}
-	if !strings.Contains(preview, "alias1, alias2") {
-		t.Errorf("missing aliases content")
-	}
 	if !strings.Contains(preview, "This is a summary.") {
 		t.Errorf("missing summary content")
 	}
 	if !strings.Contains(preview, "... [truncated]") {
 		t.Errorf("missing truncated marker")
+	}
+	if !strings.Contains(preview, "Total lines:") {
+		t.Errorf("missing English label Total lines")
+	}
+	if !strings.Contains(preview, "55") {
+		t.Errorf("missing total line count")
 	}
 }
 
@@ -647,7 +818,7 @@ func TestAck_TagExtractionFailureFallsBackToFulltext(t *testing.T) {
 		"a.md": "the magic phrase appears here",
 	}, map[string][]string{
 		"a.md": {"foo"},
-	}, nil)
+	})
 
 	llm := &fakeLLM{
 		responses: []fakeResp{

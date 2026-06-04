@@ -223,54 +223,6 @@ func TestFindByTag_IgnoreCase(t *testing.T) {
 	}
 }
 
-func TestFindByTag_MatchesAlias(t *testing.T) {
-	metas := []*DocumentMeta{
-		{Path: "a.md", Tags: []string{"unit-test"}, Aliases: []string{"test", "testing", "ut"}},
-		{Path: "b.md", Tags: []string{"api"}, Aliases: []string{"restful"}},
-		{Path: "c.md", Tags: []string{"design"}},
-	}
-
-	docs := FindByTag(metas, "test", false)
-	if len(docs) != 1 {
-		t.Fatalf("expected 1 (match via alias), got %d", len(docs))
-	}
-	if docs[0].Path != "a.md" {
-		t.Fatalf("expected a.md, got %s", docs[0].Path)
-	}
-
-	restful := FindByTag(metas, "restful", false)
-	if len(restful) != 1 {
-		t.Fatalf("expected 1 (match via alias 'restful'), got %d", len(restful))
-	}
-}
-
-func TestFindByTag_TagAndAliasCombined(t *testing.T) {
-	metas := []*DocumentMeta{
-		{Path: "a.md", Tags: []string{"unit-test"}, Aliases: []string{"test"}},
-		{Path: "b.md", Tags: []string{"api", "unit-test"}, Aliases: []string{"restful"}},
-	}
-
-	// AND semantics: "unit-test" matches via Tags, "restful" matches via Aliases
-	docs := FindByTag(metas, "unit-test,restful", false)
-	if len(docs) != 1 {
-		t.Fatalf("expected 1 (tag AND alias match), got %d", len(docs))
-	}
-	if docs[0].Path != "b.md" {
-		t.Fatalf("expected b.md, got %s", docs[0].Path)
-	}
-}
-
-func TestFindByTag_AliasIgnoreCase(t *testing.T) {
-	metas := []*DocumentMeta{
-		{Path: "a.md", Tags: []string{"unit-test"}, Aliases: []string{"UT"}},
-	}
-
-	result := FindByTag(metas, "ut", true)
-	if len(result) != 1 {
-		t.Fatalf("expected 1 case-insensitive alias match, got %d", len(result))
-	}
-}
-
 func TestRemoveStale(t *testing.T) {
 	kbRoot := setupTestKB(t)
 

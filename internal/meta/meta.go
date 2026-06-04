@@ -24,7 +24,6 @@ type DocumentMeta struct {
 	Title       string    `yaml:"title" json:"title"`
 	Summary     string    `yaml:"summary" json:"summary"`
 	Tags        []string  `yaml:"tags" json:"tags"`
-	Aliases     []string  `yaml:"aliases" json:"aliases"`
 	Headings    []Heading `yaml:"headings" json:"headings"`
 	Status      string    `yaml:"status" json:"status"`
 	ContentHash string    `yaml:"-" json:"contentHash,omitempty"`
@@ -160,20 +159,13 @@ func FindByTag(metas []*DocumentMeta, tag string, ignoreCase bool) []*DocumentMe
 
 	var matched []*DocumentMeta
 	for _, m := range metas {
-		docTags := make(map[string]struct{}, len(m.Tags)+len(m.Aliases))
+		docTags := make(map[string]struct{}, len(m.Tags))
 		for _, t := range m.Tags {
 			dt := t
 			if ignoreCase {
 				dt = strings.ToLower(t)
 			}
 			docTags[dt] = struct{}{}
-		}
-		for _, a := range m.Aliases {
-			da := a
-			if ignoreCase {
-				da = strings.ToLower(a)
-			}
-			docTags[da] = struct{}{}
 		}
 		allMatch := true
 		for _, searchTag := range cleanTags {

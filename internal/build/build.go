@@ -299,13 +299,16 @@ Document content:
 %s
 
 Respond with ONLY a JSON object (no markdown, no code fences) with these fields:
-- "summary": a 1-3 sentence summary of the document's content (string)
-- "tags": an array of 3-7 relevant tags (array of strings, lowercase, use hyphens for multi-word tags)
-- "aliases": an array of alternative names or synonyms for the tags (array of strings, lowercase). For example, if tags includes "unit-test", aliases might include ["test", "testing", "ut"]. Include shorthand forms and common abbreviations.
+- "summary": a 1-3 sentence summary of the document's content. Write the summary in the SAME language as the document content. If the document is in Chinese, write the summary in Chinese. If the document is in English, write the summary in English. Do not mix languages.
+- "tags": an array of 3-5 domain-specific tags. Rules:
+  - Use lowercase with hyphens for multi-word tags (e.g. "rest-api", "error-handling").
+  - Prefer specific, discriminating terms over generic ones. Good: "rest-api", "exponential-backoff". Bad: "system", "design", "filter", "approach".
+  - Each tag should be useful for distinguishing this document from others in the same knowledge base.
+  - Only include tags that capture the document's core topic, not every technology mentioned in passing.
 - "headings": an array of ALL section headings in the document, starting from level 1 (the top-level heading). Each item is an object with "level" (integer 1-6, where 1 is the document's main heading) and "text" (string, the heading text). Preserve the original heading hierarchy and include every meaningful heading. Skip generic headings like "Introduction", "Summary", or "Conclusion". Merge closely related subsections when appropriate.
 
 Example response:
-{"summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["api","rest","design","backend"],"aliases":["restful","http"],"headings":[{"level":1,"text":"Overview"},{"level":2,"text":"URL Structure"},{"level":2,"text":"Status Codes"},{"level":3,"text":"Pagination"}]}`, filename, content)
+{"summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["rest-api","http-status-codes","pagination"],"headings":[{"level":1,"text":"Overview"},{"level":2,"text":"URL Structure"},{"level":2,"text":"Status Codes"},{"level":3,"text":"Pagination"}]}`, filename, content)
 
 	messages := []*einoschema.Message{
 		{Role: einoschema.User, Content: prompt},
@@ -321,7 +324,6 @@ Example response:
 	var parsed struct {
 		Summary  string         `json:"summary"`
 		Tags     []string       `json:"tags"`
-		Aliases  []string       `json:"aliases"`
 		Headings []meta.Heading `json:"headings"`
 	}
 	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
@@ -340,7 +342,6 @@ Example response:
 		Title:    title,
 		Summary:  parsed.Summary,
 		Tags:     parsed.Tags,
-		Aliases:  parsed.Aliases,
 		Headings: parsed.Headings,
 		Status:   "active",
 	}, nil
@@ -482,25 +483,20 @@ Respond with ONLY a JSON array:
 }
 
 func findCandidateDocs(allMetas []*meta.DocumentMeta, changedDocs map[string]bool) map[string][]candidateInfo {
-	// Build a lookup: path -> normalized set (tags + aliases, all lowercase)
-	normMap := make(map[string]map[string]bool, len(allMetas))
-	tagOnlyMap := make(map[string][]string, len(allMetas))
+	// Build a lookup: path -> normalized set (tags, all lowercase)
+	tagMap := make(map[string]map[string]bool, len(allMetas))
 	for _, m := range allMetas {
-		s := make(map[string]bool, len(m.Tags)+len(m.Aliases))
+		s := make(map[string]bool, len(m.Tags))
 		for _, t := range m.Tags {
 			s[strings.ToLower(t)] = true
 		}
-		for _, a := range m.Aliases {
-			s[strings.ToLower(a)] = true
-		}
-		normMap[m.Path] = s
-		tagOnlyMap[m.Path] = m.Tags
+		tagMap[m.Path] = s
 	}
 
 	result := make(map[string][]candidateInfo)
 
 	for _, changedDoc := range sortedKeys(changedDocs) {
-		changedSet := normMap[changedDoc]
+		changedSet := tagMap[changedDoc]
 		if len(changedSet) == 0 {
 			continue
 		}
@@ -510,14 +506,9 @@ func findCandidateDocs(allMetas []*meta.DocumentMeta, changedDocs map[string]boo
 				continue
 			}
 			var shared []string
-			for _, t := range tagOnlyMap[m.Path] {
+			for _, t := range m.Tags {
 				if changedSet[strings.ToLower(t)] {
 					shared = append(shared, t)
-				}
-			}
-			for _, a := range m.Aliases {
-				if changedSet[strings.ToLower(a)] {
-					shared = append(shared, a)
 				}
 			}
 			if len(shared) > 0 {

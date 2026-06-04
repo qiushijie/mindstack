@@ -258,15 +258,20 @@ func TestE2E_FullWorkflow(t *testing.T) {
 			t.Fatal("expected some tags")
 		}
 
-		// "documentation" tag should be on 4 docs: README, getting-started, architecture, testing
+		// Verify counts for all known tags
 		tags := result["tags"].([]interface{})
+		verified := map[string]int{}
 		for _, tag := range tags {
 			tagMap := tag.(map[string]interface{})
-			if strVal(tagMap["name"]) == "documentation" {
-				if intVal(tagMap["count"]) != 4 {
-					t.Errorf("documentation count = %v, want 4", tagMap["count"])
-				}
-				}
+			verified[strVal(tagMap["name"])] = intVal(tagMap["count"])
+		}
+		checks := map[string]int{"documentation": 4, "guide": 3, "api": 2, "reference": 2}
+		for name, want := range checks {
+			if got, ok := verified[name]; !ok {
+				t.Errorf("tag %q not found in results", name)
+			} else if got != want {
+				t.Errorf("tag %q count = %d, want %d", name, got, want)
+			}
 		}
 	})
 

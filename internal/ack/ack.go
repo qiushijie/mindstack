@@ -5,7 +5,7 @@
 // Pipeline:
 //  1. Scan all document metadata.
 //  2. Ask the LLM to map the query to existing tags AND extract search keywords.
-//  3. Recall candidate documents locally by tag/alias union + title/summary/full-text
+//  3. Recall candidate documents locally by tag union + title/summary/full-text
 //     hits using LLM-extracted keywords, ranked and capped to topRecall.
 //  4. Ask the LLM once to rerank the candidates and return relevance scores.
 //  5. For each top-ranked document, extract relevant snippets via LLM with local
@@ -33,6 +33,7 @@ import (
 )
 
 const (
+	fulltextHitCap    = 20
 	topRecall         = 15
 	topSnippets       = 5
 	maxSnippetsPerDoc = 3
@@ -118,7 +119,8 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 		return nil, fmt.Errorf("scan meta: %w", err)
 	}
 
-	allTags := collectAllTags(metas)
+	allTags, counts := filterPopularTags(metas, 2)
+	tagList := formatTagsWithCounts(allTags, counts)
 
 	// Concurrent tag + keyword extraction via errgroup.
 	g, gctx := errgroup.WithContext(ctx)
@@ -127,7 +129,7 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 	var keywords []string
 
 	g.Go(func() error {
-		tags, err := extractTagsFromQuery(gctx, llmSvc, query, allTags, lang)
+		tags, err := extractTagsFromQuery(gctx, llmSvc, query, tagList, allTags, lang)
 		if err != nil {
 			return nil // non-fatal: tags stay nil
 		}
@@ -150,7 +152,8 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 		keywords = []string{strings.ToLower(query)}
 	}
 
-	candidates := recallCandidates(metas, kbRoot, pickedTags, keywords)
+	cache := newContentCache()
+	candidates := recallCandidates(metas, cache, kbRoot, pickedTags, keywords)
 	if len(candidates) == 0 {
 		return &Result{Query: query, Tags: pickedTags, Keywords: keywords, Snippets: []Snippet{}}, nil
 	}
@@ -166,7 +169,7 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 		if m == nil {
 			continue
 		}
-		preview, err := makeDocPreview(kbRoot, c.relPath, m, lang)
+		preview, err := makeDocPreview(kbRoot, c.relPath, m, lang, cache)
 		if err != nil {
 			continue
 		}
@@ -187,12 +190,15 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 	}
 	var docs []docContent
 	for _, r := range ranked {
-		absPath := filepath.Join(kbRoot, r.Path)
-		raw, err := os.ReadFile(absPath)
+		raw, err := cache.getRaw(kbRoot, r.Path)
 		if err != nil {
 			continue
 		}
-		docs = append(docs, docContent{path: absPath, content: string(raw), score: r.Score})
+		filtered := prefilterContent(raw, keywords, 10)
+		if filtered == "" {
+			filtered = raw
+		}
+		docs = append(docs, docContent{path: filepath.Join(kbRoot, r.Path), content: filtered, score: r.Score})
 	}
 
 	// Parallel LLM snippet extraction with per-document fallback.
@@ -251,39 +257,138 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 	}, nil
 }
 
-// collectAllTags returns the sorted, de-duplicated tag union across metas,
-// including both Tags and Aliases fields.
-func collectAllTags(metas []*meta.DocumentMeta) []string {
-	set := make(map[string]struct{})
+// contentCache caches file contents for the duration of a single Ack call to
+// avoid re-reading the same file across recallCandidates, makeDocPreview,
+// and snippet extraction.
+type contentCache struct {
+	lower map[string]string // absPath -> lowercase content
+	raw   map[string]string // absPath -> original content
+}
+
+func newContentCache() *contentCache {
+	return &contentCache{lower: make(map[string]string), raw: make(map[string]string)}
+}
+
+func (c *contentCache) get(kbRoot, relPath string) (string, error) {
+	absPath := filepath.Join(kbRoot, relPath)
+	if content, ok := c.lower[absPath]; ok {
+		return content, nil
+	}
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return "", err
+	}
+	content := strings.ToLower(string(data))
+	c.lower[absPath] = content
+	c.raw[absPath] = string(data)
+	return content, nil
+}
+
+func (c *contentCache) getRaw(kbRoot, relPath string) (string, error) {
+	absPath := filepath.Join(kbRoot, relPath)
+	if content, ok := c.raw[absPath]; ok {
+		return content, nil
+	}
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return "", err
+	}
+	raw := string(data)
+	c.raw[absPath] = raw
+	if _, ok := c.lower[absPath]; !ok {
+		c.lower[absPath] = strings.ToLower(raw)
+	}
+	return raw, nil
+}
+
+// filterPopularTags returns only tags that appear in at least minDocCount documents,
+// along with the full tag-to-doc-count map for formatting.
+func filterPopularTags(metas []*meta.DocumentMeta, minDocCount int) ([]string, map[string]int) {
+	counts := make(map[string]int)
 	for _, m := range metas {
+		seen := make(map[string]bool, len(m.Tags))
 		for _, t := range m.Tags {
 			t = strings.TrimSpace(t)
-			if t == "" {
-				continue
+			if t != "" && !seen[t] {
+				counts[t]++
+				seen[t] = true
 			}
-			set[t] = struct{}{}
-		}
-		for _, a := range m.Aliases {
-			a = strings.TrimSpace(a)
-			if a == "" {
-				continue
-			}
-			set[a] = struct{}{}
 		}
 	}
-	out := make([]string, 0, len(set))
-	for t := range set {
-		out = append(out, t)
+	var popular []string
+	for t, c := range counts {
+		if c >= minDocCount {
+			popular = append(popular, t)
+		}
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(popular)
+	return popular, counts
+}
+
+// formatTagsWithCounts formats tags with their document counts for the LLM prompt.
+func formatTagsWithCounts(tags []string, counts map[string]int) string {
+	var sb strings.Builder
+	for _, t := range tags {
+		sb.WriteString("- ")
+		sb.WriteString(t)
+		if c, ok := counts[t]; ok {
+			fmt.Fprintf(&sb, " (%d docs)", c)
+		}
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
+
+// prefilterContent returns only the lines of content that are within contextWindow
+// lines of any keyword match. If the filtered result would retain >80% of lines,
+// the original content is returned unchanged.
+func prefilterContent(content string, keywords []string, contextWindow int) string {
+	lines := splitLines(content)
+	if len(lines) <= 100 {
+		return content
+	}
+
+	keywordLower := make([]string, 0, len(keywords))
+	for _, k := range keywords {
+		keywordLower = append(keywordLower, strings.ToLower(k))
+	}
+
+	hit := make([]bool, len(lines))
+	for i, line := range lines {
+		lineLower := strings.ToLower(line)
+		for _, kw := range keywordLower {
+			if strings.Contains(lineLower, kw) {
+				for j := max(0, i-contextWindow); j <= min(len(lines)-1, i+contextWindow); j++ {
+					hit[j] = true
+				}
+				break
+			}
+		}
+	}
+
+	hitCount := 0
+	for _, h := range hit {
+		if h {
+			hitCount++
+		}
+	}
+	if hitCount > len(lines)*80/100 {
+		return content
+	}
+
+	var sb strings.Builder
+	for i, line := range lines {
+		if hit[i] {
+			fmt.Fprintf(&sb, "%d: %s\n", i+1, line)
+		}
+	}
+	return sb.String()
 }
 
 // candidate is a recalled document with a local relevance score.
 type candidate struct {
 	relPath      string
 	tagHits      int
-	aliasHits    int
 	titleHits    int
 	summaryHits  int
 	headingsHits int
@@ -291,12 +396,12 @@ type candidate struct {
 	score        int
 }
 
-// recallCandidates merges tag-based, alias-based, title/summary-based and
+// recallCandidates merges tag-based, title/summary-based and
 // full-text recall over the meta set.
-// Tag/alias matching uses OR semantics across pickedTags.
+// Tag matching uses OR semantics across pickedTags.
 // Fulltext/title/summary/headings matching uses LLM-extracted keywords.
 // Documents are ranked by a weighted score and capped to topRecall.
-func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags, keywords []string) []candidate {
+func recallCandidates(metas []*meta.DocumentMeta, cache *contentCache, kbRoot string, pickedTags, keywords []string) []candidate {
 	tagSet := make(map[string]struct{}, len(pickedTags))
 	for _, t := range pickedTags {
 		tagSet[strings.ToLower(strings.TrimSpace(t))] = struct{}{}
@@ -309,7 +414,7 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags, key
 
 	scored := make(map[string]*candidate, len(metas))
 
-	// First pass: Tags + Aliases + Title + Summary (no file IO).
+	// First pass: Tags + Title + Summary (no file IO).
 	for _, m := range metas {
 		c := &candidate{relPath: m.Path}
 
@@ -317,11 +422,6 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags, key
 			for _, t := range m.Tags {
 				if _, hit := tagSet[strings.ToLower(t)]; hit {
 					c.tagHits++
-				}
-			}
-			for _, a := range m.Aliases {
-				if _, hit := tagSet[strings.ToLower(a)]; hit {
-					c.aliasHits++
 				}
 			}
 		}
@@ -342,14 +442,12 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags, key
 		scored[m.Path] = c
 	}
 
-	// Second pass: full-text (requires reading files).
+	// Second pass: full-text (uses content cache).
 	for _, m := range metas {
-		absPath := filepath.Join(kbRoot, m.Path)
-		data, err := os.ReadFile(absPath)
+		contentLower, err := cache.get(kbRoot, m.Path)
 		if err != nil {
 			continue
 		}
-		contentLower := strings.ToLower(string(data))
 		var hits int
 		for _, term := range keywordLower {
 			hits += strings.Count(contentLower, term)
@@ -364,7 +462,7 @@ func recallCandidates(metas []*meta.DocumentMeta, kbRoot string, pickedTags, key
 
 	var list []candidate
 	for _, c := range scored {
-		c.score = 5*c.tagHits + 4*c.aliasHits + 4*c.titleHits + 3*c.summaryHits + 3*c.headingsHits + 1*c.fulltextHits
+		c.score = 5*c.tagHits + 4*c.titleHits + 3*c.summaryHits + 3*c.headingsHits + min(c.fulltextHits, fulltextHitCap)
 		if c.score == 0 {
 			continue
 		}
@@ -418,14 +516,13 @@ func rerankCandidates(ctx context.Context, svc LLMClient, query string, previews
 // makeDocPreview builds a preview string for a single document to feed into
 // the rerank prompt. Includes title, tags, summary, and the first previewMaxLines
 // lines of the document body.
-func makeDocPreview(kbRoot, relPath string, m *meta.DocumentMeta, lang string) (string, error) {
-	absPath := filepath.Join(kbRoot, relPath)
-	data, err := os.ReadFile(absPath)
+func makeDocPreview(kbRoot, relPath string, m *meta.DocumentMeta, lang string, cache *contentCache) (string, error) {
+	data, err := cache.getRaw(kbRoot, relPath)
 	if err != nil {
 		return "", err
 	}
 
-	lines := splitLines(string(data))
+	lines := splitLines(data)
 	var sb strings.Builder
 	if lang == "zh" {
 		fmt.Fprintf(&sb, "路径: %s\n", relPath)
@@ -433,12 +530,11 @@ func makeDocPreview(kbRoot, relPath string, m *meta.DocumentMeta, lang string) (
 		if len(m.Tags) > 0 {
 			fmt.Fprintf(&sb, "标签: %s\n", strings.Join(m.Tags, ", "))
 		}
-		if len(m.Aliases) > 0 {
-			fmt.Fprintf(&sb, "别名: %s\n", strings.Join(m.Aliases, ", "))
-		}
+
 		if m.Summary != "" {
 			fmt.Fprintf(&sb, "摘要: %s\n", m.Summary)
 		}
+		fmt.Fprintf(&sb, "总行数: %d (预览前 %d 行)\n", len(lines), previewMaxLines)
 		sb.WriteString("正文预览:\n")
 	} else {
 		fmt.Fprintf(&sb, "Path: %s\n", relPath)
@@ -446,12 +542,11 @@ func makeDocPreview(kbRoot, relPath string, m *meta.DocumentMeta, lang string) (
 		if len(m.Tags) > 0 {
 			fmt.Fprintf(&sb, "Tags: %s\n", strings.Join(m.Tags, ", "))
 		}
-		if len(m.Aliases) > 0 {
-			fmt.Fprintf(&sb, "Aliases: %s\n", strings.Join(m.Aliases, ", "))
-		}
+
 		if m.Summary != "" {
 			fmt.Fprintf(&sb, "Summary: %s\n", m.Summary)
 		}
+		fmt.Fprintf(&sb, "Total lines: %d (showing first %d)\n", len(lines), previewMaxLines)
 		sb.WriteString("Preview:\n")
 	}
 	limit := previewMaxLines
@@ -587,17 +682,11 @@ func extractSnippetsLLM(ctx context.Context, svc LLMClient, query, absPath, cont
 	return snippets
 }
 
-func extractTagsFromQuery(ctx context.Context, svc LLMClient, query string, allTags []string, lang string) ([]string, error) {
+func extractTagsFromQuery(ctx context.Context, svc LLMClient, query string, tagList string, allTags []string, lang string) ([]string, error) {
 	if len(allTags) == 0 {
 		return nil, nil
 	}
-	var sb strings.Builder
-	for _, t := range allTags {
-		sb.WriteString("- ")
-		sb.WriteString(t)
-		sb.WriteByte('\n')
-	}
-	prompt := fmt.Sprintf(loadPrompt("tag", lang), query, sb.String())
+	prompt := fmt.Sprintf(loadPrompt("tag", lang), query, tagList)
 
 	resp, err := svc.Chat(ctx, []*schema.Message{{Role: schema.User, Content: prompt}})
 	if err != nil {

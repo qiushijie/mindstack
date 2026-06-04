@@ -887,6 +887,36 @@ func TestCmdHistoryDelNotInitialized(t *testing.T) {
 	}
 }
 
+func TestCmdBuildNoLLM(t *testing.T) {
+	setupTestKB(t)
+	t.Setenv("MINDSTACK_CONFIG_DIR", t.TempDir())
+	_, stderr, code := runCmd(t, "build")
+	if code != 3 {
+		t.Fatalf("expected exit code 3, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("LLM_UNAVAILABLE")) {
+		t.Errorf("expected LLM_UNAVAILABLE, got: %s", stderr)
+	}
+}
+
+func TestCmdBuildNotInitialized(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(oldDir) })
+
+	_, stderr, code := runCmd(t, "build")
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_INITIALIZED")) {
+		t.Errorf("expected NOT_INITIALIZED, got: %s", stderr)
+	}
+}
+
+
+
+
 func TestCmdKBAmbiguous(t *testing.T) {
 	tmpDir := t.TempDir()
 
