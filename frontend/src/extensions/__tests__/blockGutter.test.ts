@@ -163,14 +163,18 @@ describe('createBlockGutter destroy', () => {
   })
 })
 
-describe('showBlockMenu via plus button click', () => {
+describe('showBlockMenu via plus button mousedown', () => {
+  function mousedownPlus(el: HTMLElement) {
+    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+  }
+
   it('opens a popup menu when plus button is clicked', () => {
     const view = createView('# Title\n\nParagraph', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
     expect(plusBtn).toBeTruthy()
 
-    plusBtn.click()
+    mousedownPlus(plusBtn)
 
     // A fixed-position popup menu should appear in document.body
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
@@ -185,7 +189,7 @@ describe('showBlockMenu via plus button click', () => {
     const view = createView('# Title', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    mousedownPlus(plusBtn)
 
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
     expect(menu).toBeTruthy()
@@ -208,7 +212,7 @@ describe('showBlockMenu via plus button click', () => {
     const view = createView('# Title', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    mousedownPlus(plusBtn)
 
     // Menu should be visible
     let menu = document.body.querySelector('div[style*="fixed"]')
@@ -229,7 +233,7 @@ describe('showBlockMenu via plus button click', () => {
     const view = createView('# Title', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    mousedownPlus(plusBtn)
 
     // Menu should be visible
     let menu = document.body.querySelector('div[style*="fixed"]')
@@ -253,7 +257,7 @@ describe('showBlockMenu via plus button click', () => {
     const view = createView('# Title', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    mousedownPlus(plusBtn)
 
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
     expect(menu).toBeTruthy()
@@ -281,7 +285,7 @@ describe('showBlockMenu via plus button click', () => {
     const view = createView('# Title', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    mousedownPlus(plusBtn)
 
     // Menu should be visible
     let menu = document.body.querySelector('div[style*="fixed"]')
@@ -300,17 +304,88 @@ describe('showBlockMenu via plus button click', () => {
     const plusBtns = gutterEl.querySelectorAll('.cm-block-plus')
 
     // Click first plus button
-    ;(plusBtns[0] as HTMLElement).click()
+    mousedownPlus(plusBtns[0] as HTMLElement)
     const menusAfterFirst = document.body.querySelectorAll('div[style*="fixed"]')
     expect(menusAfterFirst.length).toBe(1)
 
     // Click second plus button - should close first menu and open new one
     if (plusBtns.length > 1) {
-      ;(plusBtns[1] as HTMLElement).click()
+      mousedownPlus(plusBtns[1] as HTMLElement)
       const menusAfterSecond = document.body.querySelectorAll('div[style*="fixed"]')
       // Should still have only one menu (old one closed, new one opened)
       expect(menusAfterSecond.length).toBeLessThanOrEqual(1)
     }
+
+    view.destroy()
+  })
+
+  it('toggles menu when clicking same plus button', () => {
+    const view = createView('# Title\n\nParagraph', createBlockGutter())
+    const plusBtns = view.dom.querySelectorAll('.cm-block-plus')
+    expect(plusBtns.length).toBeGreaterThanOrEqual(1)
+    const btn = plusBtns[0] as HTMLElement
+
+    // First click opens menu
+    mousedownPlus(btn)
+    expect(document.body.querySelector('div[style*="fixed"]')).toBeTruthy()
+
+    // Second click on same button closes menu
+    mousedownPlus(btn)
+    expect(document.body.querySelector('div[style*="fixed"]')).toBeFalsy()
+
+    view.destroy()
+  })
+
+  it('closes menu on wheel event', () => {
+    const view = createView('# Title\n\nParagraph', createBlockGutter())
+    const plusBtn = view.dom.querySelector('.cm-block-plus') as HTMLElement
+    mousedownPlus(plusBtn)
+
+    expect(document.body.querySelector('div[style*="fixed"]')).toBeTruthy()
+
+    // Dispatch wheel event - menu should close
+    const wheelEvent = new WheelEvent('wheel', { bubbles: true, cancelable: true })
+    document.dispatchEvent(wheelEvent)
+
+    expect(document.body.querySelector('div[style*="fixed"]')).toBeFalsy()
+
+    view.destroy()
+  })
+
+  it('reopens menu after wheel dismissal', () => {
+    const view = createView('# Title\n\nParagraph', createBlockGutter())
+    const plusBtn = view.dom.querySelector('.cm-block-plus') as HTMLElement
+
+    // Open, wheel dismiss, reopen
+    mousedownPlus(plusBtn)
+    document.dispatchEvent(new WheelEvent('wheel', { bubbles: true }))
+    expect(document.body.querySelector('div[style*="fixed"]')).toBeFalsy()
+
+    // Click plus again - menu should reopen
+    mousedownPlus(plusBtn)
+    expect(document.body.querySelector('div[style*="fixed"]')).toBeTruthy()
+
+    view.destroy()
+  })
+
+  it('handles multiple wheel events (momentum simulation) without error', () => {
+    const view = createView('# Title\n\nParagraph', createBlockGutter())
+    const plusBtn = view.dom.querySelector('.cm-block-plus') as HTMLElement
+
+    mousedownPlus(plusBtn)
+    expect(document.body.querySelector('div[style*="fixed"]')).toBeTruthy()
+
+    // Dispatch multiple wheel events in succession (simulating momentum scroll)
+    for (let i = 0; i < 10; i++) {
+      document.dispatchEvent(new WheelEvent('wheel', { bubbles: true }))
+    }
+
+    // Menu should be closed after first wheel, remaining events no-op
+    expect(document.body.querySelector('div[style*="fixed"]')).toBeFalsy()
+
+    // Can still reopen after multiple wheel events
+    mousedownPlus(plusBtn)
+    expect(document.body.querySelector('div[style*="fixed"]')).toBeTruthy()
 
     view.destroy()
   })

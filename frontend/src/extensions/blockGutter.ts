@@ -184,6 +184,20 @@ const blockGutter = gutter({
   domEventHandlers: {
     mousedown(view, line, event) {
       const target = (event as MouseEvent).target as Element
+      // Plus button: toggle block type menu (use mousedown so CodeMirror
+      // re-render between mousedown and click doesn't detach the target)
+      if (target.closest('.cm-block-plus')) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (activeMenu && activeMenuLineFrom === line.from) {
+          hideBlockMenu()
+        } else {
+          const btn = target.closest('.cm-block-plus') as HTMLElement
+          const rect = btn.getBoundingClientRect()
+          showBlockMenu(view, line.from, rect)
+        }
+        return true
+      }
       // Drag button
       if (target.closest('.cm-block-drag')) {
         const ev = event as MouseEvent
@@ -198,19 +212,6 @@ const blockGutter = gutter({
 
       return false
     },
-    click(view, line, event) {
-      const target = (event as MouseEvent).target as Element
-
-      // Plus button: show block type menu
-      if (target.closest('.cm-block-plus')) {
-        const btn = target.closest('.cm-block-plus') as HTMLElement
-        const rect = btn.getBoundingClientRect()
-        showBlockMenu(view, line.from, rect)
-        return true
-      }
-
-      return false
-    },
   },
 })
 
@@ -218,6 +219,7 @@ let activeMenu: HTMLDivElement | null = null
 let activeMenuLineFrom = -1
 let escHandler: ((e: KeyboardEvent) => void) | null = null
 let closeHandler: ((e: MouseEvent) => void) | null = null
+let wheelHandler: ((e: WheelEvent) => void) | null = null
 
 function hideBlockMenu() {
   if (closeHandler) {
@@ -232,6 +234,10 @@ function hideBlockMenu() {
   if (escHandler) {
     document.removeEventListener('keydown', escHandler, true)
     escHandler = null
+  }
+  if (wheelHandler) {
+    document.removeEventListener('wheel', wheelHandler, true)
+    wheelHandler = null
   }
 }
 
@@ -367,12 +373,20 @@ function showBlockMenu(view: EditorView, lineFrom: number, anchorRect: DOMRect) 
 
   closeHandler = (e: MouseEvent) => {
     if (activeMenu && !activeMenu.contains(e.target as Node)) {
+      // 点击加号按钮由 gutter mousedown handler 负责 toggle，这里不关闭
+      const target = e.target
+      if (target instanceof Element && target.closest('.cm-block-plus')) return
       hideBlockMenu()
     }
   }
   setTimeout(() => {
     if (closeHandler) document.addEventListener('mousedown', closeHandler, true)
   }, 0)
+
+  wheelHandler = () => {
+    hideBlockMenu()
+  }
+  document.addEventListener('wheel', wheelHandler, true)
 }
 
 let lastHovered = -1

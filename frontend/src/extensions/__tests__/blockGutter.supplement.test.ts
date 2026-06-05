@@ -81,7 +81,7 @@ describe('blockGutter - menu positioning edge cases', () => {
     const origInnerWidth = window.innerWidth
     Object.defineProperty(window, 'innerWidth', { value: 320, writable: true, configurable: true })
 
-    plusBtn.click()
+    plusBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
     expect(menu).toBeTruthy()
@@ -101,7 +101,7 @@ describe('blockGutter - menu positioning edge cases', () => {
     const origInnerHeight = window.innerHeight
     Object.defineProperty(window, 'innerHeight', { value: 200, writable: true, configurable: true })
 
-    plusBtn.click()
+    plusBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
     expect(menu).toBeTruthy()
@@ -120,7 +120,7 @@ describe('blockGutter - menu positioning edge cases', () => {
     const origInnerHeight = window.innerHeight
     Object.defineProperty(window, 'innerHeight', { value: 100, writable: true, configurable: true })
 
-    plusBtn.click()
+    plusBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
     expect(menu).toBeTruthy()
@@ -136,7 +136,7 @@ describe('blockGutter - menu item interactions', () => {
     const view = createView('# Title\n\nParagraph', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    plusBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
     const rows = menu.querySelectorAll('div')
@@ -157,7 +157,7 @@ describe('blockGutter - menu item interactions', () => {
     const view = createView('# Title\n\nParagraph', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    plusBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
     expect(menu).toBeTruthy()
@@ -170,7 +170,7 @@ describe('blockGutter - menu item interactions', () => {
     const view = createView('# Title\n\nParagraph', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    plusBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
     const rows = menu.querySelectorAll('div')
@@ -265,7 +265,7 @@ describe('blockGutter - hideBlockMenu edge cases', () => {
     // Open and close menu
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    plusBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
     let menu = document.body.querySelector('div[style*="fixed"]')
     expect(menu).toBeTruthy()
@@ -286,7 +286,7 @@ describe('blockGutter - hideBlockMenu edge cases', () => {
     const view = createView('# Title', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    plusBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
     await new Promise(r => setTimeout(r, 10))
 
@@ -327,7 +327,7 @@ describe('blockGutter - showBlockMenu image insertion', () => {
     const view = createView('# Title\n\nParagraph', createBlockGutter())
     const gutterEl = view.dom.querySelector('.cm-block-gutter')!
     const plusBtn = gutterEl.querySelector('.cm-block-plus') as HTMLElement
-    plusBtn.click()
+    plusBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
     const menu = document.body.querySelector('div[style*="fixed"]') as HTMLDivElement
 

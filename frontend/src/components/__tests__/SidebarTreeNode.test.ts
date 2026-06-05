@@ -20,10 +20,13 @@ import {
   ReadFileContent, FileExists, DeleteFile, ConfirmDelete,
 } from '../../../wailsjs/go/main/App'
 
+const { closeTabsForDeletedPath } = vi.hoisted(() => ({
+  closeTabsForDeletedPath: vi.fn().mockResolvedValue(undefined),
+}))
+
 // vi.mock is hoisted — factory must not reference outer variables.
 vi.mock('../../composables/useFileTree', () => {
   const copiedFilePath = { value: '' }
-  const closeTabsForDeletedPath = vi.fn().mockResolvedValue(undefined)
   return {
     copiedFilePath,
     closeTabsForDeletedPath,
@@ -38,7 +41,7 @@ vi.mock('../../composables/useFileTree', () => {
   }
 })
 
-import { copiedFilePath as mockCopiedFilePath, pasteToDirectory, closeTabsForDeletedPath } from '../../composables/useFileTree'
+import { copiedFilePath as mockCopiedFilePath, pasteToDirectory } from '../../composables/useFileTree'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
