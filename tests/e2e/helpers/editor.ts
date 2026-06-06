@@ -68,6 +68,33 @@ export async function selectTextBackward(page: Page, chars: number): Promise<voi
   await page.keyboard.up('Shift')
 }
 
+/**
+ * Set the cursor position or selection range precisely.
+ * If head is omitted, the selection is collapsed at anchor.
+ */
+export async function setSelection(page: Page, anchor: number, head?: number): Promise<void> {
+  await page.evaluate(
+    (opts: { anchor: number; head?: number }) => {
+      const view = (window as any).__cmView
+      if (view) {
+        view.dispatch({ selection: { anchor: opts.anchor, head: opts.head ?? opts.anchor } })
+      }
+    },
+    { anchor, head }
+  )
+  await page.waitForTimeout(100)
+}
+
+/**
+ * Toggle raw mode on/off via the window.__setRawMode API.
+ */
+export async function toggleRawMode(page: Page, on: boolean): Promise<void> {
+  await page.evaluate((v: boolean) => {
+    ;(window as any).__setRawMode?.(v)
+  }, on)
+  await page.waitForTimeout(200)
+}
+
 export async function dispatchEditorKeydown(
   page: import('@playwright/test').Page,
   key: string,
