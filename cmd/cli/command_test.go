@@ -1096,3 +1096,64 @@ func TestCmdHistoryDelWrongWorkspace(t *testing.T) {
 		t.Errorf("expected NOT_FOUND, got: %s", stderr)
 	}
 }
+
+// --- path command ---
+
+func TestCmdPathFound(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "docs/api.md", "# API")
+
+	stdout, _, code := runCmd(t, "path", "docs/api.md")
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	resolvedDir, _ := filepath.EvalSymlinks(dir)
+	expected := filepath.Join(resolvedDir, "docs/api.md") + "\n"
+	if stdout != expected {
+		t.Errorf("got %q, want %q", stdout, expected)
+	}
+}
+
+func TestCmdPathNotFound(t *testing.T) {
+	setupTestKB(t)
+
+	_, stderr, code := runCmd(t, "path", "nonexistent.md")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "NOT_FOUND") {
+		t.Errorf("expected NOT_FOUND, got: %s", stderr)
+	}
+}
+
+func TestCmdPathPermissionDenied(t *testing.T) {
+	dir := setupTestKB(t)
+	// Create a directory and remove execute permission so os.Stat fails with EACCES
+	privateDir := filepath.Join(dir, "private")
+	if err := os.Mkdir(privateDir, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, code := runCmd(t, "path", "private/file.md")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "PATH_ERROR") {
+		t.Errorf("expected PATH_ERROR, got: %s", stderr)
+	}
+}
+
+func TestCmdPathNotInitialized(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(oldDir) })
+
+	_, stderr, code := runCmd(t, "path", "test.md")
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_INITIALIZED")) {
+		t.Errorf("expected NOT_INITIALIZED, got: %s", stderr)
+	}
+}

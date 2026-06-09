@@ -73,7 +73,7 @@ test.describe('Slash Command Menu', () => {
     expect(content.length).toBeGreaterThan(0)
   })
 
-  test('should close menu with Escape', async ({ page }) => {
+  test('should close menu with Escape and remove slash text', async ({ page }) => {
     await focusEditor(page)
     await page.keyboard.type('/', { delay: 50 })
     await page.waitForSelector('.cm-slash-menu', { timeout: 3000 })
@@ -81,6 +81,21 @@ test.describe('Slash Command Menu', () => {
     await page.keyboard.press('Escape')
 
     await expect(page.locator('.cm-slash-menu')).not.toBeVisible()
+    const content = await getContent(page)
+    expect(content).toBe('')
+  })
+
+  test('should remove slash text when editor loses focus', async ({ page }) => {
+    await focusEditor(page)
+    await page.keyboard.type('/code', { delay: 50 })
+    await page.waitForSelector('.cm-slash-menu', { timeout: 3000 })
+
+    // Click outside the editor to trigger blur
+    await page.locator('.sidebar').click({ position: { x: 10, y: 10 } })
+
+    await expect(page.locator('.cm-slash-menu')).not.toBeVisible()
+    const content = await getContent(page)
+    expect(content).toBe('')
   })
 
   test('should show empty message when no match', async ({ page }) => {

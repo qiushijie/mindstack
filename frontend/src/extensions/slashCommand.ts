@@ -6,9 +6,6 @@ import { t } from '../i18n'
 
 // StateEffect to track the currently selected index in the slash menu
 const setSelectedIndex = StateEffect.define<number>({})
-// StateEffect to force-close the slash menu
-const closeSlashMenu = StateEffect.define<null>({})
-
 /** Extract initials from each word in the label (e.g. "Code Block" -> "cb") */
 function getInitials(label: string): string {
   return label.split(/\s+/).map(w => w[0]).join('').toLowerCase()
@@ -130,7 +127,7 @@ export const slashCommand = ViewPlugin.fromClass(class {
         this.selectedIndex = 0
       }
       this.decorations = this.build(update.view)
-    } else if (update.transactions.some(t => t.effects.some(e => e.is(setSelectedIndex) || e.is(closeSlashMenu)))) {
+    } else if (update.transactions.some(t => t.effects.some(e => e.is(setSelectedIndex)))) {
       this.decorations = this.build(update.view)
     }
   }
@@ -208,15 +205,28 @@ function applyItem(view: EditorView, item: SlashMenuItem, slashFrom: number) {
   if (plugin) plugin.activeSlashFrom = -1
 }
 
+function removeSlashText(view: EditorView, plugin: { activeSlashFrom: number }) {
+  const pos = view.state.selection.main.head
+  view.dispatch({
+    changes: { from: plugin.activeSlashFrom, to: pos, insert: '' },
+    selection: { anchor: plugin.activeSlashFrom },
+  })
+}
+
 const slashDismissHandler = EditorView.domEventHandlers({
+  blur(event, view) {
+    const plugin = view.plugin(slashCommand)
+    if (!plugin || plugin.activeSlashFrom === -1) return false
+    removeSlashText(view, plugin)
+    return false
+  },
   keydown(event, view) {
     const plugin = view.plugin(slashCommand)
     if (!plugin || plugin.activeSlashFrom === -1) return false
 
     if (event.key === 'Escape') {
       plugin.dismissed = true
-      plugin.activeSlashFrom = -1
-      view.dispatch({ effects: [closeSlashMenu.of(null)] })
+      removeSlashText(view, plugin)
       return true
     }
 
