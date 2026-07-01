@@ -6,7 +6,9 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BINARY_NAME="mindstack"
 
 # Skill language: en (default) or zh
+# Target platform: claude (default) or codex
 SKILL_LANG="en"
+PLATFORM="claude"
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--lang)
@@ -17,14 +19,25 @@ while [[ $# -gt 0 ]]; do
 			SKILL_LANG="${1#*=}"
 			shift
 			;;
+		--platform)
+			PLATFORM="${2:-}"
+			shift 2
+			;;
+		--platform=*)
+			PLATFORM="${1#*=}"
+			shift
+			;;
 		-h|--help)
-			echo "Usage: $0 [--lang <code>]"
-			echo "  --lang   Skill language (en|zh), default: en"
+			echo "Usage: $0 [--lang <code>] [--platform <name>]"
+			echo "  --lang      Skill language (en|zh), default: en"
+			echo "  --platform  Target platform (claude|codex), default: claude"
+			echo "    claude -> \$HOME/.claude/skills/mindstack/SKILL.md"
+			echo "    codex  -> \$HOME/.agents/skills/mindstack/SKILL.md"
 			exit 0
 			;;
 		*)
 			echo "unknown argument: $1" >&2
-			echo "usage: $0 [--lang <code>]" >&2
+			echo "usage: $0 [--lang <code>] [--platform <name>]" >&2
 			exit 1
 			;;
 	esac
@@ -34,6 +47,19 @@ if [ -z "$SKILL_LANG" ]; then
 	echo "error: --lang requires a value" >&2
 	exit 1
 fi
+
+case "$PLATFORM" in
+	claude)
+		SKILL_DEST_DIR="$HOME/.claude/skills/mindstack"
+		;;
+	codex)
+		SKILL_DEST_DIR="$HOME/.agents/skills/mindstack"
+		;;
+	*)
+		echo "error: --platform must be 'claude' or 'codex', got: $PLATFORM" >&2
+		exit 1
+		;;
+esac
 
 SKILL_SRC="$PROJECT_DIR/skills/mindstack/SKILL.${SKILL_LANG}.md"
 if [ ! -f "$SKILL_SRC" ]; then
@@ -97,13 +123,12 @@ chmod +x "$install_dir/$BINARY_NAME"
 
 echo "installed -> $install_dir/$BINARY_NAME"
 
-# Install skill into ~/.claude/skills/mindstack/SKILL.md
-SKILL_DEST_DIR="$HOME/.claude/skills/mindstack"
+# Install skill into the platform's skills directory
 SKILL_DEST="$SKILL_DEST_DIR/SKILL.md"
 mkdir -p "$SKILL_DEST_DIR"
 rm -f "$SKILL_DEST"
 cp "$SKILL_SRC" "$SKILL_DEST"
-echo "installed skill -> $SKILL_DEST (lang: $SKILL_LANG)"
+echo "installed skill -> $SKILL_DEST (lang: $SKILL_LANG, platform: $PLATFORM)"
 
 if ! echo "$PATH" | tr ':' '\n' | grep -q "^${install_dir}\$"; then
 	echo ""
