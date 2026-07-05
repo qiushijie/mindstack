@@ -19,8 +19,9 @@ import { createDragSort } from '../extensions/dragSort'
 import { createInputHandler } from '../extensions/inputHandler'
 import { createSlashCommand } from '../extensions/slashCommand'
 import { emptyLinePlaceholder } from '../extensions/emptyLinePlaceholder'
-import { useEditorState } from './useEditorState'
+import { useEditorState, sharedEditorAdapter } from './useEditorState'
 import { useFileTree } from './useFileTree'
+import { CodeMirrorAdapter } from '../editor/codemirror/CodeMirrorAdapter'
 
 interface UseCodeMirrorOptions {
   container: Ref<HTMLElement | null>
@@ -133,6 +134,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       parent: options.container.value,
     })
     sharedView.value = view.value
+    sharedEditorAdapter.value = new CodeMirrorAdapter(view.value)
 
     // Sync current file path and content into editor state
     const { selectedFilePath, selectedFileContent } = useFileTree()
@@ -162,6 +164,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     view.value?.destroy()
     view.value = null
     sharedView.value = null
+    sharedEditorAdapter.value = null
   })
 
   function setContent(content: string) {
@@ -180,6 +183,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     themeObserver?.disconnect()
     view.value?.destroy()
     sharedView.value = null
+    sharedEditorAdapter.value = null
     view.value = null
   }
 

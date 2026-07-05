@@ -79,8 +79,37 @@ import {
   SaveConfig,
   AddRecentEntry,
 } from '../../../wailsjs/go/main/App'
+import type { EditorAdapter } from '../../editor/EditorAdapter'
 import { useFileTree } from '../useFileTree'
 import { useTabs } from '../useTabs'
+
+
+function createMockEditorAdapter<T extends Partial<EditorAdapter>>(overrides: T = {} as T): EditorAdapter & T {
+  const defaults: EditorAdapter = {
+    getContent: () => '',
+    setContent: () => {},
+    getSelection: () => ({ anchor: 0, head: 0 }),
+    setSelection: () => {},
+    getSelectedText: () => null,
+    replaceRange: () => {},
+    focus: () => {},
+    moveCursorToEnd: () => {},
+    scrollToLine: () => {},
+    coordsAtPos: () => null,
+    posAtCoords: () => null,
+    getDOM: () => null,
+    getCursorPosition: () => ({ line: 1, column: 1 }),
+    getLineAt: () => ({ number: 1, from: 0, to: 0, text: '' }),
+    getLine: () => null,
+    getStats: () => ({ chars: 0, words: 0 }),
+    setSearchQuery: () => {},
+    clearSearchQuery: () => {},
+    findNext: () => false,
+    findPrevious: () => false,
+    getSearchMatchInfo: () => ({ current: 0, total: 0 }),
+  }
+  return { ...defaults, ...overrides }
+}
 
 // Helper: reset shared module state between tests
 function resetState() {
@@ -93,10 +122,10 @@ function resetState() {
   state.selectedFileContent.value = ''
   state.isDirty.value = false
   state.dirtyTabs.value = []
-  state.setEditorAdapter({
+  state.setEditorAdapter(createMockEditorAdapter({
     setContent: () => {},
     getContent: () => state.selectedFileContent.value,
-  })
+  }))
 }
 
 describe('useFileTree', () => {
@@ -189,7 +218,7 @@ describe('useFileTree', () => {
       vi.mocked(ReadFileContent).mockResolvedValue('# Hello World')
 
       const { selectedFilePath, selectedFileContent, isDirty, openFile, setEditorAdapter } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
       setEditorAdapter(mockAdapter)
 
       await openFile()
@@ -278,7 +307,7 @@ describe('useFileTree', () => {
       vi.mocked(ReadFileContent).mockResolvedValue('file content here')
 
       const { selectedFilePath, selectedFileContent, selectFile, setEditorAdapter } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
       setEditorAdapter(mockAdapter)
 
       await selectFile('/home/user/project/file.md')
@@ -411,7 +440,7 @@ describe('useFileTree', () => {
       vi.mocked(SaveFileContent).mockResolvedValue('')
 
       const { selectedFilePath, isDirty, saveCurrentFile, setEditorAdapter, markDirty } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('saved content') }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn().mockReturnValue('saved content') })
       setEditorAdapter(mockAdapter)
 
       selectedFilePath.value = '/root/file.md'
@@ -462,7 +491,7 @@ describe('useFileTree', () => {
 
     it('clears selected file state and editor content', () => {
       const { selectedFilePath, selectedFileContent, isDirty, newFile, setEditorAdapter, markDirty } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
       setEditorAdapter(mockAdapter)
 
       selectedFilePath.value = '/root/old.md'
@@ -490,10 +519,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       // Step 1: create new file
       newFile()
@@ -533,10 +562,10 @@ describe('useFileTree', () => {
       const { newFile, saveCurrentFile, selectedFilePath, setEditorAdapter, markDirty } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       newFile()
       editorContent = 'content'
@@ -575,10 +604,10 @@ describe('useFileTree', () => {
         const { newFile, setEditorAdapter, markDirty } = useFileTree()
 
         let editorContent = ''
-        setEditorAdapter({
+        setEditorAdapter(createMockEditorAdapter({
           setContent: vi.fn((c: string) => { editorContent = c }),
           getContent: () => editorContent,
-        })
+        }))
 
         newFile()
         editorContent = 'content'
@@ -603,10 +632,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       // Open real file
       await selectFile('/root/real.md')
@@ -636,10 +665,10 @@ describe('useFileTree', () => {
       const { newFile, markDirty, closeFileTab, selectedFileContent, setEditorAdapter } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       newFile()
       editorContent = 'untitled content'
@@ -667,10 +696,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       newFile()
       editorContent = 'first save'
@@ -728,10 +757,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       rootPath.value = '/root'
       newFile()
@@ -827,7 +856,7 @@ describe('useFileTree', () => {
       vi.mocked(SaveFileContent).mockResolvedValue('')
 
       const { selectedFilePath, setEditorAdapter, markDirty } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') })
       setEditorAdapter(mockAdapter)
       selectedFilePath.value = '/root/file.md'
 
@@ -845,7 +874,7 @@ describe('useFileTree', () => {
       vi.mocked(SaveFileContent).mockResolvedValue('')
 
       const { selectedFilePath, setEditorAdapter, markDirty } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') })
       setEditorAdapter(mockAdapter)
       selectedFilePath.value = '/root/file.md'
 
@@ -878,7 +907,7 @@ describe('useFileTree', () => {
       vi.mocked(SaveFileContent).mockResolvedValue('')
 
       const { selectedFilePath, setEditorAdapter, markDirty, saveCurrentFile } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') })
       setEditorAdapter(mockAdapter)
       selectedFilePath.value = '/root/file.md'
 
@@ -897,7 +926,7 @@ describe('useFileTree', () => {
       vi.mocked(ReadFileContent).mockResolvedValue('new content')
 
       const { selectedFilePath, setEditorAdapter, markDirty, selectFile } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') })
       setEditorAdapter(mockAdapter)
       selectedFilePath.value = '/root/file.md'
 
@@ -915,7 +944,7 @@ describe('useFileTree', () => {
       vi.mocked(SaveFileContent).mockResolvedValue('')
 
       const { selectedFilePath, setEditorAdapter, markDirty, newFile } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') })
       setEditorAdapter(mockAdapter)
       selectedFilePath.value = '/root/file.md'
 
@@ -933,7 +962,7 @@ describe('useFileTree', () => {
       vi.mocked(ReadDirEntries).mockResolvedValue([])
 
       const { selectedFilePath, setEditorAdapter, markDirty, openFolder } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn().mockReturnValue('content') })
       setEditorAdapter(mockAdapter)
       selectedFilePath.value = '/root/file.md'
 
@@ -1066,7 +1095,7 @@ describe('useFileTree', () => {
       vi.mocked(ReadFileContent).mockResolvedValue('# Recent File')
 
       const { selectedFilePath, selectedFileContent, isDirty, openRecentFile, setEditorAdapter, markDirty } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
       setEditorAdapter(mockAdapter)
       markDirty()
 
@@ -1252,10 +1281,10 @@ describe('useFileTree', () => {
 
       const { selectFile, switchToTab, setEditorAdapter, selectedFileContent } = useFileTree()
       let editorContent = ''
-      const mockAdapter = {
+      const mockAdapter = createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      }
+      })
       setEditorAdapter(mockAdapter)
 
       await selectFile('/root/a.md')
@@ -1275,10 +1304,10 @@ describe('useFileTree', () => {
 
       const { selectFile, switchToTab, setEditorAdapter, markDirty } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')
@@ -1314,10 +1343,10 @@ describe('useFileTree', () => {
 
       const { selectedFilePath, selectedFileContent, selectFile, closeFileTab, setEditorAdapter } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')
@@ -1354,10 +1383,10 @@ describe('useFileTree', () => {
 
       const { selectedFilePath, selectFile, closeFileTab, setEditorAdapter } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')
@@ -1375,10 +1404,10 @@ describe('useFileTree', () => {
 
       const { selectFile, closeFileTab, markDirty, setEditorAdapter } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       markDirty()
@@ -1403,10 +1432,10 @@ describe('useFileTree', () => {
 
       const { selectFile, closeFileTab, setEditorAdapter } = useFileTree()
       let editorContent = ''
-      const mockAdapter = {
+      const mockAdapter = createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      }
+      })
       setEditorAdapter(mockAdapter)
 
       await selectFile('/root/a.md')
@@ -1476,10 +1505,10 @@ describe('useFileTree', () => {
 
       const { selectedFilePath, selectedFileContent, selectFile, closeOtherTabs, setEditorAdapter } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')
@@ -1515,10 +1544,10 @@ describe('useFileTree', () => {
 
       const { selectFile, closeOtherTabs, markDirty, setEditorAdapter } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')
@@ -1585,10 +1614,10 @@ describe('useFileTree', () => {
 
       const { selectedFilePath, selectedFileContent, isDirty, selectFile, closeAllTabs, setEditorAdapter } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')
@@ -1623,10 +1652,10 @@ describe('useFileTree', () => {
 
       const { selectFile, closeAllTabs, markDirty, setEditorAdapter } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       markDirty()
@@ -1707,10 +1736,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')
@@ -1738,10 +1767,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/src/index.ts')
       await selectFile('/root/other/readme.md')
@@ -1766,10 +1795,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       const mockSetContent = vi.fn()
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: mockSetContent,
         getContent: () => 'only-content',
-      })
+      }))
 
       await selectFile('/root/only.md')
       markDirty()
@@ -1796,10 +1825,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
 
@@ -1826,10 +1855,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')
@@ -1862,10 +1891,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       // Open a real file under /root/src/
       await selectFile('/root/src/app.ts')
@@ -1900,10 +1929,10 @@ describe('useFileTree', () => {
       } = useFileTree()
 
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/src/main.ts')
       await selectFile('/root/notes.md')
@@ -1963,7 +1992,7 @@ describe('useFileTree', () => {
         .mockResolvedValueOnce('new')
 
       const { selectedFilePath, selectedFileContent, selectFile, handleExternalChange, setEditorAdapter } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
       setEditorAdapter(mockAdapter)
 
       await selectFile('/root/a.md')
@@ -1985,7 +2014,7 @@ describe('useFileTree', () => {
         .mockResolvedValueOnce('disk-changed')
 
       const { selectedFileContent, selectFile, markDirty, handleExternalChange, setEditorAdapter } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
       setEditorAdapter(mockAdapter)
 
       await selectFile('/root/a.md')
@@ -2012,7 +2041,7 @@ describe('useFileTree', () => {
         .mockResolvedValueOnce('same')
 
       const { selectedFileContent, selectFile, handleExternalChange, setEditorAdapter } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
       setEditorAdapter(mockAdapter)
 
       await selectFile('/root/a.md')
@@ -2035,7 +2064,7 @@ describe('useFileTree', () => {
         .mockRejectedValueOnce(new Error('file not found'))
 
       const { selectedFileContent, selectFile, handleExternalChange, setEditorAdapter } = useFileTree()
-      const mockAdapter = { setContent: vi.fn(), getContent: vi.fn() }
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
       setEditorAdapter(mockAdapter)
 
       await selectFile('/root/a.md')
@@ -2059,10 +2088,10 @@ describe('useFileTree', () => {
 
       const { selectFile, switchToTab, handleExternalChange, setEditorAdapter } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')
@@ -2095,10 +2124,10 @@ describe('useFileTree', () => {
 
       const { selectFile, switchToTab, handleExternalChange, markDirty, setEditorAdapter, selectedFileContent } = useFileTree()
       let editorContent = ''
-      setEditorAdapter({
+      setEditorAdapter(createMockEditorAdapter({
         setContent: vi.fn((c: string) => { editorContent = c }),
         getContent: () => editorContent,
-      })
+      }))
 
       await selectFile('/root/a.md')
       await selectFile('/root/b.md')

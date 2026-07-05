@@ -20,6 +20,7 @@ import { useSettings } from './useSettings'
 import { t } from '../i18n'
 import { useEditorState, focusEditor } from './useEditorState'
 import { setCurrentFilePath, setFileServerPort } from '../extensions/currentFilePath'
+import type { EditorAdapter } from '../editor/EditorAdapter'
 import { useTabs, isPageTab, isUntitledPath, nextUntitledPath, openPageTab, closeTabByPath, closeTabsUnderDir } from './useTabs'
 import { useNavigation, type PageName } from './useNavigation'
 import { useConfirmDialog } from './useConfirmDialog'
@@ -85,11 +86,6 @@ export async function pasteToDirectory(targetDir: string): Promise<boolean> {
 }
 
 export const copiedFilePath = ref('')
-
-export interface EditorAdapter {
-  setContent(content: string): void
-  getContent(): string
-}
 
 const rootPath = ref('')
 const treeData = ref<TreeNode[]>([])

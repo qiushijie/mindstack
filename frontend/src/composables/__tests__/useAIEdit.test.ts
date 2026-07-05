@@ -1,35 +1,32 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ref } from 'vue'
 
-// Track the mock editor view so tests can inspect dispatch calls
-let mockDispatch = vi.fn()
+// Track the mock editor adapter so tests can inspect adapter calls
 let mockDocString = ''
-let mockSelection = { main: { empty: true, from: 0, to: 0 } }
-let editorViewValue: any = null
+let mockSelection = { anchor: 0, head: 0 }
+let editorAdapterValue: any = null
 
-const mockEditorView = {
-  state: {
-    get doc() {
-      return {
-        get length() {
-          return mockDocString.length
-        },
-        toString: () => mockDocString,
-        line: (_n: number) => ({ from: 0, to: 5 }),
-      }
-    },
-    get selection() {
-      return mockSelection
-    },
-    sliceDoc: (from: number, to: number) => mockDocString.slice(from, to),
-  },
-  dispatch: mockDispatch,
+const mockReplaceRange = vi.fn()
+const mockGetContent = vi.fn(() => mockDocString)
+const mockGetSelectedText = vi.fn(() => {
+  if (mockSelection.anchor === mockSelection.head) return null
+  const from = Math.min(mockSelection.anchor, mockSelection.head)
+  const to = Math.max(mockSelection.anchor, mockSelection.head)
+  return mockDocString.slice(from, to)
+})
+const mockGetSelection = vi.fn(() => mockSelection)
+
+const mockEditorAdapter = {
+  getContent: mockGetContent,
+  getSelectedText: mockGetSelectedText,
+  getSelection: mockGetSelection,
+  replaceRange: mockReplaceRange,
 }
 
-// Mock useEditorState with a controllable editorView ref
+// Mock useEditorState with a controllable editorAdapter ref
 vi.mock('../useEditorState', () => ({
   useEditorState: () => ({
-    editorView: ref(editorViewValue),
+    editorAdapter: ref(editorAdapterValue),
   }),
 }))
 
@@ -37,11 +34,11 @@ import { useAIEdit, getModifiedDocument } from '../useAIEdit'
 
 function resetMockEditor(doc: string, sel?: { from: number; to: number }) {
   mockDocString = doc
-  mockSelection.main = sel
-    ? { empty: false, from: sel.from, to: sel.to }
-    : { empty: true, from: 0, to: 0 }
-  editorViewValue = mockEditorView
-  mockDispatch.mockClear()
+  mockSelection = sel
+    ? { anchor: sel.from, head: sel.to }
+    : { anchor: 0, head: 0 }
+  editorAdapterValue = mockEditorAdapter
+  mockReplaceRange.mockClear()
 }
 
 describe('parseSearchReplaceBlocks (via getModifiedDocument)', () => {
@@ -116,11 +113,11 @@ describe('useAIEdit - applyEdit', () => {
     const result = applyEdit('new content', false)
 
     expect(result).toBe(true)
-    expect(mockDispatch).toHaveBeenCalledTimes(1)
-    expect(mockDispatch).toHaveBeenCalledWith({
-      changes: { from: 0, to: 11, insert: 'new content' },
-      selection: { anchor: 11 },
-    })
+    expect(mockReplaceRange).toHaveBeenCalledTimes(1)
+    expect(mockReplaceRange).toHaveBeenCalledWith(
+      { from: 0, to: 11, insert: 'new content' },
+      { selection: { anchor: 11 } },
+    )
   })
 
   it('applies selection edit when isSelectionEdit is true with from/to', () => {
@@ -128,24 +125,24 @@ describe('useAIEdit - applyEdit', () => {
     const result = applyEdit('inserted', true, 2, 7)
 
     expect(result).toBe(true)
-    expect(mockDispatch).toHaveBeenCalledTimes(1)
-    expect(mockDispatch).toHaveBeenCalledWith({
-      changes: { from: 2, to: 7, insert: 'inserted' },
-      selection: { anchor: 10 },
-    })
+    expect(mockReplaceRange).toHaveBeenCalledTimes(1)
+    expect(mockReplaceRange).toHaveBeenCalledWith(
+      { from: 2, to: 7, insert: 'inserted' },
+      { selection: { anchor: 10 } },
+    )
   })
 
-  it('returns false when editorView is null', () => {
-    editorViewValue = null
+  it('returns false when editorAdapter is null', () => {
+    editorAdapterValue = null
 
     const { applyEdit } = useAIEdit()
     const result = applyEdit('content', false)
 
     expect(result).toBe(false)
-    expect(mockDispatch).not.toHaveBeenCalled()
+    expect(mockReplaceRange).not.toHaveBeenCalled()
 
     // restore for other tests
-    editorViewValue = mockEditorView
+    editorAdapterValue = mockEditorAdapter
   })
 })
 
@@ -159,9 +156,9 @@ describe('useAIEdit - applyChanges', () => {
     const applied = applyChanges([{ search: 'beta', replace: 'BETA', position: 'replace' }])
 
     expect(applied).toBe(1)
-    expect(mockDispatch).toHaveBeenCalledTimes(1)
-    const call = mockDispatch.mock.calls[0][0]
-    expect(call.changes.insert).toBe('alpha BETA gamma delta')
+    expect(mockReplaceRange).toHaveBeenCalledTimes(1)
+    const call = mockReplaceRange.mock.calls[0]
+    expect(call[0].insert).toBe('alpha BETA gamma delta')
   })
 
   it('applies multiple changes in reverse document order', () => {
@@ -172,9 +169,9 @@ describe('useAIEdit - applyChanges', () => {
     ])
 
     expect(applied).toBe(2)
-    expect(mockDispatch).toHaveBeenCalledTimes(1)
-    const call = mockDispatch.mock.calls[0][0]
-    expect(call.changes.insert).toBe('A beta gamma D')
+    expect(mockReplaceRange).toHaveBeenCalledTimes(1)
+    const call = mockReplaceRange.mock.calls[0]
+    expect(call[0].insert).toBe('A beta gamma D')
   })
 
   it('uses originalIndex tiebreaker when search text appears multiple times', () => {
@@ -192,7 +189,7 @@ describe('useAIEdit - applyChanges', () => {
     ])
 
     expect(applied).toBe(2)
-    const insert = mockDispatch.mock.calls[0][0].changes.insert
+    const insert = mockReplaceRange.mock.calls[0][0].insert
     // Change 1 applied first: "Y b a c"
     // Change 0 applied second: "Y b X c"
     expect(insert).toBe('Y b X c')
@@ -203,7 +200,7 @@ describe('useAIEdit - applyChanges', () => {
     const applied = applyChanges([{ search: 'beta', replace: 'PRE ', position: 'before' }])
 
     expect(applied).toBe(1)
-    const insert = mockDispatch.mock.calls[0][0].changes.insert
+    const insert = mockReplaceRange.mock.calls[0][0].insert
     expect(insert).toBe('alpha PRE beta gamma delta')
   })
 
@@ -212,7 +209,7 @@ describe('useAIEdit - applyChanges', () => {
     const applied = applyChanges([{ search: 'beta', replace: ' POST', position: 'after' }])
 
     expect(applied).toBe(1)
-    const insert = mockDispatch.mock.calls[0][0].changes.insert
+    const insert = mockReplaceRange.mock.calls[0][0].insert
     expect(insert).toBe('alpha beta POST gamma delta')
   })
 
@@ -224,11 +221,11 @@ describe('useAIEdit - applyChanges', () => {
     ])
 
     expect(applied).toBe(1)
-    const insert = mockDispatch.mock.calls[0][0].changes.insert
+    const insert = mockReplaceRange.mock.calls[0][0].insert
     expect(insert).toBe('alpha beta G delta')
   })
 
-  it('returns 0 and does not dispatch when no changes applied', () => {
+  it('returns 0 and does not replaceRange when no changes applied', () => {
     const { applyChanges } = useAIEdit()
     const applied = applyChanges([
       { search: 'missing1', replace: 'X', position: 'replace' },
@@ -236,7 +233,7 @@ describe('useAIEdit - applyChanges', () => {
     ])
 
     expect(applied).toBe(0)
-    expect(mockDispatch).not.toHaveBeenCalled()
+    expect(mockReplaceRange).not.toHaveBeenCalled()
   })
 
   it('handles overlapping changes via sorted order', () => {
@@ -254,7 +251,7 @@ describe('useAIEdit - applyChanges', () => {
     // After "beta" -> "B": "alpha B gamma"
     // Then "alpha beta" is no longer found (doc is "alpha B gamma"), so skipped
     expect(applied).toBe(1)
-    const insert = mockDispatch.mock.calls[0][0].changes.insert
+    const insert = mockReplaceRange.mock.calls[0][0].insert
     expect(insert).toBe('alpha B gamma')
   })
 
@@ -263,7 +260,7 @@ describe('useAIEdit - applyChanges', () => {
     const applied = applyChanges([{ search: 'beta', replace: 'B' }])
 
     expect(applied).toBe(1)
-    const insert = mockDispatch.mock.calls[0][0].changes.insert
+    const insert = mockReplaceRange.mock.calls[0][0].insert
     expect(insert).toBe('alpha B gamma delta')
   })
 })
@@ -279,8 +276,8 @@ describe('useAIEdit - applySearchReplace', () => {
     const applied = applySearchReplace(content)
 
     expect(applied).toBe(1)
-    expect(mockDispatch).toHaveBeenCalledTimes(1)
-    const insert = mockDispatch.mock.calls[0][0].changes.insert
+    expect(mockReplaceRange).toHaveBeenCalledTimes(1)
+    const insert = mockReplaceRange.mock.calls[0][0].insert
     expect(insert).toBe('foo BAR baz')
   })
 
@@ -289,7 +286,7 @@ describe('useAIEdit - applySearchReplace', () => {
     const applied = applySearchReplace('plain text without blocks')
 
     expect(applied).toBe(0)
-    expect(mockDispatch).not.toHaveBeenCalled()
+    expect(mockReplaceRange).not.toHaveBeenCalled()
   })
 
   it('applies multiple blocks from content', () => {
@@ -300,25 +297,25 @@ describe('useAIEdit - applySearchReplace', () => {
     const applied = applySearchReplace(content)
 
     expect(applied).toBe(2)
-    const insert = mockDispatch.mock.calls[0][0].changes.insert
+    const insert = mockReplaceRange.mock.calls[0][0].insert
     expect(insert).toBe('FOO bar BAZ')
   })
 })
 
 describe('useAIEdit - getCurrentDocument', () => {
-  it('returns document text from editor', () => {
+  it('returns document text from adapter', () => {
     resetMockEditor('document content')
     const { getCurrentDocument } = useAIEdit()
     expect(getCurrentDocument()).toBe('document content')
   })
 
-  it('returns empty string when editorView is null', () => {
-    editorViewValue = null
+  it('returns empty string when editorAdapter is null', () => {
+    editorAdapterValue = null
 
     const { getCurrentDocument } = useAIEdit()
     expect(getCurrentDocument()).toBe('')
 
-    editorViewValue = mockEditorView
+    editorAdapterValue = mockEditorAdapter
   })
 })
 
@@ -339,12 +336,12 @@ describe('useAIEdit - getSelection', () => {
     })
   })
 
-  it('returns null when editorView is null', () => {
-    editorViewValue = null
+  it('returns null when editorAdapter is null', () => {
+    editorAdapterValue = null
 
     const { getSelection } = useAIEdit()
     expect(getSelection()).toBeNull()
 
-    editorViewValue = mockEditorView
+    editorAdapterValue = mockEditorAdapter
   })
 })

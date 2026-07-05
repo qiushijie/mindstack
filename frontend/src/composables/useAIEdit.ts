@@ -55,50 +55,50 @@ export function getModifiedDocument(original: string, aiResponse: string): strin
 }
 
 export function useAIEdit() {
-  const { editorView } = useEditorState()
+  const { editorAdapter } = useEditorState()
 
   function getCurrentDocument(): string {
-    const view = editorView.value
-    if (!view) return ''
-    return view.state.doc.toString()
+    const adapter = editorAdapter.value
+    if (!adapter) return ''
+    return adapter.getContent()
   }
 
   function getSelection(): SelectionInfo | null {
-    const view = editorView.value
-    if (!view) return null
-    const sel = view.state.selection.main
-    if (sel.empty) return null
-    return {
-      text: view.state.sliceDoc(sel.from, sel.to),
-      from: sel.from,
-      to: sel.to,
-    }
+    const adapter = editorAdapter.value
+    if (!adapter) return null
+    const text = adapter.getSelectedText()
+    if (!text) return null
+    const sel = adapter.getSelection()
+    const from = Math.min(sel.anchor, sel.head)
+    const to = Math.max(sel.anchor, sel.head)
+    return { text, from, to }
   }
 
   function applyEdit(content: string, isSelectionEdit: boolean, from?: number, to?: number): boolean {
-    const view = editorView.value
-    if (!view) return false
+    const adapter = editorAdapter.value
+    if (!adapter) return false
 
     if (isSelectionEdit && from !== undefined && to !== undefined) {
-      view.dispatch({
-        changes: { from, to, insert: content },
-        selection: { anchor: from + content.length },
-      })
+      adapter.replaceRange(
+        { from, to, insert: content },
+        { selection: { anchor: from + content.length } },
+      )
     } else {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: content },
-        selection: { anchor: content.length },
-      })
+      const fullContent = adapter.getContent()
+      adapter.replaceRange(
+        { from: 0, to: fullContent.length, insert: content },
+        { selection: { anchor: content.length } },
+      )
     }
     pendingEdit.value = null
     return true
   }
 
   function applyChanges(changes: ChangeBlock[]): number {
-    const view = editorView.value
-    if (!view) return 0
+    const adapter = editorAdapter.value
+    if (!adapter) return 0
 
-    let doc = view.state.doc.toString()
+    let doc = adapter.getContent()
     let applied = 0
 
     // Apply changes in reverse order by position to avoid index shifting
@@ -129,16 +129,16 @@ export function useAIEdit() {
 
     if (applied === 0) return 0
 
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: doc },
-      selection: { anchor: doc.length },
-    })
+    adapter.replaceRange(
+      { from: 0, to: adapter.getContent().length, insert: doc },
+      { selection: { anchor: doc.length } },
+    )
     return applied
   }
 
   function applySearchReplace(content: string): number {
-    const view = editorView.value
-    if (!view) return 0
+    const adapter = editorAdapter.value
+    if (!adapter) return 0
 
     const blocks = parseSearchReplaceBlocks(content)
     if (blocks.length === 0) return 0

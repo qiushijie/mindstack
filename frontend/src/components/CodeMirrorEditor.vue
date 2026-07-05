@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, inject, onMounted, onUnmounted, nextTick, type Ref } from 'vue'
+import { ref, inject, onMounted, onUnmounted, nextTick, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessageSquare } from 'lucide-vue-next'
 import { syntaxTree } from '@codemirror/language'
@@ -13,6 +13,7 @@ import { setSelectedHeadingLine, currentHeadings } from '../composables/useHeadi
 import { BlockType, getBlockTypeAtLine, isFullBlockSelection, blockTypeToLabel } from '../utils/syntaxUtils'
 import { getBlockConfigByToolbarLabel } from '../utils/blockRegistry'
 import { useFileTree } from '../composables/useFileTree'
+import { useEditorState } from '../composables/useEditorState'
 import { currentFilePathField } from '../extensions/currentFilePath'
 import { getTableCellFromEvent } from '../extensions/tableWidget'
 import { parseTable, addRowBelow, addRowAbove, deleteRow, addColumnLeft, addColumnRight, deleteColumn, type TableData } from '../utils/tableUtils'
@@ -33,7 +34,8 @@ const toolbarState = ref({
 })
 const activeLabels = ref<Set<string>>(new Set())
 
-const { markDirty, selectedFileContent, clearEditorAdapter } = useFileTree()
+const { markDirty, selectedFileContent, clearEditorAdapter, setEditorAdapter } = useFileTree()
+const { editorAdapter } = useEditorState()
 
 function findNearestHeadingLine(cursorLine: number): number {
   const headings = currentHeadings.value
@@ -78,10 +80,8 @@ const { view, focus, setContent } = useCodeMirror({
   onTransaction: () => { if (searchVisible.value) searchRecalcKey.value++ },
 })
 
-const { setEditorAdapter } = useFileTree()
-setEditorAdapter({
-  setContent: (content: string) => setContent(content),
-  getContent: () => view.value?.state.doc.toString() ?? '',
+watch(editorAdapter, (adapter) => {
+  if (adapter) setEditorAdapter(adapter)
 })
 
 function detectActiveLabels(): Set<string> {

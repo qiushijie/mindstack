@@ -6,7 +6,7 @@ import { useNavigation } from '../composables/useNavigation'
 import { useSettings } from '../composables/useSettings'
 
 const { t } = useI18n()
-const { editorView } = useEditorState()
+const { editorAdapter } = useEditorState()
 const { currentPage } = useNavigation()
 const { rawMode } = useSettings()
 
@@ -16,34 +16,21 @@ const words = ref(0)
 const chars = ref(0)
 
 function updateCursor() {
-  const v = editorView.value
-  if (!v) return
+  const adapter = editorAdapter.value
+  if (!adapter) return
 
-  const pos = v.state.selection.main.head
-  const lineInfo = v.state.doc.lineAt(pos)
-  line.value = lineInfo.number
-  col.value = pos - lineInfo.from + 1
+  const pos = adapter.getCursorPosition()
+  line.value = pos.line
+  col.value = pos.column
 }
 
 function updateWordCount() {
-  const v = editorView.value
-  if (!v) return
+  const adapter = editorAdapter.value
+  if (!adapter) return
 
-  chars.value = v.state.doc.length
-  const text = v.state.doc.toString()
-  let count = 0
-  let inWord = false
-  for (let i = 0; i < text.length; i++) {
-    const ch = text.charCodeAt(i)
-    const isSpace = ch === 32 || ch === 9 || ch === 10 || ch === 13 || ch === 12
-    if (!isSpace && !inWord) {
-      count++
-      inWord = true
-    } else if (isSpace) {
-      inWord = false
-    }
-  }
-  words.value = count
+  const stats = adapter.getStats()
+  chars.value = stats.chars
+  words.value = stats.words
 }
 
 function onCursorEvent() {
@@ -55,29 +42,33 @@ function onInputEvent() {
   updateWordCount()
 }
 
-let currentView: { dom: HTMLElement } | null = null
+let currentDom: HTMLElement | null = null
 
-watch(editorView, (v, oldV) => {
-  if (oldV) {
-    oldV.dom.removeEventListener('input', onInputEvent)
-    oldV.dom.removeEventListener('keyup', onCursorEvent)
-    oldV.dom.removeEventListener('click', onCursorEvent)
+watch(editorAdapter, (adapter, oldAdapter) => {
+  if (oldAdapter) {
+    const dom = oldAdapter.getDOM()
+    if (dom) {
+      dom.removeEventListener('input', onInputEvent)
+      dom.removeEventListener('keyup', onCursorEvent)
+      dom.removeEventListener('click', onCursorEvent)
+    }
   }
-  currentView = v
-  if (v) {
+  const dom = adapter?.getDOM() ?? null
+  currentDom = dom
+  if (dom) {
     onInputEvent()
-    v.dom.addEventListener('input', onInputEvent)
-    v.dom.addEventListener('keyup', onCursorEvent)
-    v.dom.addEventListener('click', onCursorEvent)
+    dom.addEventListener('input', onInputEvent)
+    dom.addEventListener('keyup', onCursorEvent)
+    dom.addEventListener('click', onCursorEvent)
   }
 })
 
 onUnmounted(() => {
-  if (currentView) {
-    currentView.dom.removeEventListener('input', onInputEvent)
-    currentView.dom.removeEventListener('keyup', onCursorEvent)
-    currentView.dom.removeEventListener('click', onCursorEvent)
-    currentView = null
+  if (currentDom) {
+    currentDom.removeEventListener('input', onInputEvent)
+    currentDom.removeEventListener('keyup', onCursorEvent)
+    currentDom.removeEventListener('click', onCursorEvent)
+    currentDom = null
   }
 })
 </script>

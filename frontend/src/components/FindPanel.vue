@@ -2,7 +2,6 @@
 import { ref, watch, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Search, ChevronUp, ChevronDown, X } from 'lucide-vue-next'
-import { setSearchQuery, getSearchQuery, findNext, findPrevious, SearchQuery } from '@codemirror/search'
 import { useEditorState } from '../composables/useEditorState'
 
 const props = defineProps<{
@@ -15,47 +14,29 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { editorView } = useEditorState()
+const { editorAdapter } = useEditorState()
 const searchTerm = ref('')
 const matchCurrent = ref(0)
 const matchTotal = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 
 function updateMatchInfo() {
-  const view = editorView.value
-  if (!view) {
+  const adapter = editorAdapter.value
+  if (!adapter) {
     matchCurrent.value = 0
     matchTotal.value = 0
     return
   }
 
-  const query = getSearchQuery(view.state)
-  if (!query?.search) {
+  const info = adapter.getSearchMatchInfo()
+  if (!info) {
     matchCurrent.value = 0
     matchTotal.value = 0
     return
   }
 
-  const cursor = view.state.selection.main.head
-  const matches: { from: number }[] = []
-  const iter = query.getCursor(view.state.doc)
-  while (true) {
-    const result = iter.next()
-    if (result.done) break
-    matches.push({ from: result.value.from })
-  }
-
-  matchTotal.value = matches.length
-  if (matchTotal.value === 0) {
-    matchCurrent.value = 0
-    return
-  }
-
-  let current = 1
-  for (let i = 0; i < matches.length; i++) {
-    if (matches[i].from <= cursor) current = i + 1
-  }
-  matchCurrent.value = current
+  matchCurrent.value = info.current
+  matchTotal.value = info.total
 }
 
 // Recalculate when recalcKey changes (fires on CM6 transactions)
@@ -71,26 +52,24 @@ function onInput(e: Event) {
 
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
-    const view = editorView.value
-    if (!view) return
-    view.dispatch({
-      effects: setSearchQuery.of(new SearchQuery({ search: value, caseSensitive: false })),
-    })
+    const adapter = editorAdapter.value
+    if (!adapter) return
+    adapter.setSearchQuery({ search: value, caseSensitive: false })
     requestAnimationFrame(updateMatchInfo)
   }, 80)
 }
 
 function goPrev() {
-  const view = editorView.value
-  if (!view) return
-  findPrevious(view)
+  const adapter = editorAdapter.value
+  if (!adapter) return
+  adapter.findPrevious()
   nextTick(updateMatchInfo)
 }
 
 function goNext() {
-  const view = editorView.value
-  if (!view) return
-  findNext(view)
+  const adapter = editorAdapter.value
+  if (!adapter) return
+  adapter.findNext()
   nextTick(updateMatchInfo)
 }
 
@@ -108,12 +87,12 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function close() {
-  const view = editorView.value
-  if (view) {
-    view.dispatch({
-      effects: setSearchQuery.of(new SearchQuery({ search: '' })),
-    })
-    view.focus()
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = null
+  const adapter = editorAdapter.value
+  if (adapter) {
+    adapter.clearSearchQuery()
+    adapter.focus()
   }
   searchTerm.value = ''
   matchCurrent.value = 0
