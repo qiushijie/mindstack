@@ -129,7 +129,7 @@ export function findTableCell(
   return { table, rowIdx: -1, colIdx: -1 }
 }
 
-function buildTableMarkdown(headers: string[], rows: string[][]): string {
+export function buildTableMarkdown(headers: string[], rows: string[][]): string {
   const colCount = headers.length
   const lines: string[] = []
 
@@ -149,100 +149,4 @@ function buildTableMarkdown(headers: string[], rows: string[][]): string {
   }
 
   return lines.join('\n')
-}
-
-export function addRowBelow(view: EditorView, tableData: TableData, rowIdx: number): boolean {
-  const { headers, rows, tableFrom, tableTo, colCount } = tableData
-  const emptyRow = Array(colCount).fill('') as string[]
-  const newRows = rows.map(r => r.map(c => c.content))
-  const insertIdx = rowIdx === -1 ? 0 : rowIdx + 1
-  newRows.splice(insertIdx, 0, emptyRow)
-
-  const newMarkdown = buildTableMarkdown(headers.map(h => h.content), newRows)
-  view.dispatch({
-    changes: { from: tableFrom, to: tableTo, insert: newMarkdown },
-  })
-  return true
-}
-
-export function addRowAbove(view: EditorView, tableData: TableData, rowIdx: number): boolean {
-  const { headers, rows, tableFrom, tableTo, colCount } = tableData
-  const emptyRow = Array(colCount).fill('') as string[]
-  const newRows = rows.map(r => r.map(c => c.content))
-  const insertIdx = rowIdx === -1 ? 0 : rowIdx
-  newRows.splice(insertIdx, 0, emptyRow)
-
-  const newMarkdown = buildTableMarkdown(headers.map(h => h.content), newRows)
-  view.dispatch({
-    changes: { from: tableFrom, to: tableTo, insert: newMarkdown },
-  })
-  return true
-}
-
-export function deleteRow(view: EditorView, tableData: TableData, rowIdx: number): boolean {
-  if (rowIdx < 0 || rowIdx >= tableData.rows.length) return false
-  const { headers, rows, tableFrom, tableTo } = tableData
-  const newRows = rows.filter((_, i) => i !== rowIdx).map(r => r.map(c => c.content))
-
-  const newMarkdown = buildTableMarkdown(headers.map(h => h.content), newRows)
-  view.dispatch({
-    changes: { from: tableFrom, to: tableTo, insert: newMarkdown },
-  })
-  return true
-}
-
-export function addColumnLeft(view: EditorView, tableData: TableData, _rowIdx: number, colIdx: number): boolean {
-  const { headers, rows, tableFrom, tableTo } = tableData
-  const newHeaders = headers.map(h => h.content)
-  newHeaders.splice(colIdx, 0, '')
-
-  const newRows = rows.map(row => {
-    const newRow = row.map(c => c.content)
-    newRow.splice(colIdx, 0, '')
-    return newRow
-  })
-
-  const newMarkdown = buildTableMarkdown(newHeaders, newRows)
-  view.dispatch({
-    changes: { from: tableFrom, to: tableTo, insert: newMarkdown },
-  })
-  return true
-}
-
-export function addColumnRight(view: EditorView, tableData: TableData, _rowIdx: number, colIdx: number): boolean {
-  const { headers, rows, tableFrom, tableTo } = tableData
-  const newHeaders = headers.map((h, _i) => h.content)
-  newHeaders.splice(colIdx + 1, 0, '')
-
-  const newRows = rows.map(row => {
-    const newRow = row.map(c => c.content)
-    newRow.splice(colIdx + 1, 0, '')
-    return newRow
-  })
-
-  const newMarkdown = buildTableMarkdown(newHeaders, newRows)
-  view.dispatch({
-    changes: { from: tableFrom, to: tableTo, insert: newMarkdown },
-  })
-  return true
-}
-
-export function deleteColumn(view: EditorView, tableData: TableData, _rowIdx: number, colIdx: number): boolean {
-  const { headers, rows, tableFrom, tableTo, colCount } = tableData
-  if (colCount <= 1) return false
-
-  const newHeaders = headers.map(h => h.content)
-  newHeaders.splice(colIdx, 1)
-
-  const newRows = rows.map(row => {
-    const newRow = row.map(c => c.content)
-    newRow.splice(colIdx, 1)
-    return newRow
-  })
-
-  const newMarkdown = buildTableMarkdown(newHeaders, newRows)
-  view.dispatch({
-    changes: { from: tableFrom, to: tableTo, insert: newMarkdown },
-  })
-  return true
 }

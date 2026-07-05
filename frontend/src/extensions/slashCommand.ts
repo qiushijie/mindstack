@@ -3,6 +3,9 @@ import { StateEffect } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
 import { BLOCK_REGISTRY, type BlockConfig } from '../utils/blockRegistry'
 import { t } from '../i18n'
+import { createCommandRunner } from '../editor/commands/createCommandRunner'
+import { applySlashItemCommand } from '../editor/commands/block/ApplySlashItemCommand'
+import { removeSlashTextCommand } from '../editor/commands/block/RemoveSlashTextCommand'
 
 // StateEffect to track the currently selected index in the slash menu
 const setSelectedIndex = StateEffect.define<number>({})
@@ -189,28 +192,21 @@ function getFilteredItems(filter: string): SlashMenuItem[] {
 }
 
 function applyItem(view: EditorView, item: SlashMenuItem, slashFrom: number) {
-  const line = view.state.doc.lineAt(slashFrom)
-  const slashOffset = slashFrom - line.from
-  const before = line.text.slice(0, slashOffset) // leading whitespace before /
-  const prefixLen = item.prefix.length
   const translated = getTranslatedItem(item)
-  const insertText = before + item.prefix + translated.example
-  const cursorPos = line.from + before.length + prefixLen
-  view.dispatch({
-    changes: { from: line.from, to: line.from + line.text.length, insert: insertText },
-    selection: { anchor: cursorPos, head: cursorPos },
+  const runner = createCommandRunner(view)
+  runner.run(applySlashItemCommand, {
+    slashFrom,
+    prefix: item.prefix,
+    example: translated.example,
   })
-  view.focus()
   const plugin = view.plugin(slashCommand)
   if (plugin) plugin.activeSlashFrom = -1
 }
 
 function removeSlashText(view: EditorView, plugin: { activeSlashFrom: number }) {
-  const pos = view.state.selection.main.head
-  view.dispatch({
-    changes: { from: plugin.activeSlashFrom, to: pos, insert: '' },
-    selection: { anchor: plugin.activeSlashFrom },
-  })
+  const from = plugin.activeSlashFrom
+  const to = view.state.selection.main.head
+  createCommandRunner(view).run(removeSlashTextCommand, { from, to })
 }
 
 const slashDismissHandler = EditorView.domEventHandlers({

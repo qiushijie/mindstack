@@ -3,6 +3,8 @@ import { RangeSet, StateField, StateEffect, type Range, type RangeValue, type Ex
 import { syntaxTree } from '@codemirror/language'
 import { BLOCK_NODE_NAMES } from '../utils/syntaxUtils'
 import { t } from '../i18n'
+import { createCommandRunner } from '../editor/commands/createCommandRunner'
+import { insertBlockCommand } from '../editor/commands/block/InsertBlockCommand'
 import { getBlockRanges, findBlockAtPos, startDrag, isDragging, isInDragCooldown } from './dragSort'
 
 // --- Plus button menu items (matches design in ui/desktop.pen, node zHLIh) ---
@@ -40,16 +42,7 @@ function lucideIcon(name: string): string {
 }
 
 function insertBlock(view: EditorView, lineFrom: number, prefix: string, example: string) {
-  const doc = view.state.doc
-  const line = doc.lineAt(lineFrom)
-  const insertPos = line.to
-  const prefixPart = '\n\n' + prefix
-  const insertText = prefixPart + example
-  view.dispatch({
-    changes: { from: insertPos, to: insertPos, insert: insertText },
-    selection: { anchor: prefixPart.length + insertPos, head: insertText.length + insertPos },
-  })
-  view.focus()
+  createCommandRunner(view).run(insertBlockCommand, { lineFrom, prefix, example })
 }
 
 const PLUS_MENU_GROUPS: PlusMenuGroup[] = [

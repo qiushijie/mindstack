@@ -1,8 +1,10 @@
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view'
 import { Range } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
-import { toggleCheckbox } from '../utils/markdownUtils'
 import { currentFilePathField, resolveImageUrl } from './currentFilePath'
+import { createCommandRunner } from '../editor/commands/createCommandRunner'
+import { toggleCheckboxCommand } from '../editor/commands/block/ToggleCheckboxCommand'
+import { changeCodeLanguageCommand } from '../editor/commands/block/ChangeCodeLanguageCommand'
 
 // --- Widgets ---
 
@@ -48,28 +50,7 @@ const CODE_LANGUAGES = [
 ]
 
 function changeLanguage(view: EditorView, nodeFrom: number, newLang: string) {
-  const tree = syntaxTree(view.state)
-  const doc = view.state.doc
-
-  tree.iterate({
-    enter(node) {
-      if (node.name !== 'FencedCode' || node.from !== nodeFrom) return
-      const langNode = node.node.getChild('CodeInfo')
-      if (langNode) {
-        view.dispatch({
-          changes: { from: langNode.from, to: langNode.to, insert: newLang },
-        })
-      } else {
-        // No language tag yet, insert after opening backticks
-        const codeMark = node.node.getChild('CodeMark')
-        if (codeMark) {
-          view.dispatch({
-            changes: { from: codeMark.to, to: codeMark.to, insert: ' ' + newLang },
-          })
-        }
-      }
-    },
-  })
+  createCommandRunner(view).run(changeCodeLanguageCommand, { nodeFrom, newLang })
 }
 
 class CodeHeaderWidget extends WidgetType {
@@ -553,7 +534,7 @@ export const checkboxClickHandler = EditorView.domEventHandlers({
   click(e, view) {
     const target = e.target as Element
     if (target.closest('.cm-todo-check')) {
-      toggleCheckbox(view)
+      createCommandRunner(view).run(toggleCheckboxCommand)
       return true
     }
     return false

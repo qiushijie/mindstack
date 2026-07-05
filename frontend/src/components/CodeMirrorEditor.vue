@@ -8,7 +8,6 @@ import SelectionToolbar from './SelectionToolbar.vue'
 import ImageDialog from './ImageDialog.vue'
 import FindPanel from './FindPanel.vue'
 import { useSettings } from '../composables/useSettings'
-import { wrapInline, toggleBlockType, insertLink } from '../utils/markdownUtils'
 import { setSelectedHeadingLine, currentHeadings } from '../composables/useHeadingTree'
 import { BlockType, getBlockTypeAtLine, isFullBlockSelection, blockTypeToLabel } from '../utils/syntaxUtils'
 import { getBlockConfigByToolbarLabel } from '../utils/blockRegistry'
@@ -16,7 +15,17 @@ import { useFileTree } from '../composables/useFileTree'
 import { useEditorState } from '../composables/useEditorState'
 import { currentFilePathField } from '../extensions/currentFilePath'
 import { getTableCellFromEvent } from '../extensions/tableWidget'
-import { parseTable, addRowBelow, addRowAbove, deleteRow, addColumnLeft, addColumnRight, deleteColumn, type TableData } from '../utils/tableUtils'
+import { parseTable, type TableData } from '../utils/tableUtils'
+import { wrapInlineCommand } from '../editor/commands/inline/WrapInlineCommand'
+import { insertLinkCommand } from '../editor/commands/inline/InsertLinkCommand'
+import { toggleBlockTypeCommand } from '../editor/commands/block/ToggleBlockTypeCommand'
+import { insertImageCommand } from '../editor/commands/image/InsertImageCommand'
+import { addRowAboveCommand } from '../editor/commands/table/AddRowAboveCommand'
+import { addRowBelowCommand } from '../editor/commands/table/AddRowBelowCommand'
+import { deleteRowCommand } from '../editor/commands/table/DeleteRowCommand'
+import { addColumnLeftCommand } from '../editor/commands/table/AddColumnLeftCommand'
+import { addColumnRightCommand } from '../editor/commands/table/AddColumnRightCommand'
+import { deleteColumnCommand } from '../editor/commands/table/DeleteColumnCommand'
 
 const { t } = useI18n()
 const { rawMode } = useSettings()
@@ -35,7 +44,7 @@ const toolbarState = ref({
 const activeLabels = ref<Set<string>>(new Set())
 
 const { markDirty, selectedFileContent, clearEditorAdapter, setEditorAdapter } = useFileTree()
-const { editorAdapter } = useEditorState()
+const { editorAdapter, commandRunner } = useEditorState()
 
 function findNearestHeadingLine(cursorLine: number): number {
   const headings = currentHeadings.value
@@ -174,28 +183,37 @@ function showToolbar() {
 }
 
 function handleToolbarSelect(label: string) {
-  const v = view.value
-  if (!v) return
+  const runner = commandRunner.value
+  if (!runner) return
 
   toolbarState.value.visible = false
 
   switch (label) {
-    case 'Bold': wrapInline('**', '**')(v); break
-    case 'Italic': wrapInline('*', '*')(v); break
-    case 'Strikethrough': wrapInline('~~', '~~')(v); break
-    case 'Text': toggleBlockType('')(v); break
-    case 'Link': insertLink(v); break
+    case 'Bold':
+      runner.run(wrapInlineCommand, { before: '**', after: '**' })
+      break
+    case 'Italic':
+      runner.run(wrapInlineCommand, { before: '*', after: '*' })
+      break
+    case 'Strikethrough':
+      runner.run(wrapInlineCommand, { before: '~~', after: '~~' })
+      break
+    case 'Text':
+      runner.run(toggleBlockTypeCommand, { prefix: '' })
+      break
+    case 'Link':
+      runner.run(insertLinkCommand, { defaultText: t('editor.placeholder.link') })
+      break
     case 'AIRewrite': {
       showAIChat.value = true
       break
     }
     default: {
       const config = getBlockConfigByToolbarLabel(label)
-      if (config) toggleBlockType(config.prefix)(v)
+      if (config) runner.run(toggleBlockTypeCommand, { prefix: config.prefix })
       break
     }
   }
-  v.focus()
 }
 
 function handleCmPointerup() {
@@ -312,33 +330,54 @@ function handleContextAction(action: string) {
       location.reload()
       break
     case 'addRowAbove':
-      if (v && tableContext.value) {
-        addRowAbove(v, tableContext.value.tableData, tableContext.value.rowIdx)
+      if (tableContext.value) {
+        commandRunner.value?.run(addRowAboveCommand, {
+          tableData: tableContext.value.tableData,
+          rowIdx: tableContext.value.rowIdx,
+        })
       }
       break
     case 'addRowBelow':
-      if (v && tableContext.value) {
-        addRowBelow(v, tableContext.value.tableData, tableContext.value.rowIdx)
+      if (tableContext.value) {
+        commandRunner.value?.run(addRowBelowCommand, {
+          tableData: tableContext.value.tableData,
+          rowIdx: tableContext.value.rowIdx,
+        })
       }
       break
     case 'deleteRow':
-      if (v && tableContext.value) {
-        deleteRow(v, tableContext.value.tableData, tableContext.value.rowIdx)
+      if (tableContext.value) {
+        commandRunner.value?.run(deleteRowCommand, {
+          tableData: tableContext.value.tableData,
+          rowIdx: tableContext.value.rowIdx,
+        })
       }
       break
     case 'addColumnLeft':
-      if (v && tableContext.value) {
-        addColumnLeft(v, tableContext.value.tableData, tableContext.value.rowIdx, tableContext.value.colIdx)
+      if (tableContext.value) {
+        commandRunner.value?.run(addColumnLeftCommand, {
+          tableData: tableContext.value.tableData,
+          rowIdx: tableContext.value.rowIdx,
+          colIdx: tableContext.value.colIdx,
+        })
       }
       break
     case 'addColumnRight':
-      if (v && tableContext.value) {
-        addColumnRight(v, tableContext.value.tableData, tableContext.value.rowIdx, tableContext.value.colIdx)
+      if (tableContext.value) {
+        commandRunner.value?.run(addColumnRightCommand, {
+          tableData: tableContext.value.tableData,
+          rowIdx: tableContext.value.rowIdx,
+          colIdx: tableContext.value.colIdx,
+        })
       }
       break
     case 'deleteColumn':
-      if (v && tableContext.value) {
-        deleteColumn(v, tableContext.value.tableData, tableContext.value.rowIdx, tableContext.value.colIdx)
+      if (tableContext.value) {
+        commandRunner.value?.run(deleteColumnCommand, {
+          tableData: tableContext.value.tableData,
+          rowIdx: tableContext.value.rowIdx,
+          colIdx: tableContext.value.colIdx,
+        })
       }
       break
   }
@@ -378,29 +417,14 @@ function handleEditImage(e: Event) {
 
 function handleImageConfirm(payload: { url: string; alt: string; editingFrom?: number; editingTo?: number }) {
   imageDialogVisible.value = false
-  const v = view.value
-  if (!v) return
-
   const alt = payload.alt || t('imageDialog.altPlaceholder')
-
-  if (payload.editingFrom != null && payload.editingTo != null) {
-    // Edit mode: replace existing image markdown
-    const newText = `![${alt}](${payload.url})`
-    v.dispatch({
-      changes: { from: payload.editingFrom, to: payload.editingTo, insert: newText },
-      selection: { anchor: payload.editingFrom + newText.length },
-    })
-  } else {
-    // Insert mode: add new image after the line
-    const doc = v.state.doc
-    const line = doc.lineAt(imageInsertLineFrom)
-    const insertText = `\n\n![${alt}](${payload.url})`
-    v.dispatch({
-      changes: { from: line.to, to: line.to, insert: insertText },
-      selection: { anchor: line.to + insertText.length },
-    })
-  }
-  v.focus()
+  commandRunner.value?.run(insertImageCommand, {
+    url: payload.url,
+    alt,
+    lineFrom: imageInsertLineFrom,
+    editingFrom: payload.editingFrom,
+    editingTo: payload.editingTo,
+  })
 }
 
 function handleImageDialogClose() {

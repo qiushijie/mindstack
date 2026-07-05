@@ -1,9 +1,11 @@
 import { shallowRef, watch } from 'vue'
 import { EditorView } from '@codemirror/view'
 import type { EditorAdapter } from '../editor/EditorAdapter'
+import type { CommandRunner } from '../editor/commands/CommandRunner'
 
 const sharedEditorView = shallowRef<EditorView | null>(null)
 export const sharedEditorAdapter = shallowRef<EditorAdapter | null>(null)
+export const sharedCommandRunner = shallowRef<CommandRunner | null>(null)
 
 export function provideEditorState() {
   if (import.meta.env.DEV) {
@@ -15,11 +17,19 @@ export function provideEditorState() {
     })
   }
 
-  return { editorView: sharedEditorView, editorAdapter: sharedEditorAdapter }
+  return {
+    editorView: sharedEditorView,
+    editorAdapter: sharedEditorAdapter,
+    commandRunner: sharedCommandRunner,
+  }
 }
 
 export function useEditorState() {
-  return { editorView: sharedEditorView, editorAdapter: sharedEditorAdapter }
+  return {
+    editorView: sharedEditorView,
+    editorAdapter: sharedEditorAdapter,
+    commandRunner: sharedCommandRunner,
+  }
 }
 
 export function scrollToLine(lineNumber: number) {

@@ -1,6 +1,8 @@
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { Range, StateField, type Text } from '@codemirror/state'
+import { createCommandRunner } from '../editor/commands/createCommandRunner'
+import { editTableCellCommand } from '../editor/commands/table/EditTableCellCommand'
 
 // --- Table Widget ---
 
@@ -91,6 +93,8 @@ let activeInput: HTMLInputElement | null = null
 
 /* istanbul ignore next - DOM interaction, requires real browser */
 function startCellEdit(cell: HTMLElement, view: EditorView, clickEvent?: MouseEvent) {
+  const runner = createCommandRunner(view)
+
   // Commit any existing edit first
   if (activeInput) commitActiveInput()
 
@@ -160,21 +164,23 @@ function startCellEdit(cell: HTMLElement, view: EditorView, clickEvent?: MouseEv
         const rowTo = Number(input.dataset.rowTo)
         const colIdx = Number(input.dataset.cellCol)
         const totalCols = Number(input.dataset.totalCols)
-        let rowText = view.state.doc.sliceString(rowFrom, rowTo)
-        const hasNewline = rowText.endsWith('\n')
-        if (hasNewline) rowText = rowText.slice(0, -1)
-        let cols = rowText.split('|')
-        if (cols.length > 0 && cols[0].trim() === '') cols.shift()
-        if (cols.length > 0 && cols[cols.length - 1].trim() === '') cols.pop()
-        while (cols.length < totalCols) cols.push(' ')
-        cols[colIdx] = ' ' + newText + ' '
-        let newRowText = '|' + cols.join('|') + '|'
-        if (hasNewline) newRowText += '\n'
-        view.dispatch({ changes: { from: rowFrom, to: rowTo, insert: newRowText } })
+        runner.run(editTableCellCommand, {
+          type: 'row',
+          newText,
+          rowFrom,
+          rowTo,
+          colIdx,
+          totalCols,
+        })
       } else {
         const oldText = view.state.doc.sliceString(oldFrom, oldTo).trim()
         if (newText !== oldText) {
-          view.dispatch({ changes: { from: oldFrom, to: oldTo, insert: newText } })
+          runner.run(editTableCellCommand, {
+            type: 'cell',
+            newText,
+            cellFrom: oldFrom,
+            cellTo: oldTo,
+          })
         }
       }
     }

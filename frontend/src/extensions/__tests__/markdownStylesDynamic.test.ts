@@ -1,33 +1,42 @@
 import { describe, it, expect, afterEach } from 'vitest'
+import type { EditorView } from '@codemirror/view'
 import { markdownStyles } from '../markdownStyles'
-import { wrapInline, toggleBlockType } from '../../utils/markdownUtils'
+import { createCommandRunner } from '../../editor/commands/createCommandRunner'
+import { wrapInlineCommand } from '../../editor/commands/inline/WrapInlineCommand'
+import { toggleBlockTypeCommand } from '../../editor/commands/block/ToggleBlockTypeCommand'
 import { createView, getVisibleText } from '../../test-utils/helpers'
 
+const views: EditorView[] = []
+
 afterEach(() => {
+  views.forEach(v => v.destroy())
+  views.length = 0
   document.body.innerHTML = ''
 })
 
+function createTrackedView(doc: string, exts: Parameters<typeof createView>[1] = []) {
+  const view = createView(doc, exts)
+  views.push(view)
+  return view
+}
+
 describe('markdownStyles - dynamic updates', () => {
   it('hides ** after wrapInline bold', () => {
-    const view = createView('Hello World', [markdownStyles])
-    // Select "World"
+    const view = createTrackedView('Hello World', [markdownStyles])
     view.dispatch({ selection: { anchor: 6, head: 11 } })
-    // Apply bold
-    wrapInline('**', '**')(view)
+    createCommandRunner(view).run(wrapInlineCommand, { before: '**', after: '**' })
 
-    // Doc should now be "Hello **World**"
     expect(view.state.doc.toString()).toBe('Hello **World**')
 
-    // Visible text should NOT contain **
     const visible = getVisibleText(view, markdownStyles)
     expect(visible).toBe('Hello World')
     expect(visible).not.toContain('**')
   })
 
   it('hides * after wrapInline italic', () => {
-    const view = createView('Hello World', [markdownStyles])
+    const view = createTrackedView('Hello World', [markdownStyles])
     view.dispatch({ selection: { anchor: 6, head: 11 } })
-    wrapInline('*', '*')(view)
+    createCommandRunner(view).run(wrapInlineCommand, { before: '*', after: '*' })
 
     expect(view.state.doc.toString()).toBe('Hello *World*')
 
@@ -37,9 +46,9 @@ describe('markdownStyles - dynamic updates', () => {
   })
 
   it('hides ~~ after wrapInline strikethrough', () => {
-    const view = createView('Hello World', [markdownStyles])
+    const view = createTrackedView('Hello World', [markdownStyles])
     view.dispatch({ selection: { anchor: 6, head: 11 } })
-    wrapInline('~~', '~~')(view)
+    createCommandRunner(view).run(wrapInlineCommand, { before: '~~', after: '~~' })
 
     expect(view.state.doc.toString()).toBe('Hello ~~World~~')
 
@@ -49,9 +58,9 @@ describe('markdownStyles - dynamic updates', () => {
   })
 
   it('hides # after toggleBlockType heading', () => {
-    const view = createView('Hello World', [markdownStyles])
+    const view = createTrackedView('Hello World', [markdownStyles])
     view.dispatch({ selection: { anchor: 5 } })
-    toggleBlockType('# ')(view)
+    createCommandRunner(view).run(toggleBlockTypeCommand, { prefix: '# ' })
 
     expect(view.state.doc.toString()).toBe('# Hello World')
 
@@ -61,9 +70,9 @@ describe('markdownStyles - dynamic updates', () => {
   })
 
   it('hides - after toggleBlockType list', () => {
-    const view = createView('Item', [markdownStyles])
+    const view = createTrackedView('Item', [markdownStyles])
     view.dispatch({ selection: { anchor: 2 } })
-    toggleBlockType('- ')(view)
+    createCommandRunner(view).run(toggleBlockTypeCommand, { prefix: '- ' })
 
     expect(view.state.doc.toString()).toBe('- Item')
 
@@ -73,9 +82,9 @@ describe('markdownStyles - dynamic updates', () => {
   })
 
   it('hides > after toggleBlockType quote', () => {
-    const view = createView('Quote text', [markdownStyles])
+    const view = createTrackedView('Quote text', [markdownStyles])
     view.dispatch({ selection: { anchor: 5 } })
-    toggleBlockType('> ')(view)
+    createCommandRunner(view).run(toggleBlockTypeCommand, { prefix: '> ' })
 
     expect(view.state.doc.toString()).toBe('> Quote text')
 
@@ -85,10 +94,9 @@ describe('markdownStyles - dynamic updates', () => {
   })
 
   it('unwraps bold and hides nothing', () => {
-    const view = createView('Hello **World**', [markdownStyles])
-    // Select "World" (positions 8..13 in "Hello **World**")
+    const view = createTrackedView('Hello **World**', [markdownStyles])
     view.dispatch({ selection: { anchor: 8, head: 13 } })
-    wrapInline('**', '**')(view)
+    createCommandRunner(view).run(wrapInlineCommand, { before: '**', after: '**' })
 
     expect(view.state.doc.toString()).toBe('Hello World')
 
@@ -97,19 +105,17 @@ describe('markdownStyles - dynamic updates', () => {
   })
 
   it('hides marks after multiple sequential operations', () => {
-    const view = createView('Text', [markdownStyles])
+    const view = createTrackedView('Text', [markdownStyles])
     view.dispatch({ selection: { anchor: 2 } })
 
-    // Make it a heading
-    toggleBlockType('# ')(view)
+    createCommandRunner(view).run(toggleBlockTypeCommand, { prefix: '# ' })
     expect(view.state.doc.toString()).toBe('# Text')
 
     let visible = getVisibleText(view, markdownStyles)
     expect(visible).not.toContain('#')
 
-    // Make it a list
     view.dispatch({ selection: { anchor: 2 } })
-    toggleBlockType('- ')(view)
+    createCommandRunner(view).run(toggleBlockTypeCommand, { prefix: '- ' })
     expect(view.state.doc.toString()).toBe('- Text')
 
     visible = getVisibleText(view, markdownStyles)

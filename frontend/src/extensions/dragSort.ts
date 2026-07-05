@@ -3,7 +3,8 @@ import { syntaxTree } from '@codemirror/language'
 import { Range } from '@codemirror/state'
 import type { Extension } from '@codemirror/state'
 import { BLOCK_NODE_NAMES } from '../utils/syntaxUtils'
-import { moveLines } from '../utils/markdownUtils'
+import { createCommandRunner } from '../editor/commands/createCommandRunner'
+import { moveBlockCommand } from '../editor/commands/drag/MoveBlockCommand'
 
 class DropIndicatorWidget extends WidgetType {
   toDOM() {
@@ -129,59 +130,11 @@ export function simulateMouseUp() {
   dragView = null
 
   if (shouldMove && view && source) {
-    const doc = view.state.doc
-    const oldText = doc.toString()
-    const newText = moveLines(oldText, source.lineFrom, source.lineTo, target)
-
-    const oldLines = oldText.split('\n')
-    const newLines = newText.split('\n')
-
-    // Find first different line
-    let firstDiff = 0
-    while (firstDiff < oldLines.length && firstDiff < newLines.length && oldLines[firstDiff] === newLines[firstDiff]) firstDiff++
-
-    // Find last different line (from end)
-    let lastDiffOld = oldLines.length - 1
-    let lastDiffNew = newLines.length - 1
-    while (lastDiffOld >= 0 && lastDiffNew >= 0 && lastDiffOld > firstDiff && lastDiffNew > firstDiff && oldLines[lastDiffOld] === newLines[lastDiffNew]) {
-      lastDiffOld--
-      lastDiffNew--
-    }
-
-    if (firstDiff <= lastDiffOld || firstDiff <= lastDiffNew) {
-      // Compute from position (start of first changed line)
-      let fromPos = 0
-      for (let i = 0; i < firstDiff; i++) fromPos += oldLines[i].length + 1
-
-      // Compute to position (end of last old changed line)
-      let toPos = fromPos
-      for (let i = firstDiff; i <= lastDiffOld; i++) {
-        toPos += oldLines[i].length
-        if (i < lastDiffOld) toPos++
-      }
-
-      const insertText = newLines.slice(firstDiff, lastDiffNew + 1).join('\n')
-
-      // Compute anchor: cursor at start of moved block in new text
-      const count = source.lineTo - source.lineFrom + 1
-      let newBlockLine: number
-      if (target > source.lineTo) {
-        newBlockLine = target - count
-      } else {
-        newBlockLine = target - 1
-      }
-      newBlockLine = Math.max(0, Math.min(newBlockLine, newLines.length - 1))
-
-      let anchor = 0
-      for (let i = 0; i < newBlockLine; i++) {
-        anchor += newLines[i].length + 1
-      }
-
-      view.dispatch({
-        changes: { from: fromPos, to: toPos, insert: insertText },
-        selection: { anchor },
-      })
-    }
+    createCommandRunner(view).run(moveBlockCommand, {
+      sourceLineFrom: source.lineFrom,
+      sourceLineTo: source.lineTo,
+      targetLine: target,
+    })
   }
 }
 
