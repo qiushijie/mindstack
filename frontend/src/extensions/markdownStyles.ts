@@ -5,6 +5,9 @@ import { currentFilePathField, resolveImageUrl } from './currentFilePath'
 import { createCommandRunner } from '../editor/commands/createCommandRunner'
 import { toggleCheckboxCommand } from '../editor/commands/block/ToggleCheckboxCommand'
 import { changeCodeLanguageCommand } from '../editor/commands/block/ChangeCodeLanguageCommand'
+import { selectionIntersectsRange } from '../editor/widgets/widgetMode'
+import { addWidgetClickHandler, addWidgetMouseDownHandler } from '../editor/widgets/widgetEvents'
+import { trackDocumentListener } from '../editor/widgets/widgetCleanup'
 
 // --- Widgets ---
 
@@ -12,7 +15,7 @@ class BulletWidget extends WidgetType {
   toDOM() {
     const span = document.createElement('span')
     span.className = 'cm-bullet'
-    span.textContent = '\u2022'
+    span.textContent = '•'
     return span
   }
   ignoreEvent() { return false }
@@ -69,12 +72,16 @@ class CodeHeaderWidget extends WidgetType {
     span.style.userSelect = 'none'
 
     let dropdown: HTMLDivElement | null = null
+    let docListener: (() => void) | null = null
 
     const closeDropdown = () => {
       if (dropdown) {
         dropdown.remove()
         dropdown = null
-        document.removeEventListener('mousedown', onDocClick)
+      }
+      if (docListener) {
+        docListener()
+        docListener = null
       }
     }
 
@@ -85,10 +92,7 @@ class CodeHeaderWidget extends WidgetType {
       }
     }
 
-    const openDropdown = (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-
+    const openDropdown = () => {
       if (dropdown) {
         closeDropdown()
         return
@@ -115,14 +119,16 @@ class CodeHeaderWidget extends WidgetType {
       })
 
       div.appendChild(dd)
-      document.addEventListener('mousedown', onDocClick)
+      docListener = trackDocumentListener('mousedown', onDocClick as EventListener).dispose
     }
 
-    span.addEventListener('mousedown', (e) => e.stopPropagation())
-    span.addEventListener('click', openDropdown)
-    div.appendChild(span)
+    this.cleanup = combineCleanups(
+      closeDropdown,
+      addWidgetMouseDownHandler(span, () => {}),
+      addWidgetClickHandler(span, openDropdown),
+    )
 
-    this.cleanup = closeDropdown
+    div.appendChild(span)
     return div
   }
 
@@ -141,6 +147,8 @@ class CodeHeaderWidget extends WidgetType {
 class MermaidEditHeaderWidget extends WidgetType {
   constructor(readonly pos: number) { super() }
 
+  private cleanup: (() => void) | null = null
+
   toDOM(view: EditorView) {
     const div = document.createElement('div')
     div.className = 'cm-mermaid-edit-header'
@@ -158,11 +166,7 @@ class MermaidEditHeaderWidget extends WidgetType {
     div.appendChild(badge)
     div.appendChild(previewBtn)
 
-    // Click handler - move cursor out of block
-    const handlePreviewClick = (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-
+    const handlePreviewClick = () => {
       const tree = syntaxTree(view.state)
       const pos = this.pos
       let blockEnd = pos
@@ -179,17 +183,22 @@ class MermaidEditHeaderWidget extends WidgetType {
       view.focus()
     }
 
-    const handleMousedown = (e: MouseEvent) => {
-      e.stopPropagation()
-    }
-
-    previewBtn.addEventListener('mousedown', handleMousedown)
-    previewBtn.addEventListener('click', handlePreviewClick)
+    this.cleanup = combineCleanups(
+      addWidgetMouseDownHandler(div, () => {}),
+      addWidgetMouseDownHandler(previewBtn, () => {}),
+      addWidgetClickHandler(previewBtn, handlePreviewClick),
+    )
 
     return div
   }
 
   eq(other: MermaidEditHeaderWidget) { return other.pos === this.pos }
+
+  destroy() {
+    this.cleanup?.()
+    this.cleanup = null
+  }
+
   ignoreEvent() { return false }
 }
 
@@ -204,6 +213,8 @@ class HrWidget extends WidgetType {
 
 class ImageWidget extends WidgetType {
   constructor(readonly url: string, readonly alt: string, readonly nodeFrom: number) { super() }
+
+  private cleanup: (() => void) | null = null
 
   toDOM() {
     const container = document.createElement('div')
@@ -235,10 +246,21 @@ class ImageWidget extends WidgetType {
       container.appendChild(caption)
     }
 
+    // Prevent CodeMirror from moving the text cursor into the hidden source
+    // when the user presses the preview widget. The actual edit action is
+    // handled by imageClickHandler on the editor view.
+    this.cleanup = addWidgetMouseDownHandler(container, () => {})
+
     return container
   }
 
-  eq(other: ImageWidget) { return other.url === this.url && other.alt === this.alt }
+  eq(other: ImageWidget) { return other.url === this.url && other.alt === this.alt && other.nodeFrom === this.nodeFrom }
+
+  destroy() {
+    this.cleanup?.()
+    this.cleanup = null
+  }
+
   ignoreEvent() { return false }
 }
 
@@ -247,6 +269,12 @@ class ImageWidget extends WidgetType {
 function extractAlt(text: string): string {
   const m = text.match(/^!\[([\s\S]*?)\]/)
   return m ? m[1] : ''
+}
+
+function combineCleanups(...cleanups: Array<(() => void) | null | undefined>): (() => void) {
+  return () => {
+    cleanups.forEach(c => c?.())
+  }
 }
 
 // --- Shared decorations ---
@@ -261,21 +289,27 @@ const hide = Decoration.replace({})
 
 const bulletDec = Decoration.widget({ widget: new BulletWidget() })
 
-// --- Plugin ---
+function getViewportLines(doc: typeof EditorView.prototype.state.doc, vpFrom: number, vpTo: number) {
+  const vpStartLine = doc.lineAt(vpFrom)
+  const vpEndLine = doc.lineAt(Math.min(vpTo, doc.length))
+  return { vpStartLine, vpEndLine }
+}
 
-export const markdownStyles = ViewPlugin.fromClass(class {
+// --- Static layer: only depends on doc/viewport ---
+
+export const markdownStaticStyles = ViewPlugin.fromClass(class {
   decorations: DecorationSet
   atomics: DecorationSet
 
   constructor(view: EditorView) {
-    const { deco, atomic } = build(view)
+    const { deco, atomic } = buildStatic(view)
     this.decorations = deco
     this.atomics = atomic
   }
 
   update(u: ViewUpdate) {
-    if (u.docChanged || u.viewportChanged || u.selectionSet) {
-      const { deco, atomic } = build(u.view)
+    if (u.docChanged || u.viewportChanged) {
+      const { deco, atomic } = buildStatic(u.view)
       this.decorations = deco
       this.atomics = atomic
     }
@@ -288,7 +322,7 @@ export const markdownStyles = ViewPlugin.fromClass(class {
   }),
 })
 
-function build(view: EditorView) {
+function buildStatic(view: EditorView) {
   const tree = syntaxTree(view.state)
   const doc = view.state.doc
 
@@ -308,7 +342,6 @@ function build(view: EditorView) {
     ranges.push(getLineDec(cls).range(lineStart))
   }
 
-  // Count ordered list item index
   function itemIndex(listItemFrom: number): number {
     const cursor = tree.cursorAt(listItemFrom, 1)
     cursor.parent() // up to ListItem
@@ -326,48 +359,17 @@ function build(view: EditorView) {
 
   const vpFrom = view.viewport.from
   const vpTo = view.viewport.to
-
-  // Expand viewport to include any block whose start falls within the viewport
-  // (block decorations apply from the node's start position)
-  const vpStartLine = doc.lineAt(vpFrom)
-  const vpEndLine = doc.lineAt(Math.min(vpTo, doc.length))
-
-  // Pre-scan: find Image nodes containing the cursor (editing state)
-  // Only strictly inside the node — cursor at boundaries shows the widget
-  const cursorPos = view.state.selection.main.head
-  const editingImageRanges: Array<{ from: number; to: number }> = []
-
-  for (const { from, to } of view.visibleRanges) {
-    tree.iterate({
-      enter(node) {
-        if (node.name === 'Image' && cursorPos > node.from && cursorPos < node.to) {
-          editingImageRanges.push({ from: node.from, to: node.to })
-        }
-      },
-      from,
-      to,
-    })
-  }
-
-  function isInEditingImage(from: number, to: number): boolean {
-    return editingImageRanges.some(r => from >= r.from && to <= r.to)
-  }
+  const { vpStartLine, vpEndLine } = getViewportLines(doc, vpFrom, vpTo)
 
   for (const { from, to } of view.visibleRanges) {
     tree.iterate({
       enter(node) {
         const t = node.name
 
-        // Skip nodes entirely after the visible range
         if (node.from > to) return
-        // Skip nodes entirely before the visible range (except blocks that span into it)
         if (node.to < from) return
 
-        // -- Block line decorations --
-        // nodeVisible: node start is in viewport (for single-line elements)
         const nodeVisible = node.from >= vpFrom && node.from < vpTo
-        // nodeOverlapsVp: node overlaps viewport (for multi-line blocks that
-        // may start above the viewport but extend into it)
         const nodeOverlapsVp = node.from < vpTo && node.to > vpFrom
 
         if (nodeVisible && /^ATXHeading\d$/.test(t)) {
@@ -389,34 +391,22 @@ function build(view: EditorView) {
           const langNode = node.node.getChild('CodeInfo')
           const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
           const isMermaid = lang === 'mermaid'
-          const isEditing = isMermaid && cursorPos >= node.from && cursorPos < node.to
 
-          if (isMermaid && !isEditing) {
-            // Preview mode: skip code block styling, mermaidWidget will render preview
-          } else {
+          // Mermaid preview styling is handled by the selection-sensitive layer.
+          // Here we only style regular code blocks.
+          if (!isMermaid) {
             const s = doc.lineAt(node.from).number
             const e = doc.lineAt(Math.min(node.to, doc.length)).number
             for (let ln = s; ln <= e; ln++) {
               const lineFrom = doc.line(ln).from
               if (lineFrom >= vpStartLine.from && lineFrom <= vpEndLine.to) {
-                if (isEditing) {
-                  addLine(lineFrom, 'cm-mermaid-block')
-                  if (ln === s) {
-                    addLine(lineFrom, 'cm-mermaid-first')
-                  } else if (ln === e) {
-                    addLine(lineFrom, 'cm-mermaid-last')
-                  } else {
-                    addLine(lineFrom, 'cm-mermaid-line')
-                  }
+                addLine(lineFrom, 'cm-code-block')
+                if (ln === s) {
+                  addLine(lineFrom, 'cm-code-first')
+                } else if (ln === e) {
+                  addLine(lineFrom, 'cm-code-last')
                 } else {
-                  addLine(lineFrom, 'cm-code-block')
-                  if (ln === s) {
-                    addLine(lineFrom, 'cm-code-first')
-                  } else if (ln === e) {
-                    addLine(lineFrom, 'cm-code-last')
-                  } else {
-                    addLine(lineFrom, 'cm-code-line')
-                  }
+                  addLine(lineFrom, 'cm-code-line')
                 }
               }
             }
@@ -426,9 +416,6 @@ function build(view: EditorView) {
         if (nodeVisible && t === 'ListItem') {
           addLine(node.from, 'cm-list-item')
         }
-
-        // -- Mark hiding --
-        // Inline marks are only relevant if they overlap the visible range
 
         if (t === 'HeaderMark') {
           const end = doc.sliceString(node.to, node.to + 1) === ' ' ? node.to + 1 : node.to
@@ -447,7 +434,6 @@ function build(view: EditorView) {
           addRange(node.from, end, hide)
           addAtomic(node.from, end)
 
-          // Widget: bullet or number
           const parent = node.node.parent // ListItem
           const grandparent = parent?.parent // BulletList or OrderedList
           if (grandparent?.name === 'OrderedList') {
@@ -463,9 +449,128 @@ function build(view: EditorView) {
           addAtomic(node.from, node.to)
         }
 
-        // -- Image handling --
+        if (t === 'TaskMarker') {
+          const text = doc.sliceString(node.from, node.to)
+          const checked = text.includes('x') || text.includes('X')
+          addRange(node.from, node.to, Decoration.replace({ widget: new CheckboxWidget(checked) }))
+          addAtomic(node.from, node.to)
+        }
+
+        if (t === 'CodeInfo') {
+          addRange(node.from, node.to, hide)
+          addAtomic(node.from, node.to)
+        }
+
+        // Regular code header widget (mermaid is selection-sensitive)
+        if (nodeVisible && t === 'FencedCode') {
+          const startLine = doc.lineAt(node.from)
+          const langNode = node.node.getChild('CodeInfo')
+          const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
+          if (lang !== 'mermaid') {
+            ranges.push(Decoration.widget({ widget: new CodeHeaderWidget(lang, node.from), side: 1 }).range(startLine.from))
+          }
+        }
+
+        if (t === 'HorizontalRule') {
+          addRange(node.from, node.to, Decoration.replace({ widget: new HrWidget() }))
+          addAtomic(node.from, node.to)
+        }
+      },
+      from,
+      to,
+    })
+  }
+
+  return {
+    deco: Decoration.set(ranges, true),
+    atomic: Decoration.set(atomRanges, true),
+  }
+}
+
+// --- Selection-sensitive layer ---
+
+export const markdownSelectionStyles = ViewPlugin.fromClass(class {
+  decorations: DecorationSet
+  atomics: DecorationSet
+
+  constructor(view: EditorView) {
+    const { deco, atomic } = buildSelection(view)
+    this.decorations = deco
+    this.atomics = atomic
+  }
+
+  update(u: ViewUpdate) {
+    if (u.docChanged || u.viewportChanged || u.selectionSet) {
+      const { deco, atomic } = buildSelection(u.view)
+      this.decorations = deco
+      this.atomics = atomic
+    }
+  }
+}, {
+  decorations: v => v.decorations,
+  provide: plugin => EditorView.atomicRanges.of(view => {
+    const instance = view.plugin(plugin)
+    return instance ? instance.atomics : Decoration.none
+  }),
+})
+
+function buildSelection(view: EditorView) {
+  const tree = syntaxTree(view.state)
+  const doc = view.state.doc
+  const selection = view.state.selection.main
+
+  const ranges: Range<Decoration>[] = []
+  const atomRanges: Range<Decoration>[] = []
+
+  function addRange(from: number, to: number, dec: Decoration) {
+    ranges.push(dec.range(from, to))
+  }
+
+  function addAtomic(from: number, to: number) {
+    atomRanges.push(hide.range(from, to))
+  }
+
+  function addLine(pos: number, cls: string) {
+    const lineStart = doc.lineAt(pos).from
+    ranges.push(getLineDec(cls).range(lineStart))
+  }
+
+  const vpFrom = view.viewport.from
+  const vpTo = view.viewport.to
+  const { vpStartLine, vpEndLine } = getViewportLines(doc, vpFrom, vpTo)
+
+  const editingImageRanges: Array<{ from: number; to: number }> = []
+
+  for (const { from, to } of view.visibleRanges) {
+    tree.iterate({
+      enter(node) {
+        if (node.name === 'Image' && selectionIntersectsRange(selection, node)) {
+          editingImageRanges.push({ from: node.from, to: node.to })
+        }
+      },
+      from,
+      to,
+    })
+  }
+
+  function isInEditingImage(from: number, to: number): boolean {
+    return editingImageRanges.some(r => from >= r.from && to <= r.to)
+  }
+
+  for (const { from, to } of view.visibleRanges) {
+    tree.iterate({
+      enter(node) {
+        const t = node.name
+
+        if (node.from > to) return
+        if (node.to < from) return
+
+        const nodeVisible = node.from >= vpFrom && node.from < vpTo
+        const nodeOverlapsVp = node.from < vpTo && node.to > vpFrom
+
         if (t === 'Image') {
-          if (!isInEditingImage(node.from, node.to)) {
+          const isEditing = selectionIntersectsRange(selection, node)
+          if (!isEditing) {
             const urlNode = node.node.getChild('URL')
             const rawUrl = urlNode ? doc.sliceString(urlNode.from, urlNode.to) : ''
             const alt = extractAlt(doc.sliceString(node.from, node.to))
@@ -486,37 +591,40 @@ function build(view: EditorView) {
           addAtomic(node.from, node.to)
         }
 
-        if (t === 'TaskMarker') {
-          const text = doc.sliceString(node.from, node.to)
-          const checked = text.includes('x') || text.includes('X')
-          addRange(node.from, node.to, Decoration.replace({ widget: new CheckboxWidget(checked) }))
-          addAtomic(node.from, node.to)
+        if (nodeOverlapsVp && t === 'FencedCode') {
+          const langNode = node.node.getChild('CodeInfo')
+          const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
+          const isMermaid = lang === 'mermaid'
+          if (isMermaid) {
+            const isEditing = selectionIntersectsRange(selection, node)
+            if (isEditing) {
+              const s = doc.lineAt(node.from).number
+              const e = doc.lineAt(Math.min(node.to, doc.length)).number
+              for (let ln = s; ln <= e; ln++) {
+                const lineFrom = doc.line(ln).from
+                if (lineFrom >= vpStartLine.from && lineFrom <= vpEndLine.to) {
+                  addLine(lineFrom, 'cm-mermaid-block')
+                  if (ln === s) {
+                    addLine(lineFrom, 'cm-mermaid-first')
+                  } else if (ln === e) {
+                    addLine(lineFrom, 'cm-mermaid-last')
+                  } else {
+                    addLine(lineFrom, 'cm-mermaid-line')
+                  }
+                }
+              }
+            }
+          }
         }
 
-        if (t === 'CodeInfo') {
-          addRange(node.from, node.to, hide)
-          addAtomic(node.from, node.to)
-        }
-
-        // FencedCode: code header widget
         if (nodeVisible && t === 'FencedCode') {
           const startLine = doc.lineAt(node.from)
           const langNode = node.node.getChild('CodeInfo')
           const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
           const isMermaid = lang === 'mermaid'
-          const isEditing = isMermaid && cursorPos >= node.from && cursorPos < node.to
-
-          if (isEditing) {
+          if (isMermaid && selectionIntersectsRange(selection, node)) {
             ranges.push(Decoration.widget({ widget: new MermaidEditHeaderWidget(node.from), side: 1 }).range(startLine.from))
-          } else if (!isMermaid) {
-            ranges.push(Decoration.widget({ widget: new CodeHeaderWidget(lang, node.from), side: 1 }).range(startLine.from))
           }
-          // If mermaid preview mode, skip header widget (mermaidWidget handles it)
-        }
-
-        if (t === 'HorizontalRule') {
-          addRange(node.from, node.to, Decoration.replace({ widget: new HrWidget() }))
-          addAtomic(node.from, node.to)
         }
       },
       from,
@@ -529,6 +637,12 @@ function build(view: EditorView) {
     atomic: Decoration.set(atomRanges, true),
   }
 }
+
+// --- Convenience export: both layers ---
+
+export const markdownStyles = [markdownStaticStyles, markdownSelectionStyles]
+
+// --- Event handlers ---
 
 export const checkboxClickHandler = EditorView.domEventHandlers({
   click(e, view) {
@@ -578,4 +692,3 @@ export const imageClickHandler = EditorView.domEventHandlers({
     return false
   },
 })
-

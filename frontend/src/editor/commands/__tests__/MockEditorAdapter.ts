@@ -12,7 +12,7 @@ export class MockEditorAdapter implements EditorAdapter {
   private _content: string
   private _selection: EditorSelection
   private _focusCount = 0
-  private _replaceRangeCalls: { change: EditorChange; options?: { selection?: EditorSelection } }[] = []
+  private _replaceRangeCalls: { change: EditorChange; options?: { selection?: EditorSelection; isolateHistory?: 'before' | 'after' } }[] = []
 
   constructor(content = '', selection: EditorSelection = { anchor: 0, head: 0 }) {
     this._content = content
@@ -50,9 +50,14 @@ export class MockEditorAdapter implements EditorAdapter {
     return this._content.slice(from, to)
   }
 
-  replaceRange(change: EditorChange, options?: { selection?: { anchor: number; head?: number } }): void {
-    const normalizedOptions = options?.selection
-      ? { selection: { anchor: options.selection.anchor, head: options.selection.head ?? options.selection.anchor } }
+  replaceRange(change: EditorChange, options?: { selection?: { anchor: number; head?: number }; isolateHistory?: 'before' | 'after' }): void {
+    const normalizedOptions = options
+      ? {
+          ...(options.selection
+            ? { selection: { anchor: options.selection.anchor, head: options.selection.head ?? options.selection.anchor } }
+            : {}),
+          ...(options.isolateHistory ? { isolateHistory: options.isolateHistory } : {}),
+        }
       : undefined
     this._replaceRangeCalls.push({ change: { ...change }, options: normalizedOptions })
     const from = this.clampPosition(change.from)
@@ -164,7 +169,7 @@ export class MockEditorAdapter implements EditorAdapter {
     return this._focusCount
   }
 
-  get replaceRangeCalls(): { change: EditorChange; options?: { selection?: EditorSelection } }[] {
+  get replaceRangeCalls(): { change: EditorChange; options?: { selection?: EditorSelection; isolateHistory?: 'before' | 'after' } }[] {
     return this._replaceRangeCalls
   }
 

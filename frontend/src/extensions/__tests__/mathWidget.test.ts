@@ -236,7 +236,7 @@ describe('MathWidget', () => {
 describe('mathPlugin', () => {
   it('creates decoration for inline math', () => {
     const view = createView('The $E=mc^2$ formula', [mathPlugin])
-    const deco = view.state.field(mathPlugin)
+    const deco = view.state.field(mathPlugin).decorations
 
     let count = 0
     deco.between(0, view.state.doc.length, () => { count++ })
@@ -247,7 +247,7 @@ describe('mathPlugin', () => {
   it('creates decoration for block math', () => {
     const doc = '$$\nE=mc^2\n$$'
     const view = createView(doc, [mathPlugin])
-    const deco = view.state.field(mathPlugin)
+    const deco = view.state.field(mathPlugin).decorations
 
     let count = 0
     deco.between(0, doc.length, () => { count++ })
@@ -261,7 +261,7 @@ describe('mathPlugin', () => {
     // Place selection inside the math range (from 4 to 13)
     view.dispatch({ selection: { anchor: 5, head: 8 } })
 
-    const deco = view.state.field(mathPlugin)
+    const deco = view.state.field(mathPlugin).decorations
     let count = 0
     deco.between(0, doc.length, () => { count++ })
     expect(count).toBe(0)
@@ -273,7 +273,7 @@ describe('mathPlugin', () => {
     const view = createView(doc, [mathPlugin])
     view.dispatch({ selection: { anchor: 2, head: 5 } })
 
-    const deco = view.state.field(mathPlugin)
+    const deco = view.state.field(mathPlugin).decorations
     let count = 0
     deco.between(0, doc.length, () => { count++ })
     expect(count).toBe(0)
@@ -286,7 +286,7 @@ describe('mathPlugin', () => {
     // Cursor inside first math
     view.dispatch({ selection: { anchor: 2, head: 2 } })
 
-    const deco = view.state.field(mathPlugin)
+    const deco = view.state.field(mathPlugin).decorations
     let count = 0
     deco.between(0, doc.length, () => { count++ })
     // First math overlaps, second math does not
@@ -296,7 +296,7 @@ describe('mathPlugin', () => {
 
   it('no decoration for text without math', () => {
     const view = createView('Hello world', [mathPlugin])
-    const deco = view.state.field(mathPlugin)
+    const deco = view.state.field(mathPlugin).decorations
     let count = 0
     deco.between(0, 11, () => { count++ })
     expect(count).toBe(0)
@@ -305,14 +305,14 @@ describe('mathPlugin', () => {
 
   it('updates decorations when document changes', () => {
     const view = createView('Hello', [mathPlugin])
-    let deco = view.state.field(mathPlugin)
+    let deco = view.state.field(mathPlugin).decorations
     let count1 = 0
     deco.between(0, 5, () => { count1++ })
     expect(count1).toBe(0)
 
     // Add math
     view.dispatch({ changes: { from: 5, to: 5, insert: ' $a$' } })
-    deco = view.state.field(mathPlugin)
+    deco = view.state.field(mathPlugin).decorations
     let count2 = 0
     deco.between(0, 9, () => { count2++ })
     expect(count2).toBe(1)
@@ -322,7 +322,7 @@ describe('mathPlugin', () => {
   it('decoration spec has block=true for block math', () => {
     const doc = '$$\na\n$$'
     const view = createView(doc, [mathPlugin])
-    const deco = view.state.field(mathPlugin)
+    const deco = view.state.field(mathPlugin).decorations
 
     let isBlock = false
     deco.between(0, doc.length, (_from, _to, dec) => {
@@ -335,7 +335,7 @@ describe('mathPlugin', () => {
   it('decoration spec has block=false for inline math', () => {
     const doc = '$a$'
     const view = createView(doc, [mathPlugin])
-    const deco = view.state.field(mathPlugin)
+    const deco = view.state.field(mathPlugin).decorations
 
     let isBlock = true
     deco.between(0, doc.length, (_from, _to, dec) => {
@@ -345,17 +345,28 @@ describe('mathPlugin', () => {
     view.destroy()
   })
 
-  it('widget pos matches math range start', () => {
-    const doc = 'The $x$'
+  it('does not rebuild decorations when selection moves outside math ranges', () => {
+    const doc = '$a$ text $b$'
     const view = createView(doc, [mathPlugin])
-    const deco = view.state.field(mathPlugin)
+    // Cursor at start (outside both math ranges)
+    view.dispatch({ selection: { anchor: 0 } })
 
-    let widgetPos: number | null = null
-    deco.between(0, doc.length, (from, _to, dec) => {
-      widgetPos = from
-      expect(dec.spec.widget.pos).toBe(from)
-    })
-    expect(widgetPos).toBe(4)
+    const state1 = view.state.field(mathPlugin)
+    const deco1 = state1.decorations
+    let count1 = 0
+    deco1.between(0, doc.length, () => { count1++ })
+    expect(count1).toBe(2)
+
+    // Move cursor but stay outside math
+    view.dispatch({ selection: { anchor: 7 } })
+
+    const state2 = view.state.field(mathPlugin)
+    const deco2 = state2.decorations
+    let count2 = 0
+    deco2.between(0, doc.length, () => { count2++ })
+    expect(count2).toBe(2)
+    expect(deco2).toBe(deco1)
+    expect(state2).toBe(state1)
     view.destroy()
   })
 })

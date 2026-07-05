@@ -6,6 +6,7 @@ import {
   findPrevious,
   SearchQuery,
 } from '@codemirror/search'
+import { isolateHistory } from '@codemirror/commands'
 import type {
   EditorAdapter,
   EditorSelection,
@@ -61,7 +62,7 @@ export class CodeMirrorAdapter implements EditorAdapter {
 
   replaceRange(
     change: EditorChange,
-    options?: { selection?: { anchor: number; head?: number } },
+    options?: { selection?: { anchor: number; head?: number }; isolateHistory?: 'before' | 'after' },
   ): void {
     const oldLength = this.view.state.doc.length
     const from = this.clampPosition(change.from)
@@ -76,6 +77,9 @@ export class CodeMirrorAdapter implements EditorAdapter {
               : this.clampPosition(options.selection.anchor, newLength),
         }
       : undefined
+    const annotations = options?.isolateHistory
+      ? [isolateHistory.of(options.isolateHistory)]
+      : undefined
     this.view.dispatch({
       changes: {
         from,
@@ -83,6 +87,7 @@ export class CodeMirrorAdapter implements EditorAdapter {
         insert: change.insert,
       },
       selection,
+      annotations,
     })
   }
 

@@ -14,21 +14,24 @@ export function createView(doc: string, exts: Extension[] = []): EditorView {
 
 export function getVisibleText(
   view: EditorView,
-  pluginRef: ViewPlugin<{ decorations: any }>,
+  pluginRef: ViewPlugin<{ decorations: any }> | ViewPlugin<{ decorations: any }>[],
 ): string {
-  const plugin = view.plugin(pluginRef)
-  if (!plugin) return view.state.doc.toString()
-
+  const plugins = Array.isArray(pluginRef) ? pluginRef : [pluginRef]
   const doc = view.state.doc.toString()
-  const deco = plugin.decorations
   const hidden: { from: number; to: number }[] = []
 
-  deco.between(0, doc.length, (from: number, to: number, dec: any) => {
-    const spec = dec.spec
-    if (from < to && spec.block !== true && spec.tagName === undefined) {
-      hidden.push({ from, to })
-    }
-  })
+  for (const ref of plugins) {
+    const plugin = view.plugin(ref)
+    if (!plugin) continue
+
+    const deco = plugin.decorations
+    deco.between(0, doc.length, (from: number, to: number, dec: any) => {
+      const spec = dec.spec
+      if (from < to && spec.block !== true && spec.tagName === undefined) {
+        hidden.push({ from, to })
+      }
+    })
+  }
 
   hidden.sort((a, b) => a.from - b.from)
   let result = ''

@@ -14,7 +14,10 @@ export const editTableCellCommand: EditorCommand<EditTableCellPayload> = {
       const { newText, cellFrom, cellTo } = payload
       const oldText = adapter.getContent().slice(cellFrom, cellTo).trim()
       if (newText !== oldText) {
-        adapter.replaceRange({ from: cellFrom, to: cellTo, insert: newText })
+        adapter.replaceRange(
+          { from: cellFrom, to: cellTo, insert: newText },
+          { isolateHistory: 'before' },
+        )
       }
       adapter.focus()
       return { success: true }
@@ -34,7 +37,10 @@ export const editTableCellCommand: EditorCommand<EditTableCellPayload> = {
     let newRowText = '|' + cols.join('|') + '|'
     if (hasNewline) newRowText += '\n'
 
-    adapter.replaceRange({ from: rowFrom, to: rowTo, insert: newRowText })
+    adapter.replaceRange(
+      { from: rowFrom, to: rowTo, insert: newRowText },
+      { isolateHistory: 'before' },
+    )
     adapter.focus()
     return { success: true }
   },

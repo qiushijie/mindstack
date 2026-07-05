@@ -1,8 +1,13 @@
-import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
+import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { Range, StateField, type Text } from '@codemirror/state'
 import { createCommandRunner } from '../editor/commands/createCommandRunner'
 import { editTableCellCommand } from '../editor/commands/table/EditTableCellCommand'
+import { selectionIntersectsRange } from '../editor/widgets/widgetMode'
+import { addWidgetMouseDownHandler } from '../editor/widgets/widgetEvents'
+import { combineCleanup, trackListener } from '../editor/widgets/widgetCleanup'
+
+const EMPTY_CELL_TEXT = ' '
 
 // --- Table Widget ---
 
@@ -15,6 +20,8 @@ export class TableWidget extends WidgetType {
     readonly tableFrom: number,
   ) { super() }
 
+  private cleanup: (() => void) | null = null
+
   toDOM() {
     const table = document.createElement('table')
     table.className = 'cm-table-widget'
@@ -25,7 +32,7 @@ export class TableWidget extends WidgetType {
     const headerRow = document.createElement('tr')
     for (let c = 0; c < this.headers.length; c++) {
       const th = document.createElement('th')
-      th.textContent = this.headers[c] || '\u00A0'
+      th.textContent = this.headers[c] || EMPTY_CELL_TEXT
       th.dataset.col = String(c)
       th.dataset.row = '-1'
       if (this.cellPositions[0]?.[c]) {
@@ -47,7 +54,7 @@ export class TableWidget extends WidgetType {
       const tr = document.createElement('tr')
       for (let c = 0; c < this.rows[r].length; c++) {
         const td = document.createElement('td')
-        td.textContent = this.rows[r][c] || '\u00A0'
+        td.textContent = this.rows[r][c] || EMPTY_CELL_TEXT
         td.dataset.row = String(r)
         td.dataset.col = String(c)
         if (this.cellPositions[r + 1]?.[c]) {
@@ -64,12 +71,18 @@ export class TableWidget extends WidgetType {
     }
     table.appendChild(tbody)
 
+    // Prevent CodeMirror from moving the text cursor into the table source
+    // while the user interacts with the preview widget.
+    this.cleanup = addWidgetMouseDownHandler(table, () => {})
+
     return table
   }
 
   eq(other: TableWidget) {
     if (other.headers.length !== this.headers.length) return false
     if (other.rows.length !== this.rows.length) return false
+    if (other.tableFrom !== this.tableFrom) return false
+    if (other.rowRanges.length !== this.rowRanges.length) return false
     for (let i = 0; i < this.headers.length; i++) {
       if (other.headers[i] !== this.headers[i]) return false
     }
@@ -79,158 +92,178 @@ export class TableWidget extends WidgetType {
         if (other.rows[r][c] !== this.rows[r][c]) return false
       }
     }
+    for (let r = 0; r < this.cellPositions.length; r++) {
+      const otherRow = other.cellPositions[r]
+      const thisRow = this.cellPositions[r]
+      if (!otherRow || otherRow.length !== thisRow.length) return false
+      for (let c = 0; c < thisRow.length; c++) {
+        if (otherRow[c].from !== thisRow[c].from || otherRow[c].to !== thisRow[c].to) return false
+      }
+    }
+    for (let r = 0; r < this.rowRanges.length; r++) {
+      if (other.rowRanges[r].from !== this.rowRanges[r].from || other.rowRanges[r].to !== this.rowRanges[r].to) return false
+    }
     return true
+  }
+
+  destroy() {
+    this.cleanup?.()
+    this.cleanup = null
   }
 
   ignoreEvent() { return false }
 }
 
-// --- Floating cell editor ---
-// CodeMirror controls focus on cm-content, so contentEditable in widgets
-// doesn't work. Instead, we show a floating <input> on double-click.
+// --- Floating cell editor lifecycle ---
 
-let activeInput: HTMLInputElement | null = null
+interface ActiveCellEdit {
+  input: HTMLInputElement
+  finish: (save: boolean) => void
+}
 
-/* istanbul ignore next - DOM interaction, requires real browser */
-function startCellEdit(cell: HTMLElement, view: EditorView, clickEvent?: MouseEvent) {
-  const runner = createCommandRunner(view)
+class CellEditController {
+  private active: ActiveCellEdit | null = null
 
-  // Commit any existing edit first
-  if (activeInput) commitActiveInput()
+  start(view: EditorView, cell: HTMLElement, clickEvent?: MouseEvent) {
+    const runner = createCommandRunner(view)
 
-  const from = Number(cell.dataset.from)
-  const to = Number(cell.dataset.to)
-  if (from === 0 && to === 0) return
+    // Commit any existing edit first
+    if (this.active) this.active.finish(true)
 
-  const rect = cell.getBoundingClientRect()
+    const from = Number(cell.dataset.from)
+    const to = Number(cell.dataset.to)
+    if (from === 0 && to === 0) return
 
-  const cs = getComputedStyle(cell)
-  const input = document.createElement('input')
-  input.type = 'text'
-  input.className = 'cm-table-cell-input'
-  input.value = (cell.textContent === '\u00A0' ? '' : cell.textContent) ?? ''
-  input.style.position = 'fixed'
-  input.style.left = rect.left + 'px'
-  input.style.top = rect.top + 'px'
-  input.style.width = rect.width + 'px'
-  input.style.height = rect.height + 'px'
-  input.style.padding = cs.padding
-  input.style.fontSize = cs.fontSize
-  input.style.fontFamily = cs.fontFamily
-  input.style.lineHeight = cs.lineHeight
-  input.style.border = 'none'
-  input.style.outline = 'none'
-  input.style.boxShadow = 'none'
-  input.style.backgroundColor = 'var(--surface-secondary)'
-  input.style.boxSizing = 'border-box'
-  input.style.margin = '0'
+    const rect = cell.getBoundingClientRect()
+    const cs = getComputedStyle(cell)
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'cm-table-cell-input'
+    input.value = (cell.textContent === EMPTY_CELL_TEXT ? '' : cell.textContent) ?? ''
+    input.style.position = 'fixed'
+    input.style.left = rect.left + 'px'
+    input.style.top = rect.top + 'px'
+    input.style.width = rect.width + 'px'
+    input.style.height = rect.height + 'px'
+    input.style.padding = cs.padding
+    input.style.fontSize = cs.fontSize
+    input.style.fontFamily = cs.fontFamily
+    input.style.lineHeight = cs.lineHeight
+    input.style.border = 'none'
+    input.style.outline = 'none'
+    input.style.boxShadow = 'none'
+    input.style.backgroundColor = 'var(--surface-secondary)'
+    input.style.boxSizing = 'border-box'
+    input.style.margin = '0'
 
-  input.dataset.from = String(from)
-  input.dataset.to = String(to)
-  input.dataset.cellRow = cell.dataset.row ?? ''
-  input.dataset.cellCol = cell.dataset.col ?? ''
-  input.dataset.rowFrom = cell.dataset.rowFrom ?? ''
-  input.dataset.rowTo = cell.dataset.rowTo ?? ''
-  input.dataset.totalCols = String(cell.closest('table')?.querySelectorAll('thead th').length ?? 0)
+    input.dataset.from = String(from)
+    input.dataset.to = String(to)
+    input.dataset.cellRow = cell.dataset.row ?? ''
+    input.dataset.cellCol = cell.dataset.col ?? ''
+    input.dataset.rowFrom = cell.dataset.rowFrom ?? ''
+    input.dataset.rowTo = cell.dataset.rowTo ?? ''
+    input.dataset.totalCols = String(cell.closest('table')?.querySelectorAll('thead th').length ?? 0)
 
-  document.body.appendChild(input)
-  input.focus()
-  if (clickEvent) {
-    const inputRect = input.getBoundingClientRect()
-    const text = input.value
-    const ctx = document.createElement('canvas').getContext('2d')!
-    ctx.font = cs.fontSize + ' ' + cs.fontFamily
-    const clickX = clickEvent.clientX - inputRect.left - parseFloat(cs.paddingLeft)
-    let pos = 0
-    for (let i = 1; i <= text.length; i++) {
-      if (ctx.measureText(text.slice(0, i)).width / 2 + ctx.measureText(text.slice(0, i - 1)).width / 2 >= clickX) break
-      pos = i
+    document.body.appendChild(input)
+    input.focus()
+    if (clickEvent) {
+      const inputRect = input.getBoundingClientRect()
+      const text = input.value
+      const ctx = document.createElement('canvas').getContext('2d')!
+      ctx.font = cs.fontSize + ' ' + cs.fontFamily
+      const clickX = clickEvent.clientX - inputRect.left - parseFloat(cs.paddingLeft)
+      let pos = 0
+      for (let i = 1; i <= text.length; i++) {
+        if (ctx.measureText(text.slice(0, i)).width / 2 + ctx.measureText(text.slice(0, i - 1)).width / 2 >= clickX) break
+        pos = i
+      }
+      input.setSelectionRange(pos, pos)
     }
-    input.setSelectionRange(pos, pos)
-  }
-  activeInput = input
 
-  const finish = (save: boolean) => {
-    if (!activeInput || activeInput !== input) return
-    activeInput = null
-    if (save) {
-      const newText = input.value
-      const oldFrom = Number(input.dataset.from)
-      const oldTo = Number(input.dataset.to)
+    let finished = false
+    const finish = (save: boolean) => {
+      if (finished) return
+      finished = true
+      this.active = null
+      cleanupHandles.forEach(h => h.dispose())
 
-      if (oldFrom === -1) {
-        // Padded cell — rebuild the row
-        const rowFrom = Number(input.dataset.rowFrom)
-        const rowTo = Number(input.dataset.rowTo)
-        const colIdx = Number(input.dataset.cellCol)
-        const totalCols = Number(input.dataset.totalCols)
-        runner.run(editTableCellCommand, {
-          type: 'row',
-          newText,
-          rowFrom,
-          rowTo,
-          colIdx,
-          totalCols,
-        })
-      } else {
-        const oldText = view.state.doc.sliceString(oldFrom, oldTo).trim()
-        if (newText !== oldText) {
+      if (save) {
+        const newText = input.value
+        const oldFrom = Number(input.dataset.from)
+        const oldTo = Number(input.dataset.to)
+
+        if (oldFrom === -1) {
+          // Padded cell — rebuild the row
+          const rowFrom = Number(input.dataset.rowFrom)
+          const rowTo = Number(input.dataset.rowTo)
+          const colIdx = Number(input.dataset.cellCol)
+          const totalCols = Number(input.dataset.totalCols)
           runner.run(editTableCellCommand, {
-            type: 'cell',
+            type: 'row',
             newText,
-            cellFrom: oldFrom,
-            cellTo: oldTo,
+            rowFrom,
+            rowTo,
+            colIdx,
+            totalCols,
           })
+        } else {
+          const oldText = view.state.doc.sliceString(oldFrom, oldTo).trim()
+          if (newText !== oldText) {
+            runner.run(editTableCellCommand, {
+              type: 'cell',
+              newText,
+              cellFrom: oldFrom,
+              cellTo: oldTo,
+            })
+          }
         }
       }
+      input.remove()
     }
-    input.remove()
+
+    const cleanupHandles = [
+      trackListener(input, 'keydown', (e) => {
+        const keyEvent = e as KeyboardEvent
+        if (keyEvent.key === 'Enter') {
+          keyEvent.preventDefault()
+          finish(true)
+          view.focus()
+        } else if (keyEvent.key === 'Escape') {
+          keyEvent.preventDefault()
+          finish(false)
+          view.focus()
+        } else if (keyEvent.key === 'Tab') {
+          keyEvent.preventDefault()
+          finish(true)
+          // Move to next cell
+          const row = Number(input.dataset.cellRow)
+          const col = Number(input.dataset.cellCol)
+          const table = cell.closest('table')
+          if (table) {
+            const next = findNextCell(table, row, col, keyEvent.shiftKey ? -1 : 1)
+            if (next) this.start(view, next)
+            else view.focus()
+          }
+        }
+      }),
+      trackListener(input, 'blur', () => finish(true)),
+      trackListener(view.scrollDOM, 'scroll', () => finish(true)),
+    ]
+
+    this.active = { input, finish }
   }
 
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      finish(true)
-      view.focus()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      finish(false)
-      view.focus()
-    } else if (e.key === 'Tab') {
-      e.preventDefault()
-      finish(true)
-      // Move to next cell
-      const row = Number(input.dataset.cellRow)
-      const col = Number(input.dataset.cellCol)
-      const table = cell.closest('table')
-      if (table) {
-        const next = findNextCell(table, row, col, e.shiftKey ? -1 : 1)
-        if (next) startCellEdit(next, view)
-        else view.focus()
-      }
-    }
-  })
+  commit() {
+    this.active?.finish(true)
+  }
 
-  input.addEventListener('blur', () => finish(true))
-
-  // Commit the edit when the editor scrolls
-  const scroller = view.scrollDOM
-  const onScroll = () => finish(true)
-  scroller.addEventListener('scroll', onScroll)
-  // Clean up scroll listener when input is removed
-  const origRemove = input.remove.bind(input)
-  input.remove = () => {
-    scroller.removeEventListener('scroll', onScroll)
-    origRemove()
+  destroy() {
+    // Avoid data loss if the editor is destroyed while editing.
+    this.active?.finish(true)
   }
 }
 
-/* istanbul ignore next - DOM interaction */
-function commitActiveInput() {
-  if (!activeInput) return
-  // Simulate Enter to commit
-  activeInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
-}
+export const tableCellEditPlugin = ViewPlugin.fromClass(CellEditController, {})
 
 /* istanbul ignore next - DOM interaction */
 function findNextCell(table: HTMLTableElement, row: number, col: number, direction: 1 | -1): HTMLElement | null {
@@ -260,39 +293,37 @@ export const tableEditHandler = EditorView.domEventHandlers({
     if (cell.dataset.from == null) return false
 
     e.preventDefault()
-    startCellEdit(cell, view, e)
+    const controller = view.plugin(tableCellEditPlugin)
+    if (controller) controller.start(view, cell, e)
     return true
   },
 })
 
 // --- Plugin (StateField for block decoration support) ---
 
-export const tablePlugin = StateField.define<DecorationSet>({
-  create(state) {
-    return computeTableDeco(state.doc, syntaxTree(state), state.selection.main)
-  },
-  update(deco, tr) {
-    if (tr.docChanged || tr.selection) {
-      return computeTableDeco(tr.state.doc, syntaxTree(tr.state), tr.state.selection.main)
-    }
-    return deco.map(tr.changes)
-  },
-  provide: f => EditorView.decorations.from(f),
-})
+interface ParsedTable {
+  from: number
+  to: number
+  headers: string[]
+  rows: string[][]
+  cellPositions: { from: number; to: number }[][]
+  rowRanges: { from: number; to: number }[]
+}
 
-function computeTableDeco(
+interface TablePluginState {
+  tables: ParsedTable[]
+  decorations: DecorationSet
+}
+
+function parseTables(
   doc: Text,
   tree: ReturnType<typeof syntaxTree>,
-  selection?: { from: number; to: number },
-): DecorationSet {
-  const ranges: Range<Decoration>[] = []
+): ParsedTable[] {
+  const tables: ParsedTable[] = []
 
   tree.iterate({
     enter(node) {
       if (node.name !== 'Table') return
-
-      // Skip widget when selection overlaps with table so users can select/edit source
-      if (selection && selection.from < node.to && selection.to > node.from) return
 
       const headers: string[] = []
       const rows: string[][] = []
@@ -349,16 +380,98 @@ function computeTableDeco(
 
       if (headers.length === 0) return
 
-      const widget = Decoration.replace({
-        widget: new TableWidget(headers, rows, cellPositions, rowRanges, node.from),
-        block: true,
+      tables.push({
+        from: node.from,
+        to: node.to,
+        headers,
+        rows,
+        cellPositions,
+        rowRanges,
       })
-      ranges.push(widget.range(node.from, node.to))
     },
   })
 
+  return tables
+}
+
+function buildTableDecorations(
+  tables: ParsedTable[],
+  selection?: { from: number; to: number },
+): DecorationSet {
+  const ranges: Range<Decoration>[] = []
+
+  for (const table of tables) {
+    if (selection && selectionIntersectsRange(selection, table)) continue
+
+    const widget = Decoration.replace({
+      widget: new TableWidget(
+        table.headers,
+        table.rows,
+        table.cellPositions,
+        table.rowRanges,
+        table.from,
+      ),
+      block: true,
+    })
+    ranges.push(widget.range(table.from, table.to))
+  }
+
   return Decoration.set(ranges, true)
 }
+
+function tableSelectionOverlapChanged(
+  tables: ParsedTable[],
+  oldSel: { from: number; to: number },
+  newSel: { from: number; to: number },
+): boolean {
+  for (const table of tables) {
+    const oldOverlaps = selectionIntersectsRange(oldSel, table)
+    const newOverlaps = selectionIntersectsRange(newSel, table)
+    if (oldOverlaps !== newOverlaps) return true
+  }
+  return false
+}
+
+function buildTablePluginState(
+  doc: Text,
+  tree: ReturnType<typeof syntaxTree>,
+  selection?: { from: number; to: number },
+): TablePluginState {
+  const tables = parseTables(doc, tree)
+  return {
+    tables,
+    decorations: buildTableDecorations(tables, selection),
+  }
+}
+
+export const tablePlugin = StateField.define<TablePluginState>({
+  create(state) {
+    return buildTablePluginState(state.doc, syntaxTree(state), state.selection.main)
+  },
+  update(state, tr) {
+    if (tr.docChanged) {
+      return buildTablePluginState(tr.state.doc, syntaxTree(tr.state), tr.state.selection.main)
+    }
+    if (tr.selection) {
+      if (!tableSelectionOverlapChanged(
+        state.tables,
+        tr.startState.selection.main,
+        tr.state.selection.main,
+      )) {
+        return state
+      }
+      return {
+        tables: state.tables,
+        decorations: buildTableDecorations(state.tables, tr.state.selection.main),
+      }
+    }
+    return {
+      tables: state.tables,
+      decorations: state.decorations.map(tr.changes),
+    }
+  },
+  provide: f => EditorView.decorations.from(f, v => v.decorations),
+})
 
 // --- Context menu position helper ---
 

@@ -43,7 +43,10 @@ export interface EditorAdapter {
   getSelection(): EditorSelection
   setSelection(selection: { anchor: number; head?: number }, options?: { scroll?: boolean }): void
   getSelectedText(): string | null
-  replaceRange(change: EditorChange, options?: { selection?: { anchor: number; head?: number } }): void
+  replaceRange(
+    change: EditorChange,
+    options?: { selection?: { anchor: number; head?: number }; isolateHistory?: 'before' | 'after' },
+  ): void
 
   // Focus, scroll and geometry
   focus(): void

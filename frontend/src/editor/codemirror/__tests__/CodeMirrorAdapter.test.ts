@@ -2,12 +2,21 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { EditorView } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { search } from '@codemirror/search'
+import { history, undo } from '@codemirror/commands'
 import { CodeMirrorAdapter } from '../CodeMirrorAdapter'
 
 function createSearchableView(doc: string): EditorView {
   const state = EditorState.create({
     doc,
     extensions: [search()],
+  })
+  return new EditorView({ state, parent: document.body })
+}
+
+function createHistoryView(doc: string): EditorView {
+  const state = EditorState.create({
+    doc,
+    extensions: [history()],
   })
   return new EditorView({ state, parent: document.body })
 }
@@ -122,6 +131,21 @@ describe('CodeMirrorAdapter', () => {
       adapter.setContent('abc')
       adapter.replaceRange({ from: -10, to: 100, insert: 'x' })
       expect(adapter.getContent()).toBe('x')
+    })
+
+    it('isolateHistory 选项让替换与之前的编辑分到不同的 undo 组', () => {
+      view = createHistoryView('')
+      adapter = new CodeMirrorAdapter(view)
+      adapter.setContent('hello world')
+      adapter.replaceRange(
+        { from: 6, to: 11, insert: 'codemirror' },
+        { isolateHistory: 'before' },
+      )
+      expect(adapter.getContent()).toBe('hello codemirror')
+
+      // Undo should only revert the replaceRange, not the setContent
+      undo(view)
+      expect(adapter.getContent()).toBe('hello world')
     })
 
     it('未传 selection 时只替换内容，不主动设置选区', () => {

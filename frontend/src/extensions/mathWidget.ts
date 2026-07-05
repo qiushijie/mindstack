@@ -1,8 +1,10 @@
 import { Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
-import { StateField, type EditorState, Range } from '@codemirror/state'
+import { StateField, type EditorState, Range, type SelectionRange } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+import { selectionIntersectsRange } from '../editor/widgets/widgetMode'
+import { addWidgetClickHandler } from '../editor/widgets/widgetEvents'
 
 // --- Widget ---
 
@@ -12,6 +14,8 @@ export class MathWidget extends WidgetType {
     readonly isBlock: boolean,
     readonly pos: number,
   ) { super() }
+
+  private cleanup: (() => void) | null = null
 
   toDOM(view: EditorView) {
     const container = document.createElement(this.isBlock ? 'div' : 'span')
@@ -31,8 +35,7 @@ export class MathWidget extends WidgetType {
       container.classList.add('cm-math-error')
     }
 
-    container.addEventListener('click', (e) => {
-      e.stopPropagation()
+    this.cleanup = addWidgetClickHandler(container, () => {
       view.dispatch({
         selection: { anchor: this.pos + (this.isBlock ? 2 : 1) },
       })
@@ -44,6 +47,11 @@ export class MathWidget extends WidgetType {
 
   eq(other: MathWidget) {
     return other.content === this.content && other.isBlock === this.isBlock && other.pos === this.pos
+  }
+
+  destroy() {
+    this.cleanup?.()
+    this.cleanup = null
   }
 
   ignoreEvent() { return false }
@@ -139,14 +147,18 @@ export function scanMathRanges(state: EditorState): MathRange[] {
 
 // --- StateField for decorations ---
 
-function computeMathDecorations(state: EditorState): DecorationSet {
-  const ranges = scanMathRanges(state)
+interface MathPluginState {
+  ranges: MathRange[]
+  decorations: DecorationSet
+}
+
+function buildMathDecorations(state: EditorState, ranges: MathRange[]): DecorationSet {
   const sel = state.selection.main
   const decorations: Range<Decoration>[] = []
 
   for (const r of ranges) {
     // Skip widgets for ranges that overlap with the current selection
-    if (sel.from < r.to && sel.to > r.from) continue
+    if (selectionIntersectsRange(sel, r)) continue
 
     const widget = new MathWidget(r.content, r.isBlock, r.from)
     const deco = Decoration.replace({
@@ -159,17 +171,54 @@ function computeMathDecorations(state: EditorState): DecorationSet {
   return Decoration.set(decorations, true)
 }
 
-export const mathPlugin = StateField.define<DecorationSet>({
+function buildMathState(state: EditorState): MathPluginState {
+  const ranges = scanMathRanges(state)
+  return {
+    ranges,
+    decorations: buildMathDecorations(state, ranges),
+  }
+}
+
+function mathSelectionOverlapChanged(
+  ranges: MathRange[],
+  oldSel: SelectionRange,
+  newSel: SelectionRange,
+): boolean {
+  for (const r of ranges) {
+    const oldOverlaps = selectionIntersectsRange(oldSel, r)
+    const newOverlaps = selectionIntersectsRange(newSel, r)
+    if (oldOverlaps !== newOverlaps) return true
+  }
+  return false
+}
+
+export const mathPlugin = StateField.define<MathPluginState>({
   create(state) {
-    return computeMathDecorations(state)
+    return buildMathState(state)
   },
-  update(deco, tr) {
-    if (tr.docChanged || tr.selection) {
-      return computeMathDecorations(tr.state)
+  update(state, tr) {
+    if (tr.docChanged) {
+      return buildMathState(tr.state)
     }
-    return deco
+    if (tr.selection) {
+      if (!mathSelectionOverlapChanged(
+        state.ranges,
+        tr.startState.selection.main,
+        tr.state.selection.main,
+      )) {
+        return state
+      }
+      return {
+        ranges: state.ranges,
+        decorations: buildMathDecorations(tr.state, state.ranges),
+      }
+    }
+    return {
+      ranges: state.ranges,
+      decorations: state.decorations.map(tr.changes),
+    }
   },
-  provide: f => EditorView.decorations.from(f, v => v),
+  provide: f => EditorView.decorations.from(f, v => v.decorations),
 })
 
 // --- Click handler: focus into the math source for editing ---

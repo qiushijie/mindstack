@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { tablePlugin, TableWidget } from '../tableWidget'
+import { tablePlugin, TableWidget, tableCellEditPlugin } from '../tableWidget'
 import { createView } from '../../test-utils/helpers'
 import { syntaxTree } from '@codemirror/language'
 
@@ -29,7 +29,7 @@ describe('tablePlugin - core rendering chain', () => {
 
   it('StateField produces decoration that covers the table range', () => {
     const view = createView(TABLE_DOC, [tablePlugin])
-    const deco = view.state.field(tablePlugin)
+    const deco = view.state.field(tablePlugin).decorations
 
     // Check if any decoration covers the table range
     let foundDeco = false
@@ -42,7 +42,7 @@ describe('tablePlugin - core rendering chain', () => {
 
   it('decoration contains a TableWidget with correct headers and rows', () => {
     const view = createView(TABLE_DOC, [tablePlugin])
-    const deco = view.state.field(tablePlugin)
+    const deco = view.state.field(tablePlugin).decorations
 
     let widget: TableWidget | null = null
     deco.between(0, TABLE_DOC.length, (from, to, dec) => {
@@ -60,7 +60,7 @@ describe('tablePlugin - core rendering chain', () => {
 
   it('TableWidget.toDOM produces a table element with correct content', () => {
     const view = createView(TABLE_DOC, [tablePlugin])
-    const deco = view.state.field(tablePlugin)
+    const deco = view.state.field(tablePlugin).decorations
 
     let widget: TableWidget | null = null
     deco.between(0, TABLE_DOC.length, (_from, _to, dec) => {
@@ -87,7 +87,7 @@ describe('tablePlugin - core rendering chain', () => {
 
   it('cell positions are stored in dataset attributes', () => {
     const view = createView(TABLE_DOC, [tablePlugin])
-    const deco = view.state.field(tablePlugin)
+    const deco = view.state.field(tablePlugin).decorations
 
     let widget: TableWidget | null = null
     deco.between(0, TABLE_DOC.length, (_from, _to, dec) => {
@@ -107,7 +107,7 @@ describe('tablePlugin - core rendering chain', () => {
     const view = createView(TABLE_DOC, [tablePlugin])
 
     // Get original widget
-    const deco1 = view.state.field(tablePlugin)
+    const deco1 = view.state.field(tablePlugin).decorations
     let widget1: TableWidget | null = null
     deco1.between(0, TABLE_DOC.length, (_from, _to, dec) => {
       if (dec.spec.widget instanceof TableWidget) widget1 = dec.spec.widget
@@ -129,7 +129,7 @@ describe('tablePlugin - core rendering chain', () => {
     // Dispatch a selection change to place cursor inside the table (position 5 is within first header cell)
     view.dispatch({ selection: { anchor: 5 } })
 
-    const deco = view.state.field(tablePlugin)
+    const deco = view.state.field(tablePlugin).decorations
     let count = 0
     deco.between(0, TABLE_DOC.length, () => { count++ })
     expect(count).toBe(0)
@@ -138,7 +138,7 @@ describe('tablePlugin - core rendering chain', () => {
 
   it('no decoration for non-table content', () => {
     const view = createView('Hello World', [tablePlugin])
-    const deco = view.state.field(tablePlugin)
+    const deco = view.state.field(tablePlugin).decorations
 
     let count = 0
     deco.between(0, 11, () => { count++ })
@@ -149,7 +149,7 @@ describe('tablePlugin - core rendering chain', () => {
   it('decoration updates when table content changes', () => {
     const view = createView(TABLE_DOC, [tablePlugin])
 
-    const deco1 = view.state.field(tablePlugin)
+    const deco1 = view.state.field(tablePlugin).decorations
     let widget1: TableWidget | null = null
     deco1.between(0, TABLE_DOC.length, (_from, _to, dec) => {
       if (dec.spec.widget instanceof TableWidget) widget1 = dec.spec.widget
@@ -161,7 +161,7 @@ describe('tablePlugin - core rendering chain', () => {
       changes: { from: revIdx, to: revIdx + 3, insert: 'Revenue' },
     })
 
-    const deco2 = view.state.field(tablePlugin)
+    const deco2 = view.state.field(tablePlugin).decorations
     let widget2: TableWidget | null = null
     deco2.between(0, 100, (_from, _to, dec) => {
       if (dec.spec.widget instanceof TableWidget) widget2 = dec.spec.widget
@@ -176,5 +176,81 @@ describe('TableWidget', () => {
   it('ignoreEvent returns false to allow click events', () => {
     const widget = new TableWidget(['A'], [['1']], [], [], 0)
     expect(widget.ignoreEvent()).toBe(false)
+  })
+})
+
+describe('tablePlugin selection behavior', () => {
+  it('does not rebuild decorations when selection moves outside table', () => {
+    const view = createView(TABLE_DOC, [tablePlugin])
+    view.dispatch({ selection: { anchor: 0 } })
+
+    const state1 = view.state.field(tablePlugin)
+    const deco1 = state1.decorations
+    let count1 = 0
+    deco1.between(0, TABLE_DOC.length, () => { count1++ })
+    expect(count1).toBe(1)
+
+    view.dispatch({ selection: { anchor: TABLE_DOC.length } })
+
+    const state2 = view.state.field(tablePlugin)
+    const deco2 = state2.decorations
+    let count2 = 0
+    deco2.between(0, TABLE_DOC.length, () => { count2++ })
+    expect(count2).toBe(1)
+    expect(deco2).toBe(deco1)
+    expect(state2).toBe(state1)
+    view.destroy()
+  })
+})
+
+describe('tableCellEditPlugin', () => {
+  it('creates a floating input when start is called', () => {
+    const view = createView(TABLE_DOC, [tablePlugin, tableCellEditPlugin])
+    const controller = view.plugin(tableCellEditPlugin)!
+    const cell = view.dom.querySelector('td') as HTMLElement
+    expect(cell).not.toBeNull()
+
+    controller.start(view, cell)
+
+    const input = document.body.querySelector('.cm-table-cell-input') as HTMLInputElement
+    expect(input).not.toBeNull()
+    expect(document.activeElement).toBe(input)
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    view.destroy()
+  })
+
+  it('commits the edit on Enter and removes the input', () => {
+    const view = createView(TABLE_DOC, [tablePlugin, tableCellEditPlugin])
+    const controller = view.plugin(tableCellEditPlugin)!
+    const cell = view.dom.querySelector('td') as HTMLElement
+
+    controller.start(view, cell)
+    const input = document.body.querySelector('.cm-table-cell-input') as HTMLInputElement
+    input.value = 'Updated'
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+
+    expect(document.body.querySelector('.cm-table-cell-input')).toBeNull()
+    expect(view.state.doc.toString()).toContain('Updated')
+    view.destroy()
+  })
+
+  it('does not duplicate commit when Enter is followed by blur', () => {
+    const view = createView(TABLE_DOC, [tablePlugin, tableCellEditPlugin])
+    const controller = view.plugin(tableCellEditPlugin)!
+    const cell = view.dom.querySelector('td') as HTMLElement
+
+    controller.start(view, cell)
+    const input = document.body.querySelector('.cm-table-cell-input') as HTMLInputElement
+    input.value = 'Once'
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    input.dispatchEvent(new FocusEvent('blur'))
+
+    const content = view.state.doc.toString()
+    const matches = content.split('Once').length - 1
+    expect(matches).toBe(1)
+    view.destroy()
   })
 })

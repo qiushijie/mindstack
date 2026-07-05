@@ -27,7 +27,7 @@ describe('mermaidPlugin', () => {
     // Cursor in the text after the block
     view.dispatch({ selection: { anchor: mermaidDoc.length - 4 } })
 
-    const deco = view.state.field(mermaidPlugin)
+    const deco = view.state.field(mermaidPlugin).decorations
     let count = 0
     deco.between(0, view.state.doc.length, () => { count++ })
     expect(count).toBe(1)
@@ -39,7 +39,7 @@ describe('mermaidPlugin', () => {
     // Cursor inside the block
     view.dispatch({ selection: { anchor: 15 } })
 
-    const deco = view.state.field(mermaidPlugin)
+    const deco = view.state.field(mermaidPlugin).decorations
     let count = 0
     deco.between(0, view.state.doc.length, () => { count++ })
     expect(count).toBe(0)
@@ -50,7 +50,7 @@ describe('mermaidPlugin', () => {
     const doc = '```js\nconst x = 1\n```'
     const view = createView(doc, [markdownStyles, mermaidPlugin])
 
-    const deco = view.state.field(mermaidPlugin)
+    const deco = view.state.field(mermaidPlugin).decorations
     let count = 0
     deco.between(0, doc.length, () => { count++ })
     expect(count).toBe(0)
@@ -60,7 +60,7 @@ describe('mermaidPlugin', () => {
   it('no decoration for plain text', () => {
     const view = createView('Hello world', [markdownStyles, mermaidPlugin])
 
-    const deco = view.state.field(mermaidPlugin)
+    const deco = view.state.field(mermaidPlugin).decorations
     let count = 0
     deco.between(0, 11, () => { count++ })
     expect(count).toBe(0)
@@ -69,14 +69,14 @@ describe('mermaidPlugin', () => {
 
   it('updates decorations when document changes', () => {
     const view = createView('Hello', [markdownStyles, mermaidPlugin])
-    let deco = view.state.field(mermaidPlugin)
+    let deco = view.state.field(mermaidPlugin).decorations
     let count1 = 0
     deco.between(0, 5, () => { count1++ })
     expect(count1).toBe(0)
 
     // Add mermaid block
     view.dispatch({ changes: { from: 5, to: 5, insert: '\n\n```mermaid\ngraph TD\n  A --> B\n```' } })
-    deco = view.state.field(mermaidPlugin)
+    deco = view.state.field(mermaidPlugin).decorations
     let count2 = 0
     deco.between(0, view.state.doc.length, () => { count2++ })
     expect(count2).toBe(1)
@@ -88,7 +88,7 @@ describe('mermaidPlugin', () => {
     // Cursor outside the block
     view.dispatch({ selection: { anchor: mermaidDoc.length - 4 } })
 
-    const deco = view.state.field(mermaidPlugin)
+    const deco = view.state.field(mermaidPlugin).decorations
     let isBlock = false
     deco.between(0, view.state.doc.length, (_from, _to, dec) => {
       isBlock = dec.spec.block === true
@@ -97,14 +97,14 @@ describe('mermaidPlugin', () => {
     view.destroy()
   })
 
-  it('no decoration for empty mermaid block (only 2 lines)', () => {
+  it('renders preview widget for empty mermaid block with cursor at boundary', () => {
     const doc = '```mermaid\n```'
     const view = createView(doc, [markdownStyles, mermaidPlugin])
 
-    const deco = view.state.field(mermaidPlugin)
+    const deco = view.state.field(mermaidPlugin).decorations
     let count = 0
     deco.between(0, doc.length, () => { count++ })
-    expect(count).toBe(0)
+    expect(count).toBe(1)
     view.destroy()
   })
 
@@ -132,7 +132,8 @@ describe('mermaidPlugin', () => {
     const outsidePos = mermaidDoc.indexOf('Some text after') + 4
     view.dispatch({ selection: { anchor: outsidePos } })
 
-    const deco1 = view.state.field(mermaidPlugin)
+    const state1 = view.state.field(mermaidPlugin)
+    const deco1 = state1.decorations
     let count1 = 0
     deco1.between(0, view.state.doc.length, () => { count1++ })
     expect(count1).toBe(1)
@@ -140,10 +141,32 @@ describe('mermaidPlugin', () => {
     // Move cursor inside the block -> preview should disappear
     view.dispatch({ selection: { anchor: 15 } })
 
-    const deco2 = view.state.field(mermaidPlugin)
+    const state2 = view.state.field(mermaidPlugin)
+    const deco2 = state2.decorations
     let count2 = 0
     deco2.between(0, view.state.doc.length, () => { count2++ })
     expect(count2).toBe(0)
+    expect(deco2).not.toBe(deco1)
+    expect(state2).not.toBe(state1)
+
+    view.destroy()
+  })
+
+  it('keeps the same decoration set when selection stays outside the block', () => {
+    const view = createView(mermaidDoc, [markdownStyles, mermaidPlugin])
+    const outsidePos = mermaidDoc.indexOf('Some text after') + 4
+    view.dispatch({ selection: { anchor: outsidePos } })
+
+    const state1 = view.state.field(mermaidPlugin)
+    const deco1 = state1.decorations
+
+    // Move cursor to another position still outside the block
+    view.dispatch({ selection: { anchor: outsidePos + 2 } })
+
+    const state2 = view.state.field(mermaidPlugin)
+    const deco2 = state2.decorations
+    expect(deco2).toBe(deco1)
+    expect(state2).toBe(state1)
 
     view.destroy()
   })

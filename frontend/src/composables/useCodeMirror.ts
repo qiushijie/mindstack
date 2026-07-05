@@ -11,7 +11,7 @@ import { createEditorTheme } from '../extensions/theme'
 import { createKeymapExtension } from '../extensions/keymap'
 import { markdownStyles, checkboxClickHandler, imageClickHandler } from '../extensions/markdownStyles'
 import { currentFilePathExtension, setCurrentFilePath } from '../extensions/currentFilePath'
-import { tablePlugin, tableEditHandler } from '../extensions/tableWidget'
+import { tablePlugin, tableEditHandler, tableCellEditPlugin } from '../extensions/tableWidget'
 import { mathPlugin, mathEditHandler } from '../extensions/mathWidget'
 import { mermaidPlugin } from '../extensions/mermaidWidget'
 import { createBlockGutter } from '../extensions/blockGutter'
@@ -70,6 +70,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       imageClickHandler,
       tablePlugin,
       tableEditHandler,
+      tableCellEditPlugin,
       mathPlugin,
       mathEditHandler,
       mermaidPlugin,
