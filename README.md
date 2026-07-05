@@ -59,6 +59,15 @@ cd frontend && pnpm vitest run
 cd tests/e2e && pnpm test
 ```
 
+Playwright E2E tests run concurrently across spec files during local runs to keep
+the full suite practical. Tests must be written with isolated state and must not
+depend on spec execution order. If a failure looks timing- or state-related,
+rerun serially with:
+
+```bash
+cd tests/e2e && pnpm exec playwright test --workers=1
+```
+
 ## License
 
 MIT
