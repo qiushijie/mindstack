@@ -862,6 +862,12 @@ describe('handleTripleClick', () => {
     view.posAtCoords = restore
   })
 
+  it('does not throw for triple click outside editor', () => {
+    const view = createView('Hello', [createInputHandler()])
+    const event = new MouseEvent('mousedown', { detail: 3, clientX: -9999, clientY: -9999 })
+    expect(() => handleTripleClick(view, event)).not.toThrow()
+  })
+
   it('selects bullet list line without newline', () => {
     const doc = '- Item 1\n- Item 2'
     const view = createView(doc, [createInputHandler()])

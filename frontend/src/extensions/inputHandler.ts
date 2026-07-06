@@ -1,6 +1,7 @@
 import { EditorView } from '@codemirror/view'
 import type { Extension } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
+import { viewPosAtCoords } from '../editor/geometry'
 import { BlockType, getBlockTypeAtLine } from '../utils/syntaxUtils'
 
 const markdownShortcuts: [RegExp, string][] = [
@@ -183,7 +184,7 @@ export function handleTab(view: EditorView, shift: boolean): boolean {
 export function handleTripleClick(view: EditorView, event: MouseEvent): boolean {
   if (event.detail !== 3) return false
 
-  const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+  const pos = viewPosAtCoords(view, { x: event.clientX, y: event.clientY })
   if (pos == null) return false
 
   const line = view.state.doc.lineAt(pos)

@@ -239,6 +239,21 @@ describe('blockGutter - setupHoverTracker edge cases', () => {
     view.destroy()
   })
 
+  it('hover tracker clears hover on mouseleave', () => {
+    const view = createView('# Title\n\nParagraph', createBlockGutter())
+
+    // First set hover
+    view.dispatch({ effects: setHoveredLine.of(1) })
+
+    // Then leave
+    const leaveEvent = new MouseEvent('mouseleave', { bubbles: true })
+    expect(() => {
+      view.scrollDOM.dispatchEvent(leaveEvent)
+    }).not.toThrow()
+
+    view.destroy()
+  })
+
   it('hover tracker does not dispatch too frequently', () => {
     const view = createView('# Title\n\nParagraph', createBlockGutter())
 

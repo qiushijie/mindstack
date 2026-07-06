@@ -5,6 +5,7 @@ import { BLOCK_NODE_NAMES } from '../utils/syntaxUtils'
 import { t } from '../i18n'
 import { createCommandRunner } from '../editor/commands/createCommandRunner'
 import { insertBlockCommand } from '../editor/commands/block/InsertBlockCommand'
+import { viewPosAtCoords, constrainRectToViewport } from '../editor/geometry'
 import { getBlockRanges, findBlockAtPos, startDrag, isDragging, isInDragCooldown } from './dragSort'
 
 // --- Plus button menu items (matches design in ui/desktop.pen, node zHLIh) ---
@@ -339,16 +340,17 @@ function showBlockMenu(view: EditorView, lineFrom: number, anchorRect: DOMRect) 
   const menuWidth = menuRect.width
   const menuHeight = menuRect.height
 
-  let left = anchorRect.right + 4
-  let top = anchorRect.top
+  let desiredLeft = anchorRect.right + 4
+  const desiredTop = anchorRect.top
 
-  if (left + menuWidth > window.innerWidth) {
-    left = anchorRect.left - menuWidth - 4
+  if (desiredLeft + menuWidth > window.innerWidth) {
+    desiredLeft = anchorRect.left - menuWidth - 4
   }
-  if (top + menuHeight > window.innerHeight) {
-    top = window.innerHeight - menuHeight - 8
-  }
-  if (top < 8) top = 8
+
+  const { left, top } = constrainRectToViewport(
+    { left: desiredLeft, top: desiredTop, width: menuWidth, height: menuHeight },
+    { left: 8, right: 8, top: 8, bottom: 8 },
+  )
 
   menu.style.left = `${left}px`
   menu.style.top = `${top}px`
@@ -400,7 +402,7 @@ function setupHoverTracker(view: EditorView): () => void {
     if (now - lastDispatch < 200) return
     lastDispatch = now
 
-    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
+    const pos = viewPosAtCoords(view, { x: e.clientX, y: e.clientY })
     if (pos == null) {
       if (lastHovered >= 0) {
         lastHovered = -1

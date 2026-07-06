@@ -5,6 +5,7 @@ import type { Extension } from '@codemirror/state'
 import { BLOCK_NODE_NAMES } from '../utils/syntaxUtils'
 import { createCommandRunner } from '../editor/commands/createCommandRunner'
 import { moveBlockCommand } from '../editor/commands/drag/MoveBlockCommand'
+import { viewPosAtCoords, viewCoordsAtPos } from '../editor/geometry'
 
 class DropIndicatorWidget extends WidgetType {
   toDOM() {
@@ -81,8 +82,9 @@ export function startDrag(view: EditorView, block: BlockRange) {
 }
 
 export function simulateMouseMove(x: number, y: number) {
-  const pos = dragView?.posAtCoords({ x, y })
   if (!dragging || !dragView) return
+
+  const pos = viewPosAtCoords(dragView, { x, y })
 
   let newTarget = -1
   if (pos != null) {
@@ -90,14 +92,14 @@ export function simulateMouseMove(x: number, y: number) {
     const target = findBlockAtPos(blocks, pos)
     if (target && target !== dragSourceBlock) {
       const doc = dragView.state.doc
-      const lineStartRect = dragView.coordsAtPos(doc.line(target.lineFrom).from)
-      const lineEndRect = dragView.coordsAtPos(doc.line(target.lineTo).to)
+      const lineStartRect = viewCoordsAtPos(dragView, doc.line(target.lineFrom).from)
+      const lineEndRect = viewCoordsAtPos(dragView, doc.line(target.lineTo).to)
       if (lineStartRect && lineEndRect) {
         const lineMidY = (lineStartRect.top + lineEndRect.bottom) / 2
         newTarget = y < lineMidY ? target.lineFrom : target.lineTo + 1
       } else {
-        const lineMid = doc.line(target.lineFrom).from + doc.line(target.lineFrom).length / 2
-        newTarget = pos < lineMid ? target.lineFrom : target.lineTo + 1
+        const blockMid = (target.from + target.to) / 2
+        newTarget = pos < blockMid ? target.lineFrom : target.lineTo + 1
       }
     }
   }
@@ -209,7 +211,7 @@ const dragEventHandler = EditorView.domEventHandlers({
     if (gutterEl) {
       const rect = gutterEl.getBoundingClientRect()
       const contentRect = view.contentDOM.getBoundingClientRect()
-      pos = view.posAtCoords({ x: contentRect.left + 10, y: rect.top + rect.height / 2 })
+      pos = viewPosAtCoords(view, { x: contentRect.left + 10, y: rect.top + rect.height / 2 })
     }
     if (pos == null) return false
 

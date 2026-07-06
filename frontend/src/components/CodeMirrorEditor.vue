@@ -20,6 +20,7 @@ import { wrapInlineCommand } from '../editor/commands/inline/WrapInlineCommand'
 import { insertLinkCommand } from '../editor/commands/inline/InsertLinkCommand'
 import { toggleBlockTypeCommand } from '../editor/commands/block/ToggleBlockTypeCommand'
 import { insertImageCommand } from '../editor/commands/image/InsertImageCommand'
+import { getSelectionRect, constrainRectToViewport } from '../editor/geometry'
 import { addRowAboveCommand } from '../editor/commands/table/AddRowAboveCommand'
 import { addRowBelowCommand } from '../editor/commands/table/AddRowBelowCommand'
 import { deleteRowCommand } from '../editor/commands/table/DeleteRowCommand'
@@ -148,18 +149,18 @@ function detectActiveLabels(): Set<string> {
 }
 
 function showToolbar() {
+  const adapter = editorAdapter.value
   const v = view.value
-  if (!v || rawMode.value) return
+  if (!adapter || !v || rawMode.value) return
 
-  const sel = v.state.selection.main
-  if (sel.empty) {
+  const sel = adapter.getSelection()
+  if (sel.anchor === sel.head) {
     toolbarState.value.visible = false
     return
   }
 
-  const fromCoords = v.coordsAtPos(sel.from)
-  const toCoords = v.coordsAtPos(sel.to)
-  if (!fromCoords || !toCoords) {
+  const rect = getSelectionRect(adapter, sel)
+  if (!rect) {
     toolbarState.value.visible = false
     return
   }
@@ -167,16 +168,17 @@ function showToolbar() {
   const toolbarWidth = 168
   const toolbarHeight = 168
   const gap = 8
-  const left = Math.max(8, Math.min(
-    (fromCoords.left + toCoords.right) / 2 - toolbarWidth / 2,
-    window.innerWidth - toolbarWidth - 8,
-  ))
 
-  const bottom = Math.max(fromCoords.bottom, toCoords.bottom)
-  const spaceBelow = window.innerHeight - bottom
-  const top = spaceBelow >= toolbarHeight + gap
-    ? bottom + gap
-    : Math.max(8, fromCoords.top - toolbarHeight - gap)
+  const desiredLeft = (rect.left + rect.right) / 2 - toolbarWidth / 2
+  const spaceBelow = window.innerHeight - rect.bottom
+  const desiredTop = spaceBelow >= toolbarHeight + gap
+    ? rect.bottom + gap
+    : rect.top - toolbarHeight - gap
+
+  const { left, top } = constrainRectToViewport(
+    { left: desiredLeft, top: desiredTop, width: toolbarWidth, height: toolbarHeight },
+    { left: 8, right: 8, top: 8, bottom: 8 },
+  )
 
   activeLabels.value = detectActiveLabels()
   toolbarState.value = { visible: true, left, top }
@@ -278,20 +280,15 @@ function handleContextMenu(e: MouseEvent) {
 
     const menuWidth = menuEl.offsetWidth
     const menuHeight = menuEl.offsetHeight
-    let left = contextMenuState.value.left
-    let top = contextMenuState.value.top
-
-    // prevent overflow on right
-    if (left + menuWidth > window.innerWidth) {
-      left = window.innerWidth - menuWidth - 8
-    }
-    // prevent overflow on bottom
-    if (top + menuHeight > window.innerHeight) {
-      top = window.innerHeight - menuHeight - 8
-    }
-    // prevent overflow on left and top
-    if (left < 8) left = 8
-    if (top < 8) top = 8
+    const { left, top } = constrainRectToViewport(
+      {
+        left: contextMenuState.value.left,
+        top: contextMenuState.value.top,
+        width: menuWidth,
+        height: menuHeight,
+      },
+      { left: 8, right: 8, top: 8, bottom: 8 },
+    )
 
     contextMenuState.value = { visible: true, left, top }
   })
