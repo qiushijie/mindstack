@@ -283,7 +283,7 @@ test.describe('Editor Mouse Interaction', () => {
     await expect(mathWidget).not.toBeVisible()
   })
 
-  test('should keep image widget visible on click and dispatch edit event', async ({ page }) => {
+  test('should move cursor into image source and hide widget on click', async ({ page }) => {
     await setContent(page, '![Alt text](test.png)')
     await focusEditor(page)
     // Move cursor out to trigger widget
@@ -304,9 +304,9 @@ test.describe('Editor Mouse Interaction', () => {
     await imageWidget.click()
     await page.waitForTimeout(300)
 
-    // Image click handler returns true (prevents CodeMirror from moving cursor)
-    // so the widget should remain visible and an 'editor:edit-image' event is dispatched
-    await expect(imageWidget).toBeVisible()
+    // Image click handler now moves the cursor into the source range so the
+    // widget is hidden while the edit-image event is still dispatched.
+    await expect(imageWidget).not.toBeVisible()
   })
 
   test('should position cursor when clicking list bullet area', async ({ page }) => {

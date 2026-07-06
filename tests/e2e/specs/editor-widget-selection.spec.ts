@@ -10,9 +10,7 @@ test.describe('Widget Selection - Image', () => {
     await clearEditor(page)
   })
 
-  // FIXME: clicking the image preview does not currently move the cursor into the image source range.
-  // The widget stays visible, so edit-mode transition is not triggered.
-  test.fixme('should click image preview to enter source edit mode', async ({ page }) => {
+  test('should click image preview to enter source edit mode', async ({ page }) => {
     await setContent(page, '![alt](https://example.com/img.png)')
     await focusEditor(page)
     await moveCursorToEnd(page)
@@ -148,9 +146,7 @@ test.describe('Widget Selection - Table', () => {
     expect(sel.from).toBeGreaterThan(0)
   })
 
-  // FIXME: table context menu "add row" currently moves cursor to document start.
-  // This is a real product bug to be fixed in widget/decoration governance work.
-  test.fixme('should not move cursor to document start after context menu add row', async ({ page }) => {
+  test('should not move cursor to document start after context menu add row', async ({ page }) => {
     await setContent(page, '| A | B |\n|---|---|\n| 1 | 2 |')
     await focusEditor(page)
     await moveCursorToEnd(page)
@@ -176,9 +172,7 @@ test.describe('Widget Selection - Table', () => {
     expect(sel.from).toBeGreaterThan(0)
   })
 
-  // FIXME: moving the cursor out of the table widget does not close the floating cell input.
-  // This leaks DOM and should be cleaned up in widget lifecycle work.
-  test.fixme('should remove floating input after widget is destroyed', async ({ page }) => {
+  test('should remove floating input after widget is destroyed', async ({ page }) => {
     await setContent(page, '| A | B |\n|---|---|\n| 1 | 2 |')
     await focusEditor(page)
     await moveCursorToEnd(page)

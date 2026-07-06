@@ -219,14 +219,14 @@ test.describe('Selection Stability - Clipboard', () => {
     expect(await getContent(page)).toBe('replacement')
   })
 
-  test.fixme('should copy and paste selected text', async ({ page }) => {
+  test('should copy and paste selected text', async ({ page }) => {
     await setContent(page, 'Hello world')
     await focusEditor(page)
     await setSelection(page, 6, 11)
-    await page.keyboard.press('Control+c')
+    await page.keyboard.press('ControlOrMeta+c')
     await page.waitForTimeout(100)
     await setSelection(page, 11)
-    await page.keyboard.press('Control+v')
+    await page.keyboard.press('ControlOrMeta+v')
     await page.waitForTimeout(200)
 
     expect(await getContent(page)).toBe('Hello worldworld')

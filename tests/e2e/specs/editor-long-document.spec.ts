@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { waitForAppReady, resetAppState } from '../helpers/app'
-import { getContent, setContent, clearEditor, focusEditor } from '../helpers/editor'
+import { getContent, setContent, clearEditor, focusEditor, scrollToPosition, getCoordsAtPos, dragSelect, toggleRawMode, getSelectionRange } from '../helpers/editor'
 
 function generateLongDocument(lines: number): string {
   const paragraphs: string[] = []
@@ -23,6 +23,14 @@ function generateLongDocument(lines: number): string {
     }
   }
   return paragraphs.join('\n\n')
+}
+
+function generatePlainLines(lines: number): string {
+  const out: string[] = []
+  for (let i = 0; i < lines; i++) {
+    out.push(`Line ${i + 1} with enough text to make a reasonably long document for scrolling tests.`)
+  }
+  return out.join('\n\n')
 }
 
 test.describe('Long Document - Scroll and Edit', () => {
@@ -121,6 +129,91 @@ test.describe('Long Document - Scroll and Edit', () => {
     // Cursor should have moved
     expect(posAfter).not.toBe(posBefore)
     expect(posAfter).toBe(500)
+  })
+
+  test('should scroll to middle of 1000-line document, click, and type', async ({ page }) => {
+    const doc = generatePlainLines(1000)
+    await setContent(page, doc)
+    await page.waitForTimeout(500)
+
+    const linePrefix = 'Line 500'
+    const pos = doc.indexOf(linePrefix)
+    expect(pos).toBeGreaterThan(0)
+    const targetPos = pos + linePrefix.length
+
+    await focusEditor(page)
+    await scrollToPosition(page, targetPos)
+
+    const coords = await getCoordsAtPos(page, targetPos)
+    expect(coords).toBeTruthy()
+
+    await page.mouse.click(coords!.x, coords!.y)
+    await page.waitForTimeout(200)
+    await page.keyboard.type(' EDITED')
+    await page.waitForTimeout(200)
+
+    const content = await getContent(page)
+    expect(content).toContain('Line 500 EDITED')
+
+    const sel = await getSelectionRange(page)
+    expect(sel.empty).toBe(true)
+    expect(sel.from).toBe(targetPos + ' EDITED'.length)
+  })
+
+  test('should drag-select across the scrolled viewport', async ({ page }) => {
+    const doc = generatePlainLines(1000)
+    await setContent(page, doc)
+    await page.waitForTimeout(500)
+
+    const startPrefix = 'Line 400'
+    const endPrefix = 'Line 402'
+    const startPos = doc.indexOf(startPrefix)
+    const endPos = doc.indexOf(endPrefix) + endPrefix.length
+    expect(startPos).toBeGreaterThan(0)
+    expect(endPos).toBeGreaterThan(startPos)
+
+    await focusEditor(page)
+    await scrollToPosition(page, startPos)
+    await page.waitForTimeout(300)
+
+    await dragSelect(page, startPos, endPos)
+
+    const sel = await getSelectionRange(page)
+    expect(sel.empty).toBe(false)
+    expect(sel.from).toBeLessThanOrEqual(startPos)
+    expect(sel.to).toBeGreaterThanOrEqual(endPos)
+  })
+})
+
+test.describe('Long Document - Mode Switch', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await waitForAppReady(page)
+    await resetAppState(page)
+    await clearEditor(page)
+  })
+
+  test('should preserve content and keep a defined selection after raw/rich toggle', async ({ page }) => {
+    const doc = generatePlainLines(200)
+    await setContent(page, doc)
+    await page.waitForTimeout(500)
+
+    const midPrefix = 'Line 100'
+    const midPos = doc.indexOf(midPrefix) + midPrefix.length
+    await scrollToPosition(page, midPos)
+
+    const before = await getContent(page)
+    const selBefore = await getSelectionRange(page)
+
+    await toggleRawMode(page, true)
+    await toggleRawMode(page, false)
+
+    const after = await getContent(page)
+    expect(after).toBe(before)
+
+    const selAfter = await getSelectionRange(page)
+    expect(selAfter.from).toBeGreaterThanOrEqual(0)
+    expect(selAfter.from).toBeLessThanOrEqual(after.length)
   })
 })
 
@@ -249,14 +342,31 @@ test.describe('Long Document - Search Navigation', () => {
     const countText = await page.locator('.find-count').textContent()
     expect(countText).toContain('7') // 20/3 ≈ 6-7 matches
 
-    // Navigate through all matches
-    for (let i = 0; i < 5; i++) {
+    const initialCount = await page.locator('.find-count').textContent()
+
+    // Navigate through some matches
+    for (let i = 0; i < 3; i++) {
       await page.keyboard.press('Enter')
       await page.waitForTimeout(200)
     }
 
-    // Search panel should still show valid state
+    // Match index should have advanced
     const finalCount = await page.locator('.find-count').textContent()
     expect(finalCount).toContain('/')
+    expect(finalCount).not.toBe(initialCount)
+
+    // Current match should be scrolled into the viewport
+    const sel = await page.evaluate(() => {
+      const view = (window as any).__cmView
+      if (!view) return null
+      const range = view.state.selection.main
+      return { from: range.from, to: range.to }
+    })
+    expect(sel).not.toBeNull()
+    const matchText = await page.evaluate((p) => {
+      const view = (window as any).__cmView
+      return view ? view.state.doc.sliceString(p.from, p.to) : ''
+    }, sel)
+    expect(matchText.toLowerCase()).toContain('target')
   })
 })

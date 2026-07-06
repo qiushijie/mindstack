@@ -6,9 +6,9 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // Local runs use multiple workers across spec files to reduce total runtime.
-  // CI stays serial because all tests share a single Wails dev backend/config.
-  workers: process.env.CI ? 1 : 10,
+  // Local runs and CI use multiple workers across spec files to reduce total runtime.
+  // Tests must be isolated because they share a single Wails dev backend/config.
+  workers: 20,
   reporter: [
     ['html', { open: 'never' }],
     ['json', { outputFile: 'test-results/results.json' }],
@@ -20,6 +20,9 @@ export default defineConfig({
   },
   use: {
     baseURL: process.env.WAILS_DEV_URL || 'http://localhost:34115',
+    contextOptions: {
+      permissions: ['clipboard-read', 'clipboard-write'],
+    },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

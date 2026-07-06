@@ -54,10 +54,17 @@ go test ./...
 # Frontend unit tests (vitest + happy-dom)
 cd frontend && pnpm vitest run
 
-# E2E tests (Playwright)
+# Editor regression threshold (unit + core editor e2e)
+./scripts/editor-regression.sh
+
+# Full E2E tests (Playwright)
 # Make sure `wails dev` is running first, then:
 cd tests/e2e && pnpm test
 ```
+
+The editor regression script runs the frontend unit tests plus the three core
+editor e2e specs. Run the full e2e suite for large editor changes or before a
+release.
 
 Playwright E2E tests run concurrently across spec files during local runs to keep
 the full suite practical. Tests must be written with isolated state and must not

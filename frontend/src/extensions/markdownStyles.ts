@@ -8,6 +8,7 @@ import { changeCodeLanguageCommand } from '../editor/commands/block/ChangeCodeLa
 import { selectionIntersectsRange } from '../editor/widgets/widgetMode'
 import { addWidgetClickHandler, addWidgetMouseDownHandler } from '../editor/widgets/widgetEvents'
 import { trackDocumentListener } from '../editor/widgets/widgetCleanup'
+import type { CleanupHandle } from '../editor/widgets/widgetCleanup'
 
 // --- Widgets ---
 
@@ -72,7 +73,7 @@ class CodeHeaderWidget extends WidgetType {
     span.style.userSelect = 'none'
 
     let dropdown: HTMLDivElement | null = null
-    let docListener: (() => void) | null = null
+    let docListener: CleanupHandle | null = null
 
     const closeDropdown = () => {
       if (dropdown) {
@@ -80,7 +81,7 @@ class CodeHeaderWidget extends WidgetType {
         dropdown = null
       }
       if (docListener) {
-        docListener()
+        docListener.dispose()
         docListener = null
       }
     }
@@ -119,7 +120,7 @@ class CodeHeaderWidget extends WidgetType {
       })
 
       div.appendChild(dd)
-      docListener = trackDocumentListener('mousedown', onDocClick as EventListener).dispose
+      docListener = trackDocumentListener('mousedown', onDocClick as EventListener)
     }
 
     this.cleanup = combineCleanups(
@@ -461,11 +462,13 @@ function buildStatic(view: EditorView) {
           addAtomic(node.from, node.to)
         }
 
-        // Regular code header widget (mermaid is selection-sensitive)
+        // Read the language directly from the document line so the header stays
+        // in sync even when the syntax tree has not finished re-parsing.
         if (nodeVisible && t === 'FencedCode') {
           const startLine = doc.lineAt(node.from)
-          const langNode = node.node.getChild('CodeInfo')
-          const lang = langNode ? doc.sliceString(langNode.from, langNode.to) : 'text'
+          const lineText = doc.sliceString(startLine.from, startLine.to)
+          const match = lineText.match(/^(`{3,})\s*(\S*)/)
+          const lang = match?.[2] || 'text'
           if (lang !== 'mermaid') {
             ranges.push(Decoration.widget({ widget: new CodeHeaderWidget(lang, node.from), side: 1 }).range(startLine.from))
           }
@@ -680,6 +683,10 @@ export const imageClickHandler = EditorView.domEventHandlers({
               alt = extractAlt(text)
             }
           },
+        })
+
+        view.dispatch({
+          selection: { anchor: Math.min(imgFrom + 2, imgTo) },
         })
 
         view.dom.dispatchEvent(new CustomEvent('editor:edit-image', {

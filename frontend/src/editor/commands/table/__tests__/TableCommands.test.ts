@@ -52,7 +52,7 @@ describe('TableCommands', () => {
     runner.run(addRowBelowCommand, { tableData, rowIdx: 0 })
     expect(adapter.getContent()).toContain('| A | B |')
     expect(adapter.getContent()).toContain('|   |   |')
-    expect(adapter.getSelection()).toEqual({ anchor: 0, head: 0 })
+    expect(adapter.getSelection().anchor).toBeGreaterThan(0)
   })
 
   it('addRowAbove inserts a row', () => {
@@ -60,6 +60,7 @@ describe('TableCommands', () => {
     runner.run(addRowAboveCommand, { tableData, rowIdx: 0 })
     expect(adapter.getContent()).toContain('|   |   |')
     expect(adapter.getContent()).toContain('| a | b |')
+    expect(adapter.getSelection().anchor).toBeGreaterThan(0)
   })
 
   it('deleteRow removes a row', () => {
@@ -125,12 +126,21 @@ describe('TableCommands', () => {
     expect(adapter.focusCount).toBe(1)
   })
 
-  it('editTableCell rebuilds a padded row', () => {
-    const row = '| a | b |\n'
+  it('addRowBelow with header row inserts row at top of body', () => {
+    const { adapter, runner, tableData } = createRunner(tableMarkdown)
+    runner.run(addRowBelowCommand, { tableData, rowIdx: -1 })
+    expect(adapter.getContent()).toContain('| A | B |')
+    expect(adapter.getContent()).toContain('| a | b |')
+    expect(adapter.getContent().split('\n').length).toBe(4)
+    expect(adapter.getSelection().anchor).toBeGreaterThan(0)
+  })
+
+  it('editTableCell rebuilds a padded row with missing columns', () => {
+    const row = '| a |\n'
     const adapter = new MockEditorAdapter(row, { anchor: 0, head: 0 })
     const runner = new CommandRunner({ adapter, semantics: new MockMarkdownSemanticService() })
     runner.run(editTableCellCommand, { type: 'row', newText: 'x', rowFrom: 0, rowTo: row.length, colIdx: 0, totalCols: 2 })
-    expect(adapter.getContent()).toBe('| x | b |\n')
+    expect(adapter.getContent()).toBe('| x | |\n')
     expect(adapter.focusCount).toBe(1)
   })
 })

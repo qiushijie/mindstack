@@ -1,4 +1,4 @@
-import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
+import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType, type ViewUpdate } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { Range, StateField, type Text } from '@codemirror/state'
 import { createCommandRunner } from '../editor/commands/createCommandRunner'
@@ -119,6 +119,8 @@ export class TableWidget extends WidgetType {
 interface ActiveCellEdit {
   input: HTMLInputElement
   finish: (save: boolean) => void
+  cellFrom: number
+  cellTo: number
 }
 
 class CellEditController {
@@ -250,7 +252,21 @@ class CellEditController {
       trackListener(view.scrollDOM, 'scroll', () => finish(true)),
     ]
 
-    this.active = { input, finish }
+    this.active = { input, finish, cellFrom: from, cellTo: to }
+  }
+
+  update(update: ViewUpdate) {
+    if (!this.active) return
+    if (update.docChanged) {
+      this.active.finish(true)
+      return
+    }
+    if (update.selectionSet) {
+      const sel = update.state.selection.main
+      if (sel.from > this.active.cellTo || sel.to < this.active.cellFrom) {
+        this.active.finish(true)
+      }
+    }
   }
 
   commit() {

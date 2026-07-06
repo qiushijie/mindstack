@@ -48,4 +48,31 @@ describe('MoveBlockCommand', () => {
     expect(adapter.getContent()).toBe(content)
     expect(adapter.focusCount).toBe(1)
   })
+
+  it('moves a multi-line block down', () => {
+    const { adapter, runner } = createRunner('# A\n# A2\n\n# B')
+    runner.run(moveBlockCommand, { sourceLineFrom: 1, sourceLineTo: 2, targetLine: 4 })
+    expect(adapter.getContent()).toBe('\n# A\n# A2\n# B')
+    expect(adapter.focusCount).toBe(1)
+  })
+
+  it('moves a block to the last line', () => {
+    const { adapter, runner } = createRunner('# First\n\n# Second')
+    runner.run(moveBlockCommand, { sourceLineFrom: 1, sourceLineTo: 1, targetLine: 4 })
+    expect(adapter.getContent()).toBe('\n# Second\n# First')
+  })
+
+  it('clamps target line beyond document bounds', () => {
+    const content = '# A\n\n# B'
+    const { adapter, runner } = createRunner(content)
+    runner.run(moveBlockCommand, { sourceLineFrom: 1, sourceLineTo: 1, targetLine: 99 })
+    expect(adapter.getContent()).toBe('\n# B\n# A')
+    expect(adapter.focusCount).toBe(1)
+  })
+
+  it('handles duplicate content without infinite loop', () => {
+    const { adapter, runner } = createRunner('# A\n\n# A')
+    runner.run(moveBlockCommand, { sourceLineFrom: 1, sourceLineTo: 1, targetLine: 4 })
+    expect(adapter.focusCount).toBe(1)
+  })
 })

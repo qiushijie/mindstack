@@ -108,6 +108,37 @@ test.describe('Feature Name', () => {
 ## Notes
 
 - **Page navigation**: Use `window.__navigateTo()` (exposed in DEV mode by `useNavigation.ts`)
-- **Editor content**: Access via `window.__cmView` (exposed in DEV mode by `useEditorState.ts`)
+- **Editor content**: Access via `window.__editor` (exposed in DEV mode by `useEditorState.ts`). The legacy `window.__cmView` is still available for older tests but should not be used in new tests.
 - **Native dialogs**: File picker cannot be tested by Playwright; covered by Go unit tests instead
 - **Selection toolbar**: Only triggers on mouse interaction (`pointerup`), not keyboard selection
+
+## Editor Regression Specs
+
+The following three spec files form the editor regression threshold and are run
+by both the local regression script and CI:
+
+- `specs/editor-selection-stability.spec.ts` — cursor/selection behavior across
+  paragraphs, headings, lists, todos, clipboard, and long documents.
+- `specs/editor-widget-selection.spec.ts` — entering and leaving edit mode for
+  image, math, mermaid, and table widgets.
+- `specs/editor-long-document.spec.ts` — scrolling, editing, drag-select, mode
+  switching, and search in large documents.
+
+Run them together with:
+
+```bash
+cd tests/e2e
+pnpm test -- specs/editor-selection-stability.spec.ts specs/editor-widget-selection.spec.ts specs/editor-long-document.spec.ts
+```
+
+Or use the shortcut:
+
+```bash
+pnpm test:editor-regression
+```
+
+## Skipped Tests
+
+Only mark a test as `test.fixme()` when a real product bug or an environment
+limitation prevents it from passing. Include a comment explaining the blocker so
+future contributors know what needs to be fixed.

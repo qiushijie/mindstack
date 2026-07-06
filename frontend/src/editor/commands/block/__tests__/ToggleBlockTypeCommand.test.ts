@@ -74,4 +74,31 @@ describe('ToggleBlockTypeCommand', () => {
     runner.run(toggleBlockTypeCommand, { prefix: '# ' })
     expect(adapter.focusCount).toBe(1)
   })
+
+  it('converts h2 to h3', () => {
+    const { adapter, runner } = createRunner('## Title', { anchor: 5 }, BlockType.H2)
+    runner.run(toggleBlockTypeCommand, { prefix: '### ' })
+    expect(adapter.getContent()).toBe('### Title')
+    expect(adapter.getSelection()).toEqual({ anchor: 4, head: 4 })
+  })
+
+  it('switches blockquote to bullet list', () => {
+    const { adapter, runner } = createRunner('> Quote', { anchor: 5 }, BlockType.Blockquote)
+    runner.run(toggleBlockTypeCommand, { prefix: '- ' })
+    expect(adapter.getContent()).toBe('- Quote')
+    expect(adapter.getSelection()).toEqual({ anchor: 2, head: 2 })
+  })
+
+  it('converts paragraph to ordered list', () => {
+    const { adapter, runner } = createRunner('Item text', { anchor: 5 }, BlockType.Paragraph)
+    runner.run(toggleBlockTypeCommand, { prefix: '1. ' })
+    expect(adapter.getContent()).toBe('1. Item text')
+    expect(adapter.getSelection()).toEqual({ anchor: 3, head: 3 })
+  })
+
+  it('removes todo prefix on toggle off', () => {
+    const { adapter, runner } = createRunner('- [ ] Task', { anchor: 5 }, BlockType.Todo)
+    runner.run(toggleBlockTypeCommand, { prefix: '- [ ] ' })
+    expect(adapter.getContent()).toBe('Task')
+  })
 })

@@ -51,4 +51,29 @@ describe('WrapInlineCommand', () => {
     runner.run(wrapInlineCommand, { before: '**', after: '**' })
     expect(adapter.focusCount).toBe(1)
   })
+
+  it('trims leading and trailing newlines from selection', () => {
+    const { adapter, runner } = createRunner('Hello\nWorld\n!', { anchor: 0, head: 12 })
+    runner.run(wrapInlineCommand, { before: '**', after: '**' })
+    expect(adapter.getContent()).toBe('**Hello\nWorld**\n!')
+  })
+
+  it('does not unwrap when only one side has the mark', () => {
+    const { adapter, runner } = createRunner('Hello **World', { anchor: 6, head: 14 })
+    runner.run(wrapInlineCommand, { before: '**', after: '**' })
+    expect(adapter.getContent()).toBe('Hello ****World**')
+  })
+
+  it('inserts marks at document end with collapsed selection', () => {
+    const { adapter, runner } = createRunner('Hello', { anchor: 5 })
+    runner.run(wrapInlineCommand, { before: '**', after: '**' })
+    expect(adapter.getContent()).toBe('Hello****')
+    expect(adapter.getSelection()).toEqual({ anchor: 7, head: 7 })
+  })
+
+  it('is a no-op for empty before and after', () => {
+    const { adapter, runner } = createRunner('Hello World', { anchor: 6, head: 11 })
+    runner.run(wrapInlineCommand, { before: '', after: '' })
+    expect(adapter.getContent()).toBe('Hello World')
+  })
 })

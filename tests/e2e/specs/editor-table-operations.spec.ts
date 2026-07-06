@@ -29,6 +29,13 @@ test.describe('Editor Table Operations', () => {
     await cell.click({ button: 'right' })
     await page.locator('.context-menu').getByText('在下方插入行').click()
     await page.waitForTimeout(300)
+    // Row insertion moves the cursor into the new row, hiding the widget.
+    // Move the cursor out so the widget reappears for the next operation.
+    await page.evaluate(() => {
+      const view = (window as any).__cmView
+      if (view) view.dispatch({ selection: { anchor: view.state.doc.length } })
+    })
+    await page.waitForTimeout(300)
     // Add second row
     await cell.click({ button: 'right' })
     await page.locator('.context-menu').getByText('在下方插入行').click()

@@ -8,7 +8,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:editor-regression": "cd .. && ./scripts/editor-regression.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",

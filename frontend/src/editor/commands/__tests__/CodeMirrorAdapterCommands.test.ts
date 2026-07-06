@@ -78,6 +78,7 @@ describe('CodeMirrorAdapter command integration', () => {
     }
     runner.run(addRowBelowCommand, { tableData, rowIdx: 0 })
     expect(view.state.doc.toString()).toContain('| a | b |')
+    expect(view.state.selection.main.anchor).toBeGreaterThan(0)
     expect(view.state.doc.toString()).toContain('|   |   |')
   })
 

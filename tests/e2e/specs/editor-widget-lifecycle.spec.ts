@@ -377,7 +377,7 @@ test.describe('Widget Lifecycle - Image', () => {
     await expect(imageWidget).toBeVisible()
   })
 
-  test('should keep image widget visible on click and dispatch event', async ({ page }) => {
+  test('should move cursor into image source and dispatch event on click', async ({ page }) => {
     await setContent(page, '![Alt text](test.png)')
     await focusEditor(page)
 
@@ -404,8 +404,8 @@ test.describe('Widget Lifecycle - Image', () => {
     await imageWidget.click()
     await page.waitForTimeout(300)
 
-    // Widget should remain visible (image click does not enter edit mode like math)
-    await expect(imageWidget).toBeVisible()
+    // Widget should be hidden because the cursor moved into the image source range
+    await expect(imageWidget).not.toBeVisible()
 
     // Event should have been dispatched
     const eventResult = await Promise.race([

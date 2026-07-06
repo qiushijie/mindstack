@@ -1,0 +1,88 @@
+name: Editor Regression
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/src/components/CodeMirrorEditor.vue'
+      - 'frontend/src/components/FindPanel.vue'
+      - 'frontend/src/composables/useCodeMirror.ts'
+      - 'frontend/src/composables/useEditorState.ts'
+      - 'frontend/src/extensions/**'
+      - 'frontend/src/utils/markdownUtils.ts'
+      - 'frontend/src/utils/tableUtils.ts'
+      - 'frontend/src/utils/syntaxUtils.ts'
+      - 'frontend/src/editor/**'
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/src/**'
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install
+
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: pnpm vitest run
+
+  editor-e2e:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install e2e dependencies
+        working-directory: tests/e2e
+        run: pnpm install
+
+      - name: Install Playwright Chromium
+        working-directory: tests/e2e
+        run: pnpm exec playwright install chromium
+
+      - name: Run editor e2e specs
+        working-directory: tests/e2e
+        run: pnpm test -- specs/editor-selection-stability.spec.ts specs/editor-widget-selection.spec.ts specs/editor-long-document.spec.ts
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/e2e/test-results/
+          retention-days: 7

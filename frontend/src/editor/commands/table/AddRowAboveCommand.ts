@@ -15,9 +15,12 @@ export const addRowAboveCommand: EditorCommand<TableCommandPayload> = {
     newRows.splice(insertIdx, 0, emptyRow)
 
     const newMarkdown = buildTableMarkdown(headers.map(h => h.content), newRows)
+    const rowsBefore = newRows.slice(0, insertIdx)
+    const prefix = buildTableMarkdown(headers.map(h => h.content), rowsBefore)
+    const newRowAnchor = tableFrom + prefix.length + 3 // +1 newline, +2 "| "
     adapter.replaceRange(
       { from: tableFrom, to: tableTo, insert: newMarkdown },
-      { selection: { anchor: tableFrom } },
+      { selection: { anchor: newRowAnchor } },
     )
     adapter.focus()
     return { success: true }
