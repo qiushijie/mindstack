@@ -54,7 +54,7 @@ go test ./...
 # Frontend unit tests (vitest + happy-dom)
 cd frontend && pnpm vitest run
 
-# Editor regression threshold (unit + core editor e2e)
+# Editor regression threshold (unit + type check + core editor e2e)
 ./scripts/editor-regression.sh
 
 # Full E2E tests (Playwright)
@@ -62,9 +62,9 @@ cd frontend && pnpm vitest run
 cd tests/e2e && pnpm test
 ```
 
-The editor regression script runs the frontend unit tests plus the three core
-editor e2e specs. Run the full e2e suite for large editor changes or before a
-release.
+The editor regression script runs the frontend unit tests, TypeScript type check,
+plus the three core editor e2e specs. Run the full e2e suite for large editor
+changes or before a release.
 
 Playwright E2E tests run concurrently across spec files during local runs to keep
 the full suite practical. Tests must be written with isolated state and must not

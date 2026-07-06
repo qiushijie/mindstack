@@ -3,15 +3,18 @@
 ## 自动化回归（必须全部通过）
 
 ```bash
-# 前端单元测试
-cd frontend && pnpm vitest run
-
-# 编辑器专项 e2e（三件套）
-cd tests/e2e && pnpm test -- specs/editor-selection-stability.spec.ts specs/editor-widget-selection.spec.ts specs/editor-long-document.spec.ts
+# 一键运行单元测试 + 类型检查 + 编辑器三件套 e2e
+./scripts/editor-regression.sh
 
 # 编辑器大改后必须运行完整 e2e
 cd tests/e2e && pnpm test
 ```
+
+手动拆分时需要包含：
+
+- `cd frontend && pnpm vitest run`
+- `cd frontend && pnpm exec vue-tsc --noEmit`
+- `cd tests/e2e && pnpm test -- specs/editor-selection-stability.spec.ts specs/editor-widget-selection.spec.ts specs/editor-long-document.spec.ts`
 
 ## 手动测试清单
 

@@ -6,6 +6,9 @@ echo "==> Running frontend unit tests"
 cd "$ROOT_DIR/frontend"
 pnpm vitest run
 
+echo "==> Running TypeScript type check"
+pnpm exec vue-tsc --noEmit
+
 echo "==> Running editor-specific e2e specs"
 cd "$ROOT_DIR/tests/e2e"
 pnpm test -- specs/editor-selection-stability.spec.ts specs/editor-widget-selection.spec.ts specs/editor-long-document.spec.ts
