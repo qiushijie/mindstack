@@ -1,12 +1,22 @@
 import { test, expect } from '@playwright/test'
 import { waitForAppReady, navigateTo } from '../helpers/app'
+import { readConfig, writeConfig, clearSessionPaths } from '../helpers/config'
+import { mockGoBinding } from '../helpers/goBindings'
+
+async function mockConfigBindings(page: import('@playwright/test').Page) {
+  await mockGoBinding(page, 'LoadConfig', () => Promise.resolve(JSON.stringify(readConfig())))
+  await mockGoBinding(page, 'SaveConfig', (json: string) => {
+    writeConfig(JSON.parse(json))
+    return Promise.resolve('')
+  })
+}
 
 test.describe('Settings Interactions', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await waitForAppReady(page)
+    await mockConfigBindings(page)
 
-    // Dismiss the git-init confirm dialog that appears when a workspace loads
     const dialog = page.locator('.confirm-dialog-overlay')
     try {
       await dialog.waitFor({ state: 'visible', timeout: 3000 })
@@ -19,81 +29,85 @@ test.describe('Settings Interactions', () => {
     await navigateTo(page, 'settings')
   })
 
+  test.afterEach(() => {
+    const cfg = clearSessionPaths(readConfig())
+    cfg.settings = cfg.settings || {}
+    cfg.settings.theme = 'light'
+    cfg.settings.locale = 'zh'
+    cfg.settings.autoSave = true
+    cfg.settings.autoSaveDelay = 5
+    cfg.settings.autoCommit = false
+    cfg.settings.lineNumbers = true
+    cfg.settings.wordWrap = true
+    writeConfig(cfg)
+  })
+
   test('should show theme buttons in General section', async ({ page }) => {
-    const lightBtn = page.locator('button.theme-btn').filter({ hasText: '浅色' })
-    const darkBtn = page.locator('button.theme-btn').filter({ hasText: '深色' })
-    await expect(lightBtn).toBeVisible()
-    await expect(darkBtn).toBeVisible()
+    await expect(page.locator('[data-testid="theme-light-btn"]')).toBeVisible()
+    await expect(page.locator('[data-testid="theme-dark-btn"]')).toBeVisible()
   })
 
-  test('should toggle theme from Light to Dark', async ({ page }) => {
-    const darkBtn = page.locator('button.theme-btn').filter({ hasText: '深色' })
-    await darkBtn.click()
-    await expect(darkBtn).toHaveClass(/active/)
+  test('should toggle theme from Light to Dark and persist', async ({ page }) => {
+    await page.locator('[data-testid="theme-dark-btn"]').click()
+    await expect(page.locator('[data-testid="theme-dark-btn"]')).toHaveClass(/active/)
+
+    await page.waitForTimeout(500)
+    const cfg = readConfig()
+    expect(cfg.settings?.theme).toBe('dark')
   })
 
-  test('should show Auto Save toggle in General section', async ({ page }) => {
-    const autoSaveRow = page.locator('.setting-row').filter({ hasText: '自动保存' })
-    const toggle = autoSaveRow.locator('.toggle')
-    await expect(toggle).toBeVisible()
-  })
-
-  test('should toggle Auto Save on and off', async ({ page }) => {
-    const autoSaveRow = page.locator('.setting-row').filter({ hasText: '自动保存' })
-    const toggle = autoSaveRow.locator('.toggle')
-    const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
+  test('should toggle Auto Save on and off and persist', async ({ page }) => {
+    const toggle = page.locator('[data-testid="toggle-auto-save"]')
+    const cfgBefore = readConfig()
+    const wasOn = !!cfgBefore.settings?.autoSave
 
     await toggle.click()
+    await expect(toggle).toHaveClass(wasOn ? /^(?!.*on).*$/ : /on/)
+
+    await page.waitForTimeout(500)
+    const cfgAfter = readConfig()
+    expect(cfgAfter.settings?.autoSave).toBe(!wasOn)
+  })
+
+  test('should toggle Line Numbers state', async ({ page }) => {
+    const toggle = page.locator('[data-testid="toggle-line-numbers"]')
+    const wasOn = await toggle.evaluate(el => el.classList.contains('on'))
+
+    await toggle.click()
+    await expect(toggle).toHaveClass(wasOn ? /^(?!.*on).*$/ : /on/)
+
+    await navigateTo(page, 'editor')
+    const lineNumberGutter = page.locator('.cm-lineNumbers')
     if (wasOn) {
-      await expect(toggle).not.toHaveClass(/on/)
+      await expect(lineNumberGutter).toHaveCount(0)
     } else {
-      await expect(toggle).toHaveClass(/on/)
+      await expect(lineNumberGutter).toBeVisible()
     }
   })
 
-  test('should toggle Line Numbers', async ({ page }) => {
-    const row = page.locator('.setting-row').filter({ hasText: '行号' })
-    const toggle = row.locator('.toggle')
-    const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
+  test('should toggle Word Wrap state', async ({ page }) => {
+    const toggle = page.locator('[data-testid="toggle-word-wrap"]')
+    const wasOn = await toggle.evaluate(el => el.classList.contains('on'))
 
     await toggle.click()
-    if (wasOn) {
-      await expect(toggle).not.toHaveClass(/on/)
-    } else {
-      await expect(toggle).toHaveClass(/on/)
-    }
-  })
-
-  test('should toggle Word Wrap', async ({ page }) => {
-    const row = page.locator('.setting-row').filter({ hasText: '自动换行' })
-    const toggle = row.locator('.toggle')
-    const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
-
-    await toggle.click()
-    if (wasOn) {
-      await expect(toggle).not.toHaveClass(/on/)
-    } else {
-      await expect(toggle).toHaveClass(/on/)
-    }
+    await expect(toggle).toHaveClass(wasOn ? /^(?!.*on).*$/ : /on/)
   })
 
   test('should show Auto Commit toggle in Git section', async ({ page }) => {
-    const autoCommitRow = page.locator('.setting-row').filter({ hasText: '自动提交' })
-    const toggle = autoCommitRow.locator('.toggle')
-    await expect(toggle).toBeVisible()
+    await expect(page.locator('[data-testid="toggle-auto-commit"]')).toBeVisible()
   })
 
-  test('should toggle Auto Commit', async ({ page }) => {
-    const row = page.locator('.setting-row').filter({ hasText: '自动提交' })
-    const toggle = row.locator('.toggle')
-    const wasOn = await toggle.evaluate((el) => el.classList.contains('on'))
+  test('should toggle Auto Commit and persist', async ({ page }) => {
+    const toggle = page.locator('[data-testid="toggle-auto-commit"]')
+    const cfgBefore = readConfig()
+    const wasOn = !!cfgBefore.settings?.autoCommit
 
     await toggle.click()
-    if (wasOn) {
-      await expect(toggle).not.toHaveClass(/on/)
-    } else {
-      await expect(toggle).toHaveClass(/on/)
-    }
+    await expect(toggle).toHaveClass(wasOn ? /^(?!.*on).*$/ : /on/)
+
+    await page.waitForTimeout(500)
+    const cfgAfter = readConfig()
+    expect(cfgAfter.settings?.autoCommit).toBe(!wasOn)
   })
 
   test('should show model section', async ({ page }) => {

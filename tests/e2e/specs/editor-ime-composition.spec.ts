@@ -35,12 +35,23 @@ test.describe('IME Composition Smoke Test', () => {
 
     await page.waitForTimeout(200)
 
-    // The smoke test only guarantees the editor does not crash and still
-    // exposes a valid selection. Real IME validation is covered by the
-    // manual release checklist.
     const sel = await getSelectionRange(page)
     expect(sel.from).toBeGreaterThanOrEqual(0)
     const content = await getContent(page)
     expect(content.length).toBeGreaterThanOrEqual(0)
+  })
+
+  test('should input real CJK text via keyboard', async ({ page }) => {
+    await focusEditor(page)
+
+    await page.keyboard.insertText('中文')
+
+    const content = await getContent(page)
+    expect(content).toBe('中文')
+
+    const sel = await getSelectionRange(page)
+    expect(sel.from).toBe(2)
+    expect(sel.to).toBe(2)
+    expect(sel.empty).toBe(true)
   })
 })

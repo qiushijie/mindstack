@@ -1,11 +1,9 @@
 import { test, expect } from '@playwright/test'
 import { waitForAppReady, resetAppState } from '../helpers/app'
-import { getContent, setContent, typeInEditor, selectAll, focusEditor, clearEditor } from '../helpers/editor'
+import { getContent, setContent, focusEditor, clearEditor } from '../helpers/editor'
 
-// Toolbar row 1: Bold(0), Italic(1), Strikethrough(2), Text(3)
-// Toolbar row 2: H1(4), H2(5), H3(6), H4(7)
-function toolbarBtn(page: import('@playwright/test').Page, index: number) {
-  return page.locator('.selection-toolbar .toolbar-btn').nth(index)
+function toolbarBtn(page: import('@playwright/test').Page, label: string) {
+  return page.locator(`[data-testid="toolbar-${label}"]`)
 }
 
 async function selectWordByDoubleClick(page: import('@playwright/test').Page): Promise<void> {
@@ -39,8 +37,7 @@ test.describe('Editor Formatting', () => {
     await selectWordByDoubleClick(page)
 
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // Bold is the first button (row 1, index 0)
-    await toolbarBtn(page, 0).click()
+    await toolbarBtn(page, 'Bold').click()
 
     const content = await getContent(page)
     expect(content).toContain('**')
@@ -52,8 +49,7 @@ test.describe('Editor Formatting', () => {
     await selectWordByDoubleClick(page)
 
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // Italic is the second button (row 1, index 1)
-    await toolbarBtn(page, 1).click()
+    await toolbarBtn(page, 'Italic').click()
 
     const content = await getContent(page)
     expect(content).toMatch(/\*[^*]+\*/)
@@ -62,13 +58,11 @@ test.describe('Editor Formatting', () => {
   test('should show heading buttons in toolbar', async ({ page }) => {
     await setContent(page, 'Hello World')
     await focusEditor(page)
-    // Use double-click to reliably trigger toolbar
     await selectWordByDoubleClick(page)
 
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // H1 is the 5th button (index 4), H2 is 6th (index 5)
-    await expect(toolbarBtn(page, 4)).toBeVisible()
-    await expect(toolbarBtn(page, 5)).toBeVisible()
+    await expect(toolbarBtn(page, 'H1')).toBeVisible()
+    await expect(toolbarBtn(page, 'H2')).toBeVisible()
   })
 
   test('should apply H1 via toolbar', async ({ page }) => {
@@ -77,19 +71,19 @@ test.describe('Editor Formatting', () => {
     await selectWordByDoubleClick(page)
 
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // H1 is the 5th button (index 4)
-    await toolbarBtn(page, 4).click()
+    await toolbarBtn(page, 'H1').click()
 
     const content = await getContent(page)
     expect(content).toContain('# ')
   })
 
   test('should show context menu on right click', async ({ page }) => {
-    await typeInEditor(page, 'Hello World')
+    await setContent(page, 'Hello World')
+    await focusEditor(page)
     await page.locator('.editor-container').click({ button: 'right' })
 
     await expect(page.locator('.context-menu')).toBeVisible()
-    await expect(page.locator('.context-menu .ctx-item').first()).toContainText('剪切')
+    await expect(page.locator('[data-testid="ctx-cut"]')).toContainText('剪切')
   })
 
   test('should apply strikethrough via toolbar', async ({ page }) => {
@@ -97,8 +91,7 @@ test.describe('Editor Formatting', () => {
     await focusEditor(page)
     await selectWordByDoubleClick(page)
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // Strikethrough is the third button (row 1, index 2)
-    await toolbarBtn(page, 2).click()
+    await toolbarBtn(page, 'Strikethrough').click()
     const content = await getContent(page)
     expect(content).toContain('~~')
   })
@@ -108,8 +101,7 @@ test.describe('Editor Formatting', () => {
     await focusEditor(page)
     await selectWordByDoubleClick(page)
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // H2 is the 6th button (row 2, index 5)
-    await toolbarBtn(page, 5).click()
+    await toolbarBtn(page, 'H2').click()
     const content = await getContent(page)
     expect(content).toContain('## ')
   })
@@ -119,8 +111,7 @@ test.describe('Editor Formatting', () => {
     await focusEditor(page)
     await selectWordByDoubleClick(page)
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // H3 is the 7th button (row 2, index 6)
-    await toolbarBtn(page, 6).click()
+    await toolbarBtn(page, 'H3').click()
     const content = await getContent(page)
     expect(content).toContain('### ')
   })
@@ -130,8 +121,7 @@ test.describe('Editor Formatting', () => {
     await focusEditor(page)
     await selectWordByDoubleClick(page)
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // H4 is the 8th button (row 2, index 7)
-    await toolbarBtn(page, 7).click()
+    await toolbarBtn(page, 'H4').click()
     const content = await getContent(page)
     expect(content).toContain('#### ')
   })
@@ -141,8 +131,7 @@ test.describe('Editor Formatting', () => {
     await focusEditor(page)
     await selectWordByDoubleClick(page)
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // Code is the 12th button (row 3, index 11)
-    await toolbarBtn(page, 11).click()
+    await toolbarBtn(page, 'Code').click()
     const content = await getContent(page)
     expect(content).toContain('`')
   })
@@ -152,8 +141,7 @@ test.describe('Editor Formatting', () => {
     await focusEditor(page)
     await selectWordByDoubleClick(page)
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // Quote is the 13th button (row 3, index 12)
-    await toolbarBtn(page, 12).click()
+    await toolbarBtn(page, 'Quote').click()
     const content = await getContent(page)
     expect(content).toContain('> ')
   })
@@ -163,8 +151,7 @@ test.describe('Editor Formatting', () => {
     await focusEditor(page)
     await selectWordByDoubleClick(page)
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // Link is the 14th button (row 3, index 13)
-    await toolbarBtn(page, 13).click()
+    await toolbarBtn(page, 'Link').click()
     const content = await getContent(page)
     expect(content).toContain('](url)')
   })
@@ -174,8 +161,7 @@ test.describe('Editor Formatting', () => {
     await focusEditor(page)
     await selectWordByDoubleClick(page)
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // List is the 9th button (row 2, index 8)
-    await toolbarBtn(page, 8).click()
+    await toolbarBtn(page, 'List').click()
     const content = await getContent(page)
     expect(content).toContain('- ')
   })
@@ -185,8 +171,7 @@ test.describe('Editor Formatting', () => {
     await focusEditor(page)
     await selectWordByDoubleClick(page)
     await expect(page.locator('.selection-toolbar')).toBeVisible({ timeout: 5000 })
-    // OrderedList is the 10th button (row 2, index 9)
-    await toolbarBtn(page, 9).click()
+    await toolbarBtn(page, 'OrderedList').click()
     const content = await getContent(page)
     expect(content).toContain('1. ')
   })

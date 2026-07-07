@@ -1,5 +1,5 @@
 import { ref, shallowRef, onMounted, onUnmounted, watch, type Ref } from 'vue'
-import { EditorView, ViewUpdate } from '@codemirror/view'
+import { EditorView, ViewUpdate, lineNumbers } from '@codemirror/view'
 import { EditorState, Extension, Compartment } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { GFM } from '@lezer/markdown'
@@ -30,6 +30,8 @@ interface UseCodeMirrorOptions {
   initialDoc?: string
   extensions?: Extension[]
   rawMode?: Ref<boolean>
+  lineNumbers?: Ref<boolean>
+  wordWrap?: Ref<boolean>
   onChange?: (doc: string) => void
   onSelectionChange?: (state: EditorState) => void
   onScroll?: (topLine: number) => void
@@ -55,6 +57,8 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
   const themeCompartment = new Compartment()
   const extCompartment = new Compartment()
   const richCompartment = new Compartment()
+  const lineNumbersCompartment = new Compartment()
+  const lineWrappingCompartment = new Compartment()
   const view = shallowRef<EditorView | null>(null)
   const doc = ref(options.initialDoc ?? '')
   const { editorView: sharedView } = useEditorState()
@@ -97,7 +101,8 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       search(),
       currentFilePathExtension(),
       richCompartment.of(getRichExtensions()),
-      EditorView.lineWrapping,
+      lineNumbersCompartment.of(options.lineNumbers?.value ? lineNumbers() : []),
+      lineWrappingCompartment.of(options.wordWrap?.value ? EditorView.lineWrapping : []),
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (update.docChanged) {
           doc.value = update.state.doc.toString()
@@ -211,6 +216,18 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       view.value.dispatch({
         effects: richCompartment.reconfigure(getRichExtensions()),
       })
+    })
+  }
+
+  if (options.lineNumbers) {
+    watch(options.lineNumbers, (v) => {
+      view.value?.dispatch({ effects: lineNumbersCompartment.reconfigure(v ? lineNumbers() : []) })
+    })
+  }
+
+  if (options.wordWrap) {
+    watch(options.wordWrap, (v) => {
+      view.value?.dispatch({ effects: lineWrappingCompartment.reconfigure(v ? EditorView.lineWrapping : []) })
     })
   }
 

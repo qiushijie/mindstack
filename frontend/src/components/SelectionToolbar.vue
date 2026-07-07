@@ -74,6 +74,7 @@ const rows: { items: ToolbarItem[] }[] = [
           v-for="item in row.items"
           :key="item.label"
           class="toolbar-btn"
+          :data-testid="`toolbar-${item.label}`"
           :class="{ active: activeLabels.has(item.label) }"
           @pointerdown.prevent="emit('select', item.label)"
           @keydown.enter.prevent="emit('select', item.label)"

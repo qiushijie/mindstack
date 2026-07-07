@@ -210,6 +210,8 @@ export default {
       messageGenerated: 'AI 已生成提交信息',
       pushAfterCommit: '提交后推送',
       pushError: '推送失败：{error}',
+      pullSuccess: '拉取完成',
+      pushSuccess: '推送完成',
     },
     toolbar: {
       Bold: '加粗',

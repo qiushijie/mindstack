@@ -23,6 +23,8 @@ const autoSave = ref(true)
 const autoSaveDelay = ref(5)
 const locale = ref<Locale>('en')
 const theme = ref<'light' | 'dark'>('light')
+const lineNumbers = ref(true)
+const wordWrap = ref(true)
 const models = ref<ModelConfig[]>([])
 const activeModelId = ref('')
 const showKeyIds = ref<Set<string>>(new Set())
@@ -75,6 +77,8 @@ async function doSave() {
           autoSaveDelay: autoSaveDelay.value,
           locale: locale.value,
           theme: theme.value,
+          lineNumbers: lineNumbers.value,
+          wordWrap: wordWrap.value,
           models: models.value,
           activeModelId: activeModelId.value,
           uiPlatform: uiPlatform.value,
@@ -105,7 +109,6 @@ export function useSettings() {
     skipWatch = true
     try {
       const raw = await LoadConfig()
-      loaded = true
       const config = JSON.parse(raw || '{}')
       const s = config.settings || {}
       if (s.autoSave !== undefined) autoSave.value = s.autoSave
@@ -119,6 +122,8 @@ export function useSettings() {
         theme.value = s.theme
         applyTheme(theme.value)
       }
+      if (typeof s.lineNumbers === 'boolean') lineNumbers.value = s.lineNumbers
+      if (typeof s.wordWrap === 'boolean') wordWrap.value = s.wordWrap
       if (Array.isArray(s.models)) models.value = s.models.map((m: any) => ({ ...m, model: m.model || 'deepseek-v4-flash', apiUrl: m.apiUrl || '' }))
       if (s.activeModelId) activeModelId.value = s.activeModelId
       if (typeof s.debugMode === 'boolean') debugMode.value = s.debugMode
@@ -138,6 +143,7 @@ export function useSettings() {
     } catch (err) {
       console.error('Failed to load settings:', err)
     }
+    loaded = true
     await nextTick()
     skipWatch = false
   }
@@ -183,7 +189,7 @@ export function useSettings() {
   }
 
   return {
-    autoSave, autoSaveDelay, locale, theme,
+    autoSave, autoSaveDelay, locale, theme, lineNumbers, wordWrap,
     models, activeModelId, showKeyIds,
     platform, uiPlatform, rawMode, debugMode,
     defaultBranch, autoCommit, autoPull, gitRemote,
@@ -192,7 +198,7 @@ export function useSettings() {
   }
 }
 
-watch([autoSave, autoSaveDelay, locale, theme, activeModelId, models, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, gitRemote], async () => {
+watch([autoSave, autoSaveDelay, locale, theme, lineNumbers, wordWrap, activeModelId, models, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, gitRemote], async () => {
   if (!loaded || skipWatch) return
   await doSave()
 }, { deep: true })

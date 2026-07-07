@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, provide, watch, onMounted } from 'vue'
+import { ref, provide, watch, onMounted, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessageSquare } from 'lucide-vue-next'
 import { EventsOn, EventsOff, ClipboardGetText } from '../wailsjs/runtime/runtime'
@@ -33,12 +33,31 @@ const aboutDialogVisible = ref(false)
 
 const showCommitDialog = ref(false)
 
+const gitStatus = reactive({ status: '', error: '' })
+
+function parseGitResult(result: string): { error?: string; message?: string; ok?: boolean } {
+  try {
+    return JSON.parse(result)
+  } catch {
+    return { error: result }
+  }
+}
+
 async function handleGitPull() {
+  gitStatus.status = ''
+  gitStatus.error = ''
   try {
     const gitInit = await GitCheckInit()
     if (!gitInit) return
-    await GitPull()
+    const result = await GitPull()
+    const data = parseGitResult(result)
+    if (data.error) {
+      gitStatus.error = t('editor.gitSync.error', { error: data.error })
+      return
+    }
+    gitStatus.status = t('editor.gitSync.pullSuccess')
   } catch (err) {
+    gitStatus.error = t('editor.gitSync.error', { error: String(err) })
     console.warn('[App] Git pull failed:', err)
   }
 }
@@ -54,16 +73,30 @@ async function onCommitSuccess() {
 }
 
 async function handleGitPush() {
+  gitStatus.status = ''
+  gitStatus.error = ''
   try {
     const gitInit = await GitCheckInit()
     if (!gitInit) return
 
     if (autoCommit.value) {
-      await GitAutoCommit()
+      const autoResult = await GitAutoCommit()
+      const autoData = parseGitResult(autoResult)
+      if (autoData.error) {
+        gitStatus.error = t('editor.gitSync.error', { error: autoData.error })
+        return
+      }
     }
 
-    await GitPush()
+    const result = await GitPush()
+    const data = parseGitResult(result)
+    if (data.error) {
+      gitStatus.error = t('editor.gitSync.error', { error: data.error })
+      return
+    }
+    gitStatus.status = t('editor.gitSync.pushSuccess')
   } catch (err) {
+    gitStatus.error = t('editor.gitSync.error', { error: String(err) })
     console.warn('[App] Git auto-commit/push failed:', err)
   }
 }
@@ -89,24 +122,31 @@ onMounted(async () => {
   await loadSettings()
   applyTheme(theme.value)
 
-  // __localeReady signals that the initial mount is complete,
-  // regardless of whether Wails runtime is connected.
-  // E2E tests that need Wails bindings mock them after this flag.
-  ;(window as any).__localeReady = true
-  // Expose setLocale for E2E tests to switch locale without Wails bindings
-  ;(window as any).__setLocale = setLocale
-  // Expose setRawMode for E2E tests to toggle raw mode without Wails bindings
-  ;(window as any).__setRawMode = (v: boolean) => { rawMode.value = v }
-  // Expose showCommitDialog for E2E tests to open commit dialog without menu
-  ;(window as any).__testShowCommitDialog = () => { showCommitDialog.value = true }
-  // Expose toggleAIChat for E2E tests to open/close AI chat panel without clicking the floating button
-  ;(window as any).__toggleAIChat = () => { showAIChat.value = !showAIChat.value }
-  // Expose showAboutDialog for E2E tests to open about dialog without menu
-  ;(window as any).__showAboutDialog = () => { aboutDialogVisible.value = true }
-  // Expose triggerConfirm for E2E tests to programmatically trigger confirm dialogs
-  ;(window as any).__triggerConfirm = (opts: any): Promise<boolean> => {
-    const { confirm } = useConfirmDialog()
-    return confirm(opts)
+  if (import.meta.env.DEV) {
+    // __localeReady signals that the initial mount is complete,
+    // regardless of whether Wails runtime is connected.
+    // E2E tests that need Wails bindings mock them after this flag.
+    ;(window as any).__localeReady = true
+    // Expose setLocale for E2E tests to switch locale without Wails bindings
+    ;(window as any).__setLocale = setLocale
+    // Expose setRawMode for E2E tests to toggle raw mode without Wails bindings
+    ;(window as any).__setRawMode = (v: boolean) => { rawMode.value = v }
+    // Expose showCommitDialog for E2E tests to open commit dialog without menu
+    ;(window as any).__testShowCommitDialog = () => { showCommitDialog.value = true }
+    // Expose toggleAIChat for E2E tests to open/close AI chat panel without clicking the floating button
+    ;(window as any).__toggleAIChat = () => { showAIChat.value = !showAIChat.value }
+    // Expose showAboutDialog for E2E tests to open about dialog without menu
+    ;(window as any).__showAboutDialog = () => { aboutDialogVisible.value = true }
+    // Expose triggerConfirm for E2E tests to programmatically trigger confirm dialogs
+    ;(window as any).__triggerConfirm = (opts: any): Promise<boolean> => {
+      const { confirm } = useConfirmDialog()
+      return confirm(opts)
+    }
+    // Expose git sync handlers and status for E2E tests (no UI floating button in prod)
+    ;(window as any).__handleGitPull = handleGitPull
+    ;(window as any).__handleGitCommit = handleGitCommit
+    ;(window as any).__handleGitPush = handleGitPush
+    ;(window as any).__gitStatus = gitStatus
   }
 
   // HMR dev mode: Wails runtime may not be ready yet (window.go undefined),
@@ -267,14 +307,7 @@ onMounted(async () => {
 
   // Auto-pull on startup if configured
   if (autoPull.value && rootPath.value) {
-    try {
-      const isInit = await GitCheckInit()
-      if (isInit) {
-        await GitPull()
-      }
-    } catch (err) {
-      console.warn('[App] Auto git pull failed:', err)
-    }
+    handleGitPull()
   }
 })
 
@@ -328,7 +361,7 @@ watch(rootPath, async (newPath) => {
         <RelationGraph v-else-if="currentPage === 'relations'" />
         <DiffView v-else-if="currentPage === 'diff'" :key="renderKey" />
       </div>
-      <AppStatusBar />
+      <AppStatusBar :git-status="gitStatus" />
     </div>
     <AIChatPanel v-if="showAIChat && currentPage === 'editor'" @close="showAIChat = false" @open-file="selectFile" />
     <CommitDialog :visible="showCommitDialog" @close="showCommitDialog = false" @commit-success="onCommitSuccess" />

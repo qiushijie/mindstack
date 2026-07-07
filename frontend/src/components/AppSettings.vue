@@ -95,12 +95,10 @@ const debugKeywords = computed(() => [
   t('settings.platform.windows'),
 ].join(' '))
 
-const { autoSave, autoSaveDelay, locale, theme, models, activeModelId, showKeyIds, platform, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, gitRemote, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
+const { autoSave, autoSaveDelay, locale, theme, lineNumbers, wordWrap, models, activeModelId, showKeyIds, platform, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, gitRemote, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
 const fontFamily = ref('Inter')
 const fontSize = ref(16)
 const tabSize = ref(2)
-const lineNumbers = ref(true)
-const wordWrap = ref(true)
 
 const searchFocused = ref(false)
 const langOpen = ref(false)
@@ -138,6 +136,31 @@ async function selectLocale(key: Locale) {
   await saveSettings()
 }
 
+function setTheme(value: 'light' | 'dark') {
+  theme.value = value
+  applyTheme(value)
+}
+
+function toggleAutoSave() {
+  autoSave.value = !autoSave.value
+}
+
+function toggleLineNumbers() {
+  lineNumbers.value = !lineNumbers.value
+}
+
+function toggleWordWrap() {
+  wordWrap.value = !wordWrap.value
+}
+
+function toggleAutoCommit() {
+  autoCommit.value = !autoCommit.value
+}
+
+function toggleAutoPull() {
+  autoPull.value = !autoPull.value
+}
+
 async function syncRemoteUrl() {
   await saveSettings()
   await GitSetRemote(gitRemote.value).catch((err) => { console.warn('[Settings] Failed to set git remote:', err) })
@@ -154,6 +177,7 @@ async function syncRemoteUrl() {
             v-model="searchQuery"
             type="text"
             class="settings-search-input"
+            data-testid="settings-search-input"
             :placeholder="t('settings.searchPlaceholder')"
             @focus="searchFocused = true"
             @blur="searchFocused = false"
@@ -177,15 +201,17 @@ async function syncRemoteUrl() {
               <div class="theme-selector">
                 <button
                   class="theme-btn"
+                  data-testid="theme-light-btn"
                   :class="{ active: theme === 'light' }"
-                  @click="theme = 'light'; applyTheme('light')"
+                  @click="setTheme('light')"
                 >
                   {{ t('settings.theme.light') }}
                 </button>
                 <button
                   class="theme-btn"
+                  data-testid="theme-dark-btn"
                   :class="{ active: theme === 'dark' }"
-                  @click="theme = 'dark'; applyTheme('dark')"
+                  @click="setTheme('dark')"
                 >
                   {{ t('settings.theme.dark') }}
                 </button>
@@ -196,7 +222,7 @@ async function syncRemoteUrl() {
                 <span class="setting-label">{{ t('settings.label.language') }}</span>
                 <span class="setting-desc">{{ t('settings.desc.language') }}</span>
               </div>
-              <div class="select-dropdown" :class="{ open: langOpen }">
+              <div class="select-dropdown" data-testid="language-dropdown" :class="{ open: langOpen }">
                 <button class="select-value" @click="langOpen = !langOpen">
                   <span>{{ t(`settings.langName.${locale}`) }}</span>
                   <ChevronDown :size="12" />
@@ -206,6 +232,7 @@ async function syncRemoteUrl() {
                     v-for="item in locales"
                     :key="item.key"
                     class="dropdown-item"
+                    :data-testid="`language-option-${item.key}`"
                     :class="{ active: locale === item.key }"
                     @click="selectLocale(item.key)"
                   >
@@ -225,8 +252,9 @@ async function syncRemoteUrl() {
               </div>
               <button
                 class="toggle"
+                data-testid="toggle-auto-save"
                 :class="{ on: autoSave }"
-                @click="autoSave = !autoSave"
+                @click="toggleAutoSave"
               >
                 <span class="toggle-thumb" />
               </button>
@@ -284,8 +312,9 @@ async function syncRemoteUrl() {
               </div>
               <button
                 class="toggle"
+                data-testid="toggle-line-numbers"
                 :class="{ on: lineNumbers }"
-                @click="lineNumbers = !lineNumbers"
+                @click="toggleLineNumbers"
               >
                 <span class="toggle-thumb" />
               </button>
@@ -297,8 +326,9 @@ async function syncRemoteUrl() {
               </div>
               <button
                 class="toggle"
+                data-testid="toggle-word-wrap"
                 :class="{ on: wordWrap }"
-                @click="wordWrap = !wordWrap"
+                @click="toggleWordWrap"
               >
                 <span class="toggle-thumb" />
               </button>
@@ -419,8 +449,9 @@ async function syncRemoteUrl() {
               </div>
               <button
                 class="toggle"
+                data-testid="toggle-auto-commit"
                 :class="{ on: autoCommit }"
-                @click="autoCommit = !autoCommit"
+                @click="toggleAutoCommit"
               >
                 <span class="toggle-thumb" />
               </button>
@@ -432,8 +463,9 @@ async function syncRemoteUrl() {
               </div>
               <button
                 class="toggle"
+                data-testid="toggle-auto-pull"
                 :class="{ on: autoPull }"
-                @click="autoPull = !autoPull"
+                @click="toggleAutoPull"
               >
                 <span class="toggle-thumb" />
               </button>

@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test'
 import { waitForAppReady } from '../helpers/app'
-import { openTestWorkspace, waitForTreeReady } from '../helpers/filetree'
+import { createTempWorkspace, cleanupTempWorkspace } from '../helpers/filetree'
+import { backupConfig, restoreConfig, readConfig, writeConfig, clearSessionPaths } from '../helpers/config'
+import { mockGitBindings, mockGoBinding, mockGoBindingsBatch } from '../helpers/goBindings'
 import * as cp from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
-import * as os from 'os'
 
 const GIT_ENV = {
   ...process.env,
@@ -27,97 +28,88 @@ function removeGit(cwd: string) {
   }
 }
 
-const CONFIG_PATH = path.join(os.homedir(), 'Library/Application Support/mindstack/config.json')
-
-async function mockGoBindings(page: import('@playwright/test').Page) {
-  await page.evaluate(() => {
-    if (!(window as any).go) {
-      (window as any).go = { main: { App: {} } }
-    }
-    ;(window as any).go.main.App.SetWorkspaceRoot = () => Promise.resolve()
-  })
+async function openWorkspace(page: import('@playwright/test').Page, wsPath: string) {
+  const nodes = [
+    { name: 'readme.md', path: `${wsPath}/readme.md`, isDir: false, expanded: false, children: [] },
+    { name: 'code.md', path: `${wsPath}/code.md`, isDir: false, expanded: false, children: [] },
+    { name: 'image.md', path: `${wsPath}/image.md`, isDir: false, expanded: false, children: [] },
+    { name: 'notes', path: `${wsPath}/notes`, isDir: true, expanded: false, children: [] },
+  ]
+  await page.evaluate(({ path, nodes }) => {
+    return (window as any).__setTestWorkspace?.(path, nodes)
+  }, { path: wsPath, nodes })
+  await page.waitForTimeout(300)
 }
 
-async function mockGitClean(page: import('@playwright/test').Page) {
-  await page.evaluate(() => {
-    ;(window as any).go.main.App.GitStatus = () =>
-      Promise.resolve(JSON.stringify({ clean: true, files: [] }))
-  })
+async function waitForTreeReady(page: import('@playwright/test').Page) {
+  await page.waitForSelector('.sidebar-tree', { state: 'visible' })
 }
 
-async function mockGitCommitNothing(page: import('@playwright/test').Page) {
-  await page.evaluate(() => {
-    ;(window as any).go.main.App.GitCommitFiles = () =>
-      Promise.resolve(JSON.stringify({ error: 'nothing to commit, working tree clean' }))
-  })
-}
+test.describe.configure({ mode: 'serial' })
 
 test.describe('Git Extreme - Empty Commit', () => {
   let configBackup: string | null = null
+  let currentWorkspace: string | null = null
 
   test.beforeAll(() => {
-    if (fs.existsSync(CONFIG_PATH)) {
-      configBackup = fs.readFileSync(CONFIG_PATH, 'utf-8')
-    }
+    configBackup = backupConfig()
   })
 
   test.afterAll(() => {
-    if (configBackup !== null) {
-      try {
-        fs.writeFileSync(CONFIG_PATH, configBackup)
-      } catch {
-        // best effort restore
-      }
-    }
+    restoreConfig(configBackup)
   })
 
   test.beforeEach(async ({ page }) => {
-    if (fs.existsSync(CONFIG_PATH)) {
-      try {
-        const raw = fs.readFileSync(CONFIG_PATH, 'utf-8')
-        const cfg = JSON.parse(raw)
-        delete cfg.lastFolderPath
-        delete cfg.lastFilePath
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg))
-      } catch {
-        fs.writeFileSync(CONFIG_PATH, '{}')
-      }
-    }
+    const cfg = clearSessionPaths(readConfig())
+    writeConfig(cfg)
+
+    currentWorkspace = createTempWorkspace()
 
     await page.goto('/')
     await waitForAppReady(page)
-    await mockGoBindings(page)
-    removeGit(path.resolve(__dirname, '../fixtures/workspace'))
+
+    await mockGoBindingsBatch(page, {
+      SetWorkspaceRoot: () => Promise.resolve(),
+    })
+    await mockGitBindings(page, { workspace: currentWorkspace, defaultBranch: 'main' })
+
+    removeGit(currentWorkspace)
+  })
+
+  test.afterEach(() => {
+    if (currentWorkspace && fs.existsSync(currentWorkspace)) {
+      fs.rmSync(currentWorkspace, { recursive: true, force: true })
+      currentWorkspace = null
+    }
   })
 
   test('should show error when committing with no changes', async ({ page }) => {
-    const TEST_WORKSPACE = path.resolve(__dirname, '../fixtures/workspace')
-    initGit(TEST_WORKSPACE)
-    await openTestWorkspace(page)
+    initGit(currentWorkspace!)
+    await openWorkspace(page, currentWorkspace!)
     await waitForTreeReady(page)
 
     // Mock git to report clean working tree
-    await mockGitClean(page)
-    await mockGitCommitNothing(page)
+    await mockGoBinding(page, 'GitStatus', () =>
+      Promise.resolve(JSON.stringify({ clean: true, files: [] })),
+    )
+    await mockGoBinding(page, 'GitCommitFiles', () =>
+      Promise.resolve(JSON.stringify({ error: 'nothing to commit, working tree clean' })),
+    )
 
     // Open commit dialog via test hook
     await page.evaluate(() => (window as any).__testShowCommitDialog?.())
-    await page.waitForTimeout(500)
+    await expect(page.locator('.commit-dialog-overlay')).toBeVisible()
 
     // Dialog visible, file list empty
-    await expect(page.locator('.commit-dialog-overlay')).toBeVisible()
     await expect(page.locator('.commit-files-empty')).toBeVisible()
 
     // Fill commit message and submit
     await page.locator('.commit-msg-textarea').fill('test: empty commit')
     await page.locator('.commit-btn-primary').click()
-    await page.waitForTimeout(800)
 
     // Status message should show the specific git error
     const statusMsg = page.locator('.commit-dialog-status')
-    await expect(statusMsg).toBeVisible()
-    const statusText = await statusMsg.textContent()
-    expect(statusText).toContain('nothing to commit')
+    await expect(statusMsg).toContainText('nothing to commit', { timeout: 5000 })
 
     // Commit button should recover from loading state (no longer disabled by loading)
     const commitBtn = page.locator('.commit-btn-primary')
@@ -125,24 +117,23 @@ test.describe('Git Extreme - Empty Commit', () => {
   })
 
   test('should show no changed files in commit dialog', async ({ page }) => {
-    const TEST_WORKSPACE = path.resolve(__dirname, '../fixtures/workspace')
-    initGit(TEST_WORKSPACE)
-    await openTestWorkspace(page)
+    initGit(currentWorkspace!)
+    await openWorkspace(page, currentWorkspace!)
     await waitForTreeReady(page)
 
     // Mock git to report clean working tree
-    await mockGitClean(page)
+    await mockGoBinding(page, 'GitStatus', () =>
+      Promise.resolve(JSON.stringify({ clean: true, files: [] })),
+    )
 
     // Open commit dialog via test hook
     await page.evaluate(() => (window as any).__testShowCommitDialog?.())
-    await page.waitForTimeout(800)
+    await expect(page.locator('.commit-dialog-overlay')).toBeVisible()
 
     // Commit dialog should show empty file list with correct text
-    await expect(page.locator('.commit-dialog-overlay')).toBeVisible()
     const emptyEl = page.locator('.commit-files-empty')
     await expect(emptyEl).toBeVisible()
-    const emptyText = await emptyEl.textContent()
-    expect(emptyText?.trim()).toBe('No changed files')
+    await expect(emptyEl).toHaveText('No changed files')
 
     // No file rows should exist
     const fileRows = page.locator('.commit-file-row')

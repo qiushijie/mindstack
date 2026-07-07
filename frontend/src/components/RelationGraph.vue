@@ -401,6 +401,9 @@ function doInitGraph() {
 
     graphError.value = ''
     graphReady.value = true
+    if (import.meta.env.DEV) {
+      ;(window as any).__graphReady = true
+    }
   } catch (e: any) {
     graphError.value = `Graph init failed: ${e.message}`
     console.error('force-graph init error:', e)
@@ -450,6 +453,11 @@ watch(selectedPath, () => {
 })
 
 onMounted(async () => {
+  if (import.meta.env.DEV) {
+    ;(window as any).__graphReady = false
+    ;(window as any).__selectGraphNode = (path: string) => { selectNode(path) }
+    ;(window as any).__getFilteredNodeCount = () => filteredNodes.value.length
+  }
   try {
     await loadData()
     await nextTick()
@@ -488,6 +496,11 @@ onUnmounted(() => {
     graphInstance._destructor()
     graphInstance = null
     graphReady.value = false
+  }
+  if (import.meta.env.DEV) {
+    delete (window as any).__graphReady
+    delete (window as any).__selectGraphNode
+    delete (window as any).__getFilteredNodeCount
   }
 })
 </script>

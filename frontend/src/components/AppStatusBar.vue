@@ -5,6 +5,12 @@ import { useEditorState } from '../composables/useEditorState'
 import { useNavigation } from '../composables/useNavigation'
 import { useSettings } from '../composables/useSettings'
 
+interface Props {
+  gitStatus?: { status: string; error: string }
+}
+
+const props = defineProps<Props>()
+
 const { t } = useI18n()
 const { editorAdapter } = useEditorState()
 const { currentPage } = useNavigation()
@@ -91,6 +97,14 @@ onUnmounted(() => {
       <span class="status-item">{{ t('statusBar.graph') }}</span>
     </template>
     <span class="status-spacer" />
+    <template v-if="props.gitStatus?.status || props.gitStatus?.error">
+      <span
+        class="status-item"
+        data-testid="git-status"
+        :class="{ error: !!props.gitStatus.error }"
+      >{{ props.gitStatus.error || props.gitStatus.status }}</span>
+      <span class="status-sep">|</span>
+    </template>
     <span class="status-item">{{ t('statusBar.encoding') }}</span>
   </div>
 </template>
@@ -120,4 +134,8 @@ onUnmounted(() => {
 .status-spacer {
   flex: 1;
 }
+.status-item.error {
+  color: var(--danger-primary);
+}
+
 </style>

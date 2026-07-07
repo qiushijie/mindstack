@@ -29,7 +29,7 @@ import { addColumnRightCommand } from '../editor/commands/table/AddColumnRightCo
 import { deleteColumnCommand } from '../editor/commands/table/DeleteColumnCommand'
 
 const { t } = useI18n()
-const { rawMode } = useSettings()
+const { rawMode, lineNumbers, wordWrap } = useSettings()
 const containerRef = ref<HTMLElement | null>(null)
 const imageDialogVisible = ref(false)
 let imageInsertLineFrom = -1
@@ -71,6 +71,8 @@ function toggleAIChat() {
 const { view, focus, setContent } = useCodeMirror({
   container: containerRef,
   rawMode,
+  lineNumbers,
+  wordWrap,
   initialDoc: '',
   onChange: (doc) => {
     selectedFileContent.value = doc
@@ -314,7 +316,16 @@ function handleContextAction(action: string) {
         navigator.clipboard.writeText(text)
       }
       break
-    case 'paste':
+    case 'paste': {
+      const mockText = import.meta.env.DEV ? (window as any).__mockClipboardText : undefined
+      if (mockText !== undefined) {
+        const current = view.value
+        if (current) {
+          const sel = current.state.selection.main
+          current.dispatch({ changes: { from: sel.from, to: sel.to, insert: mockText } })
+        }
+        break
+      }
       navigator.clipboard.readText().then((text) => {
         const current = view.value
         if (current && text) {
@@ -323,6 +334,7 @@ function handleContextAction(action: string) {
         }
       }).catch((err) => { console.warn('[Editor] Clipboard read failed:', err) })
       break
+    }
     case 'refresh':
       location.reload()
       break
@@ -434,11 +446,16 @@ onMounted(() => {
   document.addEventListener('keydown', handleDocKeydown)
   containerRef.value?.addEventListener('editor:insert-image', handleInsertImage)
   containerRef.value?.addEventListener('editor:edit-image', handleEditImage)
-  // Expose toggleFindPanel for E2E tests to open/close find panel without keyboard shortcut
-  ;(window as any).__toggleFindPanel = () => { searchVisible.value = !searchVisible.value }
-  // Expose showImageDialog for E2E tests to open the image insert dialog
-  ;(window as any).__showImageDialog = () => {
-    containerRef.value?.dispatchEvent(new CustomEvent('editor:insert-image', { detail: { lineFrom: 0 } }))
+  if (import.meta.env.DEV) {
+    // Expose toggleFindPanel for E2E tests to open/close find panel without keyboard shortcut
+    ;(window as any).__toggleFindPanel = () => { searchVisible.value = !searchVisible.value }
+    // Expose showImageDialog for E2E tests to open the image insert dialog
+    ;(window as any).__showImageDialog = () => {
+      containerRef.value?.dispatchEvent(new CustomEvent('editor:insert-image', { detail: { lineFrom: 0 } }))
+    }
+    // Expose mock clipboard for E2E tests to bypass WKWebView clipboard restrictions
+    ;(window as any).__setMockClipboard = (text: string) => { (window as any).__mockClipboardText = text }
+    ;(window as any).__clearMockClipboard = () => { delete (window as any).__mockClipboardText }
   }
 })
 
@@ -447,8 +464,12 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleDocKeydown)
   containerRef.value?.removeEventListener('editor:insert-image', handleInsertImage)
   containerRef.value?.removeEventListener('editor:edit-image', handleEditImage)
-  delete (window as any).__toggleFindPanel
-  delete (window as any).__showImageDialog
+  if (import.meta.env.DEV) {
+    delete (window as any).__toggleFindPanel
+    delete (window as any).__showImageDialog
+    delete (window as any).__setMockClipboard
+    delete (window as any).__clearMockClipboard
+  }
   clearEditorAdapter()
 })
 </script>
@@ -493,20 +514,20 @@ onUnmounted(() => {
       }"
     >
       <template v-if="tableContext">
-        <button class="ctx-item" @click="handleContextAction('addRowAbove')">{{ t('editor.contextMenu.addRowAbove') }}</button>
-        <button class="ctx-item" @click="handleContextAction('addRowBelow')">{{ t('editor.contextMenu.addRowBelow') }}</button>
-        <button class="ctx-item" @click="handleContextAction('deleteRow')">{{ t('editor.contextMenu.deleteRow') }}</button>
+        <button class="ctx-item" data-testid="ctx-add-row-above" @click="handleContextAction('addRowAbove')">{{ t('editor.contextMenu.addRowAbove') }}</button>
+        <button class="ctx-item" data-testid="ctx-add-row-below" @click="handleContextAction('addRowBelow')">{{ t('editor.contextMenu.addRowBelow') }}</button>
+        <button class="ctx-item" data-testid="ctx-delete-row" @click="handleContextAction('deleteRow')">{{ t('editor.contextMenu.deleteRow') }}</button>
         <div class="ctx-separator" />
-        <button class="ctx-item" @click="handleContextAction('addColumnLeft')">{{ t('editor.contextMenu.addColumnLeft') }}</button>
-        <button class="ctx-item" @click="handleContextAction('addColumnRight')">{{ t('editor.contextMenu.addColumnRight') }}</button>
-        <button class="ctx-item" @click="handleContextAction('deleteColumn')">{{ t('editor.contextMenu.deleteColumn') }}</button>
+        <button class="ctx-item" data-testid="ctx-add-column-left" @click="handleContextAction('addColumnLeft')">{{ t('editor.contextMenu.addColumnLeft') }}</button>
+        <button class="ctx-item" data-testid="ctx-add-column-right" @click="handleContextAction('addColumnRight')">{{ t('editor.contextMenu.addColumnRight') }}</button>
+        <button class="ctx-item" data-testid="ctx-delete-column" @click="handleContextAction('deleteColumn')">{{ t('editor.contextMenu.deleteColumn') }}</button>
       </template>
       <template v-else>
-        <button class="ctx-item" @click="handleContextAction('cut')">{{ t('editor.contextMenu.cut') }}</button>
-        <button class="ctx-item" @click="handleContextAction('copy')">{{ t('editor.contextMenu.copy') }}</button>
-        <button class="ctx-item" @click="handleContextAction('paste')">{{ t('editor.contextMenu.paste') }}</button>
+        <button class="ctx-item" data-testid="ctx-cut" @click="handleContextAction('cut')">{{ t('editor.contextMenu.cut') }}</button>
+        <button class="ctx-item" data-testid="ctx-copy" @click="handleContextAction('copy')">{{ t('editor.contextMenu.copy') }}</button>
+        <button class="ctx-item" data-testid="ctx-paste" @click="handleContextAction('paste')">{{ t('editor.contextMenu.paste') }}</button>
         <div class="ctx-separator" />
-        <button class="ctx-item" @click="handleContextAction('refresh')">{{ t('editor.contextMenu.refresh') }}</button>
+        <button class="ctx-item" data-testid="ctx-refresh" @click="handleContextAction('refresh')">{{ t('editor.contextMenu.refresh') }}</button>
       </template>
     </div>
     <ImageDialog

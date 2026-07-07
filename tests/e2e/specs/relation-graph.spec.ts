@@ -91,9 +91,6 @@ const MOCK_RELATIONS = {
 }
 
 async function setupRelationGraphMocks(page: import('@playwright/test').Page) {
-  // In wails dev mode, Playwright connects directly to the Vite dev server,
-  // so window.go is never populated by the Wails runtime (only the native
-  // Wails window receives the runtime injection). Create mock bindings instead.
   await page.evaluate((data) => {
     if (!(window as any).go) {
       (window as any).go = { main: { App: {} } }
@@ -107,12 +104,21 @@ async function setupRelationGraphMocks(page: import('@playwright/test').Page) {
   }, { metas: MOCK_METAS, relations: MOCK_RELATIONS })
 }
 
+async function waitForGraphReady(page: import('@playwright/test').Page) {
+  await page.waitForFunction(() => (window as any).__graphReady === true, { timeout: 10000 })
+}
+
+async function selectGraphNode(page: import('@playwright/test').Page, path: string) {
+  await page.evaluate((p) => (window as any).__selectGraphNode?.(p), path)
+}
+
 test.describe('Relation Graph', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await waitForAppReady(page)
     await setupRelationGraphMocks(page)
     await navigateTo(page, 'relations')
+    await waitForGraphReady(page)
   })
 
   test('should render the relation graph page', async ({ page }) => {
@@ -131,100 +137,63 @@ test.describe('Relation Graph', () => {
   })
 
   test('should hide detail panel when no node is selected', async ({ page }) => {
-    await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
     await expect(page.locator('.detail-panel')).toBeHidden()
   })
 
-  test('should select a node via canvas click and show details', async ({ page }) => {
-    await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
+  test('should select a node and show details', async ({ page }) => {
+    await selectGraphNode(page, 'docs/architecture.md')
 
-    const canvas = page.locator('.graph-container canvas')
-    const box = await canvas.boundingBox()
-    expect(box).not.toBeNull()
-
-    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2)
-    await page.waitForTimeout(200)
-
-    const detailTitle = page.locator('.detail-title')
-    const isVisible = await detailTitle.isVisible().catch(() => false)
-    if (isVisible) {
-      const text = await detailTitle.textContent()
-      expect(MOCK_METAS.some(m => text?.includes(m.title))).toBe(true)
-    }
+    await expect(page.locator('.detail-panel')).toBeVisible()
+    await expect(page.locator('.detail-title')).toHaveText('Architecture Overview')
+    await expect(page.locator('.detail-tags')).toContainText('architecture')
   })
 
   test('should show stats in detail panel after node selection', async ({ page }) => {
-    await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
-
-    const canvas = page.locator('.graph-container canvas')
-    const box = await canvas.boundingBox()
-    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2)
-    await page.waitForTimeout(200)
+    await selectGraphNode(page, 'docs/architecture.md')
 
     const statLabels = page.locator('.stat-label')
-    const count = await statLabels.count()
-    if (count > 0) {
-      expect(await statLabels.first().textContent()).toContain('文档')
-    }
+    await expect(statLabels).toHaveCount(3)
+    await expect(statLabels.first()).toContainText('文档')
   })
 
   test('should show legend in detail panel after node selection', async ({ page }) => {
-    await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
+    await selectGraphNode(page, 'docs/architecture.md')
 
-    const canvas = page.locator('.graph-container canvas')
-    const box = await canvas.boundingBox()
-    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2)
-    await page.waitForTimeout(200)
-
-    const legendItems = page.locator('.legend-item')
-    const count = await legendItems.count()
-    if (count > 0) {
-      expect(count).toBe(2)
-      expect(await legendItems.nth(0).textContent()).toContain('出向')
-      expect(await legendItems.nth(1).textContent()).toContain('入向')
-    }
+    const legendItems = page.locator('.detail-legend .legend-item')
+    await expect(legendItems).toHaveCount(2)
+    await expect(legendItems.nth(0)).toContainText('出向')
+    await expect(legendItems.nth(1)).toContainText('入向')
   })
 
   test('should filter via search by title', async ({ page }) => {
-    await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
-
     const searchInput = page.locator('.graph-search-input')
     await searchInput.fill('API')
-    await page.waitForTimeout(300)
 
-    // Graph container should still be rendered
+    await page.waitForFunction(() => (window as any).__getFilteredNodeCount() === 1, { timeout: 5000 })
+
     await expect(page.locator('.graph-container')).toBeVisible()
-    // Canvas may be hidden if filtered to zero, but here API matches one doc
-    const canvas = page.locator('.graph-container canvas')
-    await expect(canvas).toBeVisible()
+    await expect(page.locator('.graph-container canvas')).toBeVisible()
   })
 
   test('should show no results overlay when search matches nothing', async ({ page }) => {
-    await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
-
     const searchInput = page.locator('.graph-search-input')
     await searchInput.fill('xyz-nonexistent')
-    await page.waitForTimeout(300)
 
-    // Should show no results overlay
+    await page.waitForFunction(() => (window as any).__getFilteredNodeCount() === 0, { timeout: 5000 })
+
     await expect(page.locator('.graph-empty-overlay')).toBeVisible()
-    const text = await page.locator('.graph-empty-overlay').textContent()
-    expect(text).toContain('未找到匹配的文档')
+    await expect(page.locator('.graph-empty-overlay')).toContainText('未找到匹配的文档')
   })
 
   test('should restore all nodes when search is cleared', async ({ page }) => {
-    await expect(page.locator('.graph-container canvas')).toBeVisible({ timeout: 5000 })
-
     const searchInput = page.locator('.graph-search-input')
     await searchInput.fill('xyz-nonexistent')
-    await page.waitForTimeout(300)
+    await page.waitForFunction(() => (window as any).__getFilteredNodeCount() === 0, { timeout: 5000 })
     await expect(page.locator('.graph-empty-overlay')).toBeVisible()
 
-    // Clear search via clear button
     await page.locator('.graph-search-clear').click()
-    await page.waitForTimeout(300)
+    await page.waitForFunction(() => (window as any).__getFilteredNodeCount() === 5, { timeout: 5000 })
 
-    // Should hide overlay and show canvas again
     await expect(page.locator('.graph-empty-overlay')).toBeHidden()
     await expect(page.locator('.graph-container canvas')).toBeVisible()
   })
@@ -234,7 +203,7 @@ test.describe('Relation Graph', () => {
 
     const searchInput = page.locator('.graph-search-input')
     await searchInput.fill('xyz-nonexistent')
-    await page.waitForTimeout(300)
+    await page.waitForFunction(() => (window as any).__getFilteredNodeCount() === 0, { timeout: 5000 })
 
     await expect(page.locator('.zoom-controls')).toBeHidden()
   })

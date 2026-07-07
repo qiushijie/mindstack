@@ -1,7 +1,30 @@
 import { Page, Locator } from '@playwright/test'
 import * as path from 'path'
+import * as fs from 'fs'
+import * as os from 'os'
 
 export const TEST_WORKSPACE = path.resolve(__dirname, '../fixtures/workspace')
+
+export function createTempWorkspace(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindstack-e2e-'))
+  for (const item of fs.readdirSync(TEST_WORKSPACE)) {
+    const src = path.join(TEST_WORKSPACE, item)
+    const dest = path.join(dir, item)
+    const stat = fs.statSync(src)
+    if (stat.isDirectory()) {
+      fs.cpSync(src, dest, { recursive: true })
+    } else {
+      fs.copyFileSync(src, dest)
+    }
+  }
+  return dir
+}
+
+export function cleanupTempWorkspace(dir: string | null): void {
+  if (dir && fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
 
 export async function openTestWorkspace(page: Page): Promise<void> {
   const wsPath = TEST_WORKSPACE
