@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"mindstack/internal/meta"
+	"mindstack/internal/retrieval"
 
 	einoschema "github.com/cloudwego/eino/schema"
 )
@@ -85,83 +86,26 @@ func TestSplitLines(t *testing.T) {
 	}
 }
 
-func TestClampRange(t *testing.T) {
-	cases := []struct {
-		start, end, total  int
-		wantStart, wantEnd int
-		wantOK             bool
-	}{
-		{1, 5, 10, 1, 5, true},
-		{0, 5, 10, 1, 5, true},
-		{3, 100, 10, 3, 10, true},
-		{5, 3, 10, 0, 0, false},
-		{12, 15, 10, 0, 0, false},
-		{1, 1, 0, 0, 0, false},
-		{1, 1, 1, 1, 1, true},
+func TestSelectTagCandidates_IncludesQueryMatchingLowFrequencyTag(t *testing.T) {
+	metas := []*meta.DocumentMeta{
+		{Tags: []string{"api", "exponential-backoff"}},
+		{Tags: []string{"api", "rest"}},
+		{Tags: []string{"api", "rest"}},
 	}
-	for _, c := range cases {
-		s, e, ok := clampRange(c.start, c.end, c.total)
-		if ok != c.wantOK || s != c.wantStart || e != c.wantEnd {
-			t.Errorf("clampRange(%d,%d,%d) = (%d,%d,%v), want (%d,%d,%v)",
-				c.start, c.end, c.total, s, e, ok, c.wantStart, c.wantEnd, c.wantOK)
+	candidates, counts := selectTagCandidates(metas, "what is the exponential backoff policy")
+	if len(candidates) == 0 {
+		t.Fatal("expected candidate tags")
+	}
+	hasBackoff := false
+	for _, t := range candidates {
+		if t == "exponential-backoff" {
+			hasBackoff = true
+			break
 		}
 	}
-}
-
-func TestFilterPopularTags(t *testing.T) {
-	t.Run("filters_low_frequency_tags", func(t *testing.T) {
-		metas := []*meta.DocumentMeta{
-			{Tags: []string{"api", "rest"}},
-			{Tags: []string{"rest", "design"}},
-			{Tags: []string{"api"}},
-		}
-		got, counts := filterPopularTags(metas, 2)
-		// "rest" appears in 2 docs, "api" in 2 docs, "design" in 1 doc
-		if len(got) != 2 {
-			t.Fatalf("expected 2 popular tags, got %v", got)
-		}
-		if got[0] != "api" || got[1] != "rest" {
-			t.Errorf("expected [api, rest], got %v", got)
-		}
-		// Verify counts map includes all tags (including filtered ones).
-		if counts["api"] != 2 {
-			t.Errorf("api count = %d, want 2", counts["api"])
-		}
-		if counts["rest"] != 2 {
-			t.Errorf("rest count = %d, want 2", counts["rest"])
-		}
-		if counts["design"] != 1 {
-			t.Errorf("design count = %d, want 1", counts["design"])
-		}
-	})
-
-	t.Run("empty_metas", func(t *testing.T) {
-		got, _ := filterPopularTags(nil, 2)
-		if len(got) != 0 {
-			t.Errorf("expected empty, got %v", got)
-		}
-	})
-
-	t.Run("no_tags_meet_threshold", func(t *testing.T) {
-		metas := []*meta.DocumentMeta{
-			{Tags: []string{"unique1"}},
-			{Tags: []string{"unique2"}},
-		}
-		got, _ := filterPopularTags(metas, 2)
-		if len(got) != 0 {
-			t.Errorf("expected empty, got %v", got)
-		}
-	})
-
-	t.Run("deduplicates_within_doc", func(t *testing.T) {
-		metas := []*meta.DocumentMeta{
-			{Tags: []string{"api", "api", "rest"}},
-		}
-		got, _ := filterPopularTags(metas, 1)
-		if len(got) != 2 {
-			t.Errorf("expected 2 (deduplicated), got %v", got)
-		}
-	})
+	if !hasBackoff {
+		t.Errorf("expected low-frequency tag exponential-backoff to be included, got %v (counts %v)", candidates, counts)
+	}
 }
 
 func TestFormatTagsWithCounts(t *testing.T) {
@@ -195,53 +139,26 @@ func TestContentCache(t *testing.T) {
 
 	cache := newContentCache()
 
-	// First call to get populates both lower and raw cache.
-	lowerContent, err := cache.get(root, rel)
+	raw, err := cache.getRaw(root, rel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lowerContent != "hello world" {
-		t.Fatalf("first get: got %q, want %q", lowerContent, "hello world")
+	if raw != "Hello World" {
+		t.Fatalf("first getRaw: got %q, want %q", raw, "Hello World")
 	}
 
-	t.Run("second_read_uses_cache", func(t *testing.T) {
+	t.Run("getRaw_uses_cache", func(t *testing.T) {
 		// Modify file on disk.
 		if err := os.WriteFile(full, []byte("modified content"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		// Cache should still return original lowercase content.
-		content, err := cache.get(root, rel)
+		// Cache should still return original content.
+		content, err := cache.getRaw(root, rel)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if content != "hello world" {
-			t.Errorf("expected cached %q, got %q", "hello world", content)
-		}
-	})
-
-	t.Run("getRaw_returns_original_case", func(t *testing.T) {
-		raw, err := cache.getRaw(root, rel)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// getRaw should return the original-case content, not the lowercased version.
-		if raw != "Hello World" {
-			t.Errorf("expected original case %q, got %q", "Hello World", raw)
-		}
-	})
-
-	t.Run("getRaw_uses_cache_too", func(t *testing.T) {
-		// Modify file on disk again.
-		if err := os.WriteFile(full, []byte("brand new content"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		// getRaw should still return cached original content.
-		raw, err := cache.getRaw(root, rel)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if raw != "Hello World" {
-			t.Errorf("expected cached %q, got %q", "Hello World", raw)
+		if content != "Hello World" {
+			t.Errorf("expected cached %q, got %q", "Hello World", content)
 		}
 	})
 }
@@ -250,8 +167,8 @@ func TestPrefilterContent(t *testing.T) {
 	t.Run("small_content_unchanged", func(t *testing.T) {
 		content := strings.Repeat("line\n", 50)
 		got := prefilterContent(content, []string{"keyword"}, 3)
-		if got != content {
-			t.Errorf("small content should be unchanged, len changed %d -> %d", len(content), len(got))
+		if got == nil || len(got.Lines) != 50 {
+			t.Errorf("small content should preserve all 50 lines, got %d", len(got.Lines))
 		}
 	})
 
@@ -265,14 +182,15 @@ func TestPrefilterContent(t *testing.T) {
 		content := strings.Join(lines, "\n")
 
 		got := prefilterContent(content, []string{"SPECIAL_MARKER_HERE"}, 5)
-		if got == content {
+		if len(got.Lines) == 200 {
 			t.Fatal("content should have been filtered")
 		}
-		if !strings.Contains(got, "SPECIAL_MARKER_HERE") {
+		text := got.ToText()
+		if !strings.Contains(text, "SPECIAL_MARKER_HERE") {
 			t.Errorf("filtered result should contain keyword line")
 		}
-		if !strings.Contains(got, "45:") || !strings.Contains(got, "55:") {
-			t.Errorf("expected context lines (45-55), got: %s", got)
+		if !strings.Contains(text, "45:") || !strings.Contains(text, "55:") {
+			t.Errorf("expected context lines (45-55), got: %s", text)
 		}
 	})
 
@@ -284,8 +202,8 @@ func TestPrefilterContent(t *testing.T) {
 		content := strings.Join(lines, "\n")
 		// "hit" appears on every line, so 100% hit rate > 80% → return original
 		got := prefilterContent(content, []string{"hit"}, 10)
-		if got != content {
-			t.Errorf("expected original content when >80%% hits, got different content")
+		if len(got.Lines) != 200 {
+			t.Errorf("expected original 200 lines when >80%% hits, got %d", len(got.Lines))
 		}
 	})
 
@@ -296,15 +214,35 @@ func TestPrefilterContent(t *testing.T) {
 		}
 		content := strings.Join(lines, "\n")
 		got := prefilterContent(content, []string{"nonexistent"}, 5)
-		if got != "" {
-			t.Errorf("expected empty for no matches, got: %s", got)
+		if len(got.Lines) != 0 {
+			t.Errorf("expected empty for no matches, got: %s", got.ToText())
 		}
 	})
 
 	t.Run("empty_content", func(t *testing.T) {
 		got := prefilterContent("", []string{"keyword"}, 3)
-		if got != "" {
-			t.Errorf("expected empty, got %q", got)
+		if got == nil || len(got.Lines) != 0 {
+			t.Errorf("expected empty, got %v", got)
+		}
+	})
+
+	t.Run("preserves_original_line_numbers", func(t *testing.T) {
+		var lines []string
+		for i := 0; i < 200; i++ {
+			lines = append(lines, fmt.Sprintf("line %d", i+1))
+		}
+		lines[149] = "TARGET_HIT"
+		content := strings.Join(lines, "\n")
+
+		got := prefilterContent(content, []string{"TARGET_HIT"}, 2)
+		has150 := false
+		for _, l := range got.Lines {
+			if l.OriginalLine == 150 {
+				has150 = true
+			}
+		}
+		if !has150 {
+			t.Errorf("expected original line 150 in filtered result")
 		}
 	})
 }
@@ -334,25 +272,16 @@ func TestRecallCandidates_FulltextHitCap(t *testing.T) {
 		t.Fatal("expected candidates")
 	}
 
-	// Find high_hit.md and verify its score uses fulltextHitCap, not raw count
+	// Find high_hit.md and verify its score uses the retrieval content cap (20),
+	// not the raw fulltext hit count.
 	for _, c := range got {
 		if c.relPath == "high_hit.md" {
 			// Without the cap, fulltextHits would be 50 and score would be 50.
-			// With the cap, score should be exactly fulltextHitCap (20).
-			if c.score != fulltextHitCap {
-				t.Errorf("high_hit.md score = %d, want %d (fulltextHitCap)", c.score, fulltextHitCap)
+			// With the cap, score should be exactly 20.
+			if c.score != 20 {
+				t.Errorf("high_hit.md score = %d, want 20", c.score)
 			}
 		}
-	}
-}
-
-func TestJoinLines(t *testing.T) {
-	lines := []string{"a", "b", "c", "d"}
-	if got := joinLines(lines, 2, 3); got != "b\nc" {
-		t.Errorf("joinLines 2-3 = %q, want %q", got, "b\nc")
-	}
-	if got := joinLines(lines, 0, 100); got != "a\nb\nc\nd" {
-		t.Errorf("joinLines clamp full = %q", got)
 	}
 }
 
@@ -497,9 +426,20 @@ func TestRecallCandidates_TopRecallCap(t *testing.T) {
 	}
 }
 
+func toFilteredContent(content string) *retrieval.FilteredContent {
+	lines := splitLines(content)
+	fc := &retrieval.FilteredContent{Lines: make([]retrieval.NumberedLine, len(lines))}
+	for i, line := range lines {
+		fc.Lines[i] = retrieval.NumberedLine{OriginalLine: i + 1, Text: line}
+	}
+	return fc
+}
+
 func TestExtractSnippetsLocal(t *testing.T) {
+	root := t.TempDir()
 	content := "line 1\nline 2\nretry policy here\nline 4\nline 5\nuse exponential backoff\nline 7\nline 8\nline 9"
-	snippets := extractSnippetsLocal([]string{"retry"}, "/tmp/test.md", content, 0.9)
+	fc := toFilteredContent(content)
+	snippets := extractSnippetsLocal([]string{"retry"}, root, "test.md", fc, 0.9)
 	if len(snippets) == 0 {
 		t.Fatal("expected at least one snippet")
 	}
@@ -514,16 +454,24 @@ func TestExtractSnippetsLocal(t *testing.T) {
 	if !strings.Contains(sn.Content, "line 2") {
 		t.Errorf("snippet missing upper context")
 	}
+	// Location should use the absolute path and refer to original line numbers.
+	wantLocation := filepath.Join(root, "test.md") + "#1-5"
+	if sn.Location != wantLocation {
+		t.Errorf("expected location %q, got %q", wantLocation, sn.Location)
+	}
 }
 
 func TestExtractSnippetsLocal_NoMatch(t *testing.T) {
-	snippets := extractSnippetsLocal([]string{"nonexistent"}, "/tmp/test.md", "foo bar baz", 0.5)
+	root := t.TempDir()
+	fc := toFilteredContent("foo bar baz")
+	snippets := extractSnippetsLocal([]string{"nonexistent"}, root, "test.md", fc, 0.5)
 	if len(snippets) != 0 {
 		t.Errorf("expected 0 snippets, got %d", len(snippets))
 	}
 }
 
 func TestExtractSnippetsLocal_CapPerDoc(t *testing.T) {
+	root := t.TempDir()
 	// Create content with many scattered hits to test maxSnippetsPerDoc cap.
 	var lines []string
 	for i := 0; i < 50; i++ {
@@ -533,27 +481,48 @@ func TestExtractSnippetsLocal_CapPerDoc(t *testing.T) {
 			lines = append(lines, "filler line")
 		}
 	}
-	content := strings.Join(lines, "\n")
-	snippets := extractSnippetsLocal([]string{"retry"}, "/tmp/test.md", content, 0.8)
+	fc := toFilteredContent(strings.Join(lines, "\n"))
+	snippets := extractSnippetsLocal([]string{"retry"}, root, "test.md", fc, 0.8)
 	if len(snippets) > maxSnippetsPerDoc {
 		t.Errorf("expected at most %d snippets, got %d", maxSnippetsPerDoc, len(snippets))
 	}
 }
 
+func TestExtractSnippetsLocal_LongDocumentOriginalLineNumbers(t *testing.T) {
+	root := t.TempDir()
+	var lines []string
+	for i := 0; i < 200; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i+1))
+	}
+	lines[149] = "retry policy target"
+	fc := prefilterContent(strings.Join(lines, "\n"), []string{"retry"}, 2)
+	snippets := extractSnippetsLocal([]string{"retry"}, root, "test.md", fc, 1.0)
+	if len(snippets) == 0 {
+		t.Fatal("expected snippet")
+	}
+	wantPrefix := filepath.Join(root, "test.md") + "#148-"
+	if !strings.HasPrefix(snippets[0].Location, wantPrefix) {
+		t.Errorf("expected location with prefix %q, got %q", wantPrefix, snippets[0].Location)
+	}
+}
+
 func TestExtractSnippetsLLM(t *testing.T) {
+	root := t.TempDir()
 	content := "line 1\nline 2\nline 3\nline 4\nline 5\n"
+	fc := toFilteredContent(content)
 	llm := &fakeLLM{
 		responses: []fakeResp{
 			{match: "相关", body: `[{"location":"#2-4","score":0.9}]`},
 		},
 	}
-	snippets := extractSnippetsLLM(context.Background(), llm, "test query", "/tmp/test.md", content, "zh", 3)
+	snippets := extractSnippetsLLM(context.Background(), llm, "test query", root, "test.md", fc, "zh", 3)
 	if len(snippets) != 1 {
 		t.Fatalf("expected 1 snippet, got %d", len(snippets))
 	}
 	sn := snippets[0]
-	if sn.Location != "/tmp/test.md#2-4" {
-		t.Errorf("Location = %q, want %q", sn.Location, "/tmp/test.md#2-4")
+	wantLocation := filepath.Join(root, "test.md") + "#2-4"
+	if sn.Location != wantLocation {
+		t.Errorf("Location = %q, want %q", sn.Location, wantLocation)
 	}
 	if sn.Score != 0.9 {
 		t.Errorf("Score = %f, want 0.9", sn.Score)
@@ -564,15 +533,39 @@ func TestExtractSnippetsLLM(t *testing.T) {
 }
 
 func TestExtractSnippetsLLM_FallbackOnLLMError(t *testing.T) {
-	content := "line 1\nline 2\nline 3\n"
+	root := t.TempDir()
+	fc := toFilteredContent("line 1\nline 2\nline 3\n")
 	llm := &fakeLLM{
 		responses: []fakeResp{
 			{match: "相关", body: "not json"},
 		},
 	}
-	snippets := extractSnippetsLLM(context.Background(), llm, "test query", "/tmp/test.md", content, "zh", 3)
+	snippets := extractSnippetsLLM(context.Background(), llm, "test query", root, "test.md", fc, "zh", 3)
 	if snippets != nil {
 		t.Errorf("expected nil on invalid JSON, got %v", snippets)
+	}
+}
+
+func TestExtractSnippetsLLM_LongDocumentOriginalLineNumbers(t *testing.T) {
+	root := t.TempDir()
+	var lines []string
+	for i := 0; i < 200; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i+1))
+	}
+	lines[149] = "retry policy target"
+	fc := prefilterContent(strings.Join(lines, "\n"), []string{"retry"}, 2)
+	llm := &fakeLLM{
+		responses: []fakeResp{
+			{match: "相关", body: `[{"location":"#148-152","score":0.9}]`},
+		},
+	}
+	snippets := extractSnippetsLLM(context.Background(), llm, "retry policy", root, "test.md", fc, "zh", 3)
+	if len(snippets) == 0 {
+		t.Fatal("expected snippet")
+	}
+	wantPrefix := filepath.Join(root, "test.md") + "#148-"
+	if !strings.HasPrefix(snippets[0].Location, wantPrefix) {
+		t.Errorf("expected location with prefix %q, got %q", wantPrefix, snippets[0].Location)
 	}
 }
 
@@ -634,9 +627,9 @@ func TestAck_FullPipeline(t *testing.T) {
 		t.Fatal("expected snippets, got none")
 	}
 	sn := res.Snippets[0]
-	wantPath := filepath.Join(root, "api.md")
-	if sn.Location != wantPath+"#3-5" {
-		t.Errorf("Location = %q, want %q", sn.Location, wantPath+"#3-5")
+	wantLocation := filepath.Join(root, "api.md") + "#3-5"
+	if sn.Location != wantLocation {
+		t.Errorf("Location = %q, want %q", sn.Location, wantLocation)
 	}
 	if !strings.Contains(sn.Content, "exponential backoff") {
 		t.Errorf("content missing expected line: %q", sn.Content)
@@ -650,6 +643,45 @@ func TestAck_FullPipeline(t *testing.T) {
 	// Verify LLM call count: tag + keyword + rerank + extract + summary = 5.
 	if llm.calls != 5 {
 		t.Errorf("expected 5 LLM calls, got %d", llm.calls)
+	}
+}
+
+func TestAck_MaliciousRerankPathIgnored(t *testing.T) {
+	root := t.TempDir()
+	// Place a decoy file outside the KB root; a malicious LLM rerank response
+	// might point here, but it is not in the candidate set and must be ignored.
+	parentDir := filepath.Dir(root)
+	secretPath := filepath.Join(parentDir, "secret.md")
+	if err := os.WriteFile(secretPath, []byte("SECRET CONTENT"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFixture(t, root, map[string]string{
+		"a.md": "legitimate content",
+	}, map[string][]string{
+		"a.md": {"foo"},
+	})
+
+	llm := &fakeLLM{
+		responses: []fakeResp{
+			{match: "可用的标签", body: `["foo"]`},
+			{match: "英文关键词", body: `["legitimate"]`},
+			// LLM attempts to rerank a path outside the recall candidate set.
+			{match: "候选文档", body: `[{"path":"../secret.md","score":0.99}]`},
+			{match: "提取", body: `[{"location":"#1-1","score":0.99}]`},
+			{match: "证据片段", body: "SECRET CONTENT"},
+		},
+	}
+
+	res, err := Ack(context.Background(), llm, root, "legitimate", "zh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Snippets) != 0 {
+		t.Fatalf("expected 0 snippets for malicious rerank path, got %d: %v", len(res.Snippets), res.Snippets)
+	}
+	if strings.Contains(res.Summary, "SECRET") {
+		t.Errorf("summary should not contain content from outside the KB")
 	}
 }
 
@@ -703,7 +735,7 @@ func TestMakeDocPreview(t *testing.T) {
 		Summary: "This is a summary.",
 	}
 
-	preview, err := makeDocPreview(root, rel, m, "zh", newContentCache())
+	preview, err := makeDocPreview(root, rel, m, "zh", newContentCache(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -720,8 +752,8 @@ func TestMakeDocPreview(t *testing.T) {
 	if !strings.Contains(preview, "摘要:") {
 		t.Errorf("missing Chinese label 摘要")
 	}
-	if !strings.Contains(preview, "正文预览:") {
-		t.Errorf("missing Chinese label 正文预览")
+	if !strings.Contains(preview, "正文前") {
+		t.Errorf("missing Chinese body preview label")
 	}
 	if !strings.Contains(preview, "Test Title") {
 		t.Errorf("missing title content")
@@ -732,20 +764,14 @@ func TestMakeDocPreview(t *testing.T) {
 	if !strings.Contains(preview, "This is a summary.") {
 		t.Errorf("missing summary content")
 	}
-	if !strings.Contains(preview, "总行数:") {
-		t.Errorf("missing Chinese label 总行数")
-	}
-	if !strings.Contains(preview, "55") {
-		t.Errorf("missing total line count")
-	}
 	if !strings.Contains(preview, "... [truncated]") {
 		t.Errorf("missing truncated marker")
 	}
 
 	// Verify only first previewMaxLines lines are shown.
 	lineCount := strings.Count(preview, "\n")
-	// Preview header has 6 lines (路径, 标题, 标签, 摘要, 总行数, 正文预览) + previewMaxLines body lines + truncated line.
-	expectedLines := 6 + previewMaxLines + 1
+	// Preview header has 5 lines (路径, 标题, 标签, 摘要, 正文前) + previewMaxLines body lines + truncated line.
+	expectedLines := 5 + previewMaxLines + 1
 	if lineCount != expectedLines {
 		t.Errorf("expected %d lines in preview, got %d", expectedLines, lineCount)
 	}
@@ -772,7 +798,7 @@ func TestMakeDocPreview_English(t *testing.T) {
 		Summary: "This is a summary.",
 	}
 
-	preview, err := makeDocPreview(root, rel, m, "en", newContentCache())
+	preview, err := makeDocPreview(root, rel, m, "en", newContentCache(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -789,8 +815,8 @@ func TestMakeDocPreview_English(t *testing.T) {
 	if !strings.Contains(preview, "Summary:") {
 		t.Errorf("missing English label Summary")
 	}
-	if !strings.Contains(preview, "Preview:") {
-		t.Errorf("missing English label Preview")
+	if !strings.Contains(preview, "First") {
+		t.Errorf("missing English body preview label")
 	}
 	if !strings.Contains(preview, "Test Title") {
 		t.Errorf("missing title content")
@@ -804,11 +830,36 @@ func TestMakeDocPreview_English(t *testing.T) {
 	if !strings.Contains(preview, "... [truncated]") {
 		t.Errorf("missing truncated marker")
 	}
-	if !strings.Contains(preview, "Total lines:") {
-		t.Errorf("missing English label Total lines")
+}
+
+func TestMakeDocPreview_MatchedExcerpts(t *testing.T) {
+	root := t.TempDir()
+	rel := "doc.md"
+	full := filepath.Join(root, rel)
+
+	var lines []string
+	for i := 0; i < 120; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i+1))
 	}
-	if !strings.Contains(preview, "55") {
-		t.Errorf("missing total line count")
+	lines[99] = "retry policy uses exponential backoff"
+	content := strings.Join(lines, "\n")
+	if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &meta.DocumentMeta{Title: "API Guide"}
+	matches := []retrieval.LineMatch{
+		{Line: 100, Text: lines[99], Source: retrieval.SourceContent},
+	}
+	preview, err := makeDocPreview(root, rel, m, "en", newContentCache(), matches)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(preview, "Matched excerpts") {
+		t.Errorf("expected Matched excerpts section")
+	}
+	if !strings.Contains(preview, "100: retry policy uses exponential backoff") {
+		t.Errorf("expected matched line 100 in preview, got:\n%s", preview)
 	}
 }
 

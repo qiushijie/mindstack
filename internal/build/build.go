@@ -305,10 +305,12 @@ Respond with ONLY a JSON object (no markdown, no code fences) with these fields:
   - Prefer specific, discriminating terms over generic ones. Good: "rest-api", "exponential-backoff". Bad: "system", "design", "filter", "approach".
   - Each tag should be useful for distinguishing this document from others in the same knowledge base.
   - Only include tags that capture the document's core topic, not every technology mentioned in passing.
+- "keywords": an array of 5-12 searchable terms that capture the document's key concepts. Include acronyms, technical terms, and common synonyms. Mix Chinese and English when the document contains both.
+- "aliases": an array of 2-6 alternative names, abbreviations, or common aliases for the topic. Examples: "RBAC", "role-based access control", "权限控制".
 - "headings": an array of ALL section headings in the document, starting from level 1 (the top-level heading). Each item is an object with "level" (integer 1-6, where 1 is the document's main heading) and "text" (string, the heading text). Preserve the original heading hierarchy and include every meaningful heading. Skip generic headings like "Introduction", "Summary", or "Conclusion". Merge closely related subsections when appropriate.
 
 Example response:
-{"summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["rest-api","http-status-codes","pagination"],"headings":[{"level":1,"text":"Overview"},{"level":2,"text":"URL Structure"},{"level":2,"text":"Status Codes"},{"level":3,"text":"Pagination"}]}`, filename, content)
+{"summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["rest-api","http-status-codes","pagination"],"keywords":["restful","api design","http","status code","pagination","url structure"],"aliases":["REST API","Representational State Transfer"],"headings":[{"level":1,"text":"Overview"},{"level":2,"text":"URL Structure"},{"level":2,"text":"Status Codes"},{"level":3,"text":"Pagination"}]}`, filename, content)
 
 	messages := []*einoschema.Message{
 		{Role: einoschema.User, Content: prompt},
@@ -324,6 +326,8 @@ Example response:
 	var parsed struct {
 		Summary  string         `json:"summary"`
 		Tags     []string       `json:"tags"`
+		Keywords []string       `json:"keywords"`
+		Aliases  []string       `json:"aliases"`
 		Headings []meta.Heading `json:"headings"`
 	}
 	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
@@ -339,11 +343,13 @@ Example response:
 	}
 
 	return &meta.DocumentMeta{
-		Title:    title,
-		Summary:  parsed.Summary,
-		Tags:     parsed.Tags,
-		Headings: parsed.Headings,
-		Status:   "active",
+		Title:     title,
+		Summary:   parsed.Summary,
+		Tags:      parsed.Tags,
+		Keywords:  parsed.Keywords,
+		Aliases:   parsed.Aliases,
+		Headings:  parsed.Headings,
+		Status:    "active",
 	}, nil
 }
 

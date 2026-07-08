@@ -741,6 +741,31 @@ func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 	}
 }
 
+func TestGenerateMeta_KeywordsAndAliases(t *testing.T) {
+	content := `{"summary":"A test document for unit testing.","tags":["test","unit-test","mock"],"keywords":["unit test","mock","testing","fixture"],"aliases":["Unit Test","UT"],"headings":[{"level":1,"text":"Test Document"}]}`
+	svc, server := newMockLLMService(t, content)
+	defer server.Close()
+
+	dir := setupTestWorkspace(t)
+	os.WriteFile(filepath.Join(dir, "example.md"), []byte("# Example\n\nSome content here."), 0644)
+
+	err := BuildWorkspace(context.Background(), svc, dir, false, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m, err := meta.LoadMeta(dir, "example.md")
+	if err != nil {
+		t.Fatalf("failed to load meta: %v", err)
+	}
+	if len(m.Keywords) != 4 {
+		t.Fatalf("expected 4 keywords, got %d: %v", len(m.Keywords), m.Keywords)
+	}
+	if len(m.Aliases) != 2 {
+		t.Fatalf("expected 2 aliases, got %d: %v", len(m.Aliases), m.Aliases)
+	}
+}
+
 func TestGenerateMeta_InvalidJSONResponse(t *testing.T) {
 	// Return non-JSON content from the mock LLM server
 	svc, server := newMockLLMService(t, "This is not JSON at all!")

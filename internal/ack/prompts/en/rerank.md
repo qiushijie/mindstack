@@ -4,7 +4,9 @@ Select the most relevant documents for the user question.
 
 ---
 
-You are selecting documents most relevant to the user's question. Each document includes metadata and a body preview. Note: some documents may be truncated (total lines shown but only first 50 displayed); key content may be outside the preview range.
+You are selecting documents most relevant to the user's question. Each document includes metadata, matched excerpts from the retrieval engine, and a body preview.
+
+IMPORTANT: Prioritize the "Matched excerpts" section when judging relevance. It contains the lines that actually matched the query. Use the body preview only as fallback when the matched excerpts are insufficient.
 
 User question: %s
 

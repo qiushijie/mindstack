@@ -12,6 +12,33 @@ import (
 
 const maxMetaSize = 2 * 1024 * 1024 // 2MB
 
+// validateMetaPath ensures path is a safe document path relative to kbRoot.
+// It rejects empty paths, absolute paths, and any path that escapes kbRoot.
+func validateMetaPath(kbRoot, path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("empty meta path")
+	}
+	if filepath.IsAbs(path) {
+		return "", fmt.Errorf("absolute meta path not allowed: %s", path)
+	}
+	cleaned := filepath.Clean(path)
+	if cleaned == "." {
+		return "", fmt.Errorf("meta path must be a document file: %s", path)
+	}
+	ext := strings.ToLower(filepath.Ext(cleaned))
+	if ext != ".md" && ext != ".markdown" {
+		return "", fmt.Errorf("meta path must be a markdown document: %s", path)
+	}
+	rel, err := filepath.Rel(filepath.Clean(kbRoot), filepath.Join(kbRoot, cleaned))
+	if err != nil {
+		return "", fmt.Errorf("invalid meta path %q: %w", path, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("meta path escapes workspace: %s", path)
+	}
+	return cleaned, nil
+}
+
 // Heading represents a document section heading with its hierarchy level.
 type Heading struct {
 	Level int    `json:"level"`
@@ -27,6 +54,8 @@ type DocumentMeta struct {
 	Headings    []Heading `yaml:"headings" json:"headings"`
 	Status      string    `yaml:"status" json:"status"`
 	ContentHash string    `yaml:"-" json:"contentHash,omitempty"`
+	Keywords    []string  `yaml:"keywords" json:"keywords,omitempty"`
+	Aliases     []string  `yaml:"aliases" json:"aliases,omitempty"`
 }
 
 // metaStore is the on-disk format: map from doc path to metadata.
@@ -70,20 +99,29 @@ func saveAll(kbRoot string, store metaStore) error {
 // LoadMeta reads metadata for a document.
 // docRelPath is relative to workspace root, e.g. "api-specs/rest-api.md".
 func LoadMeta(kbRoot, docRelPath string) (*DocumentMeta, error) {
+	cleaned, err := validateMetaPath(kbRoot, docRelPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid document path: %w", err)
+	}
 	store, err := loadAll(kbRoot)
 	if err != nil {
 		return nil, err
 	}
-	m, ok := store[docRelPath]
+	m, ok := store[cleaned]
 	if !ok {
-		return nil, fmt.Errorf("meta not found for %s", docRelPath)
+		return nil, fmt.Errorf("meta not found for %s", cleaned)
 	}
-	m.Path = docRelPath
+	m.Path = cleaned
 	return m, nil
 }
 
 // SaveMeta writes metadata for a document.
+// docRelPath is relative to workspace root, e.g. "api-specs/rest-api.md".
 func SaveMeta(kbRoot, docRelPath string, m *DocumentMeta) error {
+	cleaned, err := validateMetaPath(kbRoot, docRelPath)
+	if err != nil {
+		return fmt.Errorf("invalid document path: %w", err)
+	}
 	store, err := loadAll(kbRoot)
 	if err != nil {
 		return err
@@ -92,7 +130,7 @@ func SaveMeta(kbRoot, docRelPath string, m *DocumentMeta) error {
 		store = make(metaStore)
 	}
 	m.Path = "" // path is stored as the map key, not in the value
-	store[docRelPath] = m
+	store[cleaned] = m
 	return saveAll(kbRoot, store)
 }
 
@@ -105,10 +143,15 @@ func ScanAll(kbRoot, subdir string) ([]*DocumentMeta, error) {
 	}
 	var results []*DocumentMeta
 	for path, m := range store {
-		if subdir != "" && !strings.HasPrefix(path, subdir+"/") && path != subdir {
+		cleaned, err := validateMetaPath(kbRoot, path)
+		if err != nil {
+			// Skip corrupted or malicious entries instead of breaking the whole KB.
 			continue
 		}
-		m.Path = path
+		if subdir != "" && !strings.HasPrefix(cleaned, subdir+"/") && cleaned != subdir {
+			continue
+		}
+		m.Path = cleaned
 		results = append(results, m)
 	}
 	return results, nil

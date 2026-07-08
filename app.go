@@ -22,7 +22,7 @@ import (
 	"mindstack/internal/llm"
 	"mindstack/internal/meta"
 	"mindstack/internal/relation"
-	"mindstack/internal/search"
+	"mindstack/internal/retrieval"
 	buildpkg "mindstack/internal/build"
 	"mindstack/internal/watcher"
 
@@ -1069,13 +1069,82 @@ func (a *App) SearchDocs(tag string) string {
 		return `{"error":"no workspace open"}`
 	}
 
-	result, err := search.SearchByTag(root, tag, "", true)
+	rs, err := retrieval.Search(root, retrieval.Query{
+		Raw:  tag,
+		Tags: retrieval.NormalizeTagQuery(tag),
+	}, retrieval.Options{
+		Mode:    retrieval.ModeTag,
+		TagMode: retrieval.TagModeAND,
+	})
 	if err != nil {
 		out, _ := json.Marshal(map[string]string{"error": err.Error()})
 		return string(out)
 	}
-	out, _ := json.Marshal(result)
+	out, _ := json.Marshal(rs)
 	return string(out)
+}
+
+// SearchDocsV2 searches documents using the unified retrieval engine.
+// mode accepts "tag", "fulltext", or "hybrid"; empty string defaults to "tag".
+func (a *App) SearchDocsV2(query string, mode string) string {
+	a.mu.RLock()
+	root := a.rootPath
+	a.mu.RUnlock()
+
+	if root == "" {
+		return `{"error":"no workspace open"}`
+	}
+
+	m := retrieval.Mode(mode)
+	if mode != "" {
+		switch m {
+		case retrieval.ModeTag, retrieval.ModeFulltext, retrieval.ModeHybrid:
+			// ok
+		default:
+			out, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("invalid mode: %s", mode)})
+			return string(out)
+		}
+	} else {
+		m = retrieval.ModeTag
+	}
+
+	vocab := buildDesktopTagVocab(root)
+	opts := retrieval.Options{Mode: m, TagMode: retrieval.TagModeOR}
+	var q retrieval.Query
+	switch m {
+	case retrieval.ModeTag:
+		opts.TagMode = retrieval.TagModeAND
+		q = retrieval.Query{Raw: query, Tags: retrieval.NormalizeTagQuery(query)}
+	case retrieval.ModeFulltext:
+		q = retrieval.Query{Raw: query, Terms: retrieval.NormalizeFulltextQuery(query)}
+	case retrieval.ModeHybrid:
+		q = retrieval.BuildQuery(query, vocab)
+	}
+
+	rs, err := retrieval.Search(root, q, opts)
+	if err != nil {
+		out, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(out)
+	}
+	out, _ := json.Marshal(rs)
+	return string(out)
+}
+
+func buildDesktopTagVocab(kbRoot string) map[string]struct{} {
+	metas, err := meta.ScanAll(kbRoot, "")
+	if err != nil {
+		return nil
+	}
+	vocab := make(map[string]struct{})
+	for _, m := range metas {
+		for _, t := range m.Tags {
+			t = strings.ToLower(strings.TrimSpace(t))
+			if t != "" {
+				vocab[t] = struct{}{}
+			}
+		}
+	}
+	return vocab
 }
 
 func (a *App) Ack(query string) string {

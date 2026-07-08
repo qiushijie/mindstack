@@ -32,6 +32,7 @@ func resetFlags() {
 	kbName = ""
 	linkName = ""
 	searchFulltext = false
+	searchMode = ""
 	resetCmdFlags(rootCmd)
 }
 
@@ -466,6 +467,58 @@ func TestCmdSearchNoResults(t *testing.T) {
 	result := cmdParseJSON(stdout)
 	if result["total"].(float64) != 0 {
 		t.Errorf("total = %v, want 0", result["total"])
+	}
+}
+
+func TestCmdSearchModeHybrid(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "doc1.md", "# API Guide\nRetry policy uses exponential backoff.")
+	createTestFile(t, dir, "doc2.md", "# Cooking\nNo tech content here.")
+	writeTestMeta(t, dir, map[string]interface{}{
+		"doc1.md": map[string]interface{}{"title": "API Guide", "tags": []string{"api", "retry-policy"}, "summary": "API retry behavior"},
+		"doc2.md": map[string]interface{}{"title": "Cooking", "tags": []string{"cooking"}},
+	})
+
+	stdout, _, code := runCmd(t, "search", "--mode", "hybrid", "retry policy")
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["mode"] != "hybrid" {
+		t.Errorf("mode = %v, want hybrid", result["mode"])
+	}
+	results := result["results"].([]interface{})
+	if len(results) == 0 {
+		t.Fatalf("expected hybrid results, got none")
+	}
+	first := results[0].(map[string]interface{})
+	if first["score"].(float64) == 0 {
+		t.Errorf("expected non-zero score for top hybrid result")
+	}
+}
+
+func TestCmdSearchModeFulltextEquivalentToFulltextFlag(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "doc1.md", "# Golang\nGolang is great")
+	createTestFile(t, dir, "doc2.md", "# Rust\nNo match here")
+	writeTestMeta(t, dir, map[string]interface{}{
+		"doc1.md": map[string]interface{}{"title": "Doc1"},
+		"doc2.md": map[string]interface{}{"title": "Doc2"},
+	})
+
+	stdout1, _, code1 := runCmd(t, "search", "--mode", "fulltext", "golang")
+	if code1 != 0 {
+		t.Fatalf("exit code %d", code1)
+	}
+	stdout2, _, code2 := runCmd(t, "search", "--fulltext", "golang")
+	if code2 != 0 {
+		t.Fatalf("exit code %d", code2)
+	}
+
+	r1 := cmdParseJSON(stdout1)
+	r2 := cmdParseJSON(stdout2)
+	if r1["total"] != r2["total"] {
+		t.Errorf("--mode fulltext total %v != --fulltext total %v", r1["total"], r2["total"])
 	}
 }
 

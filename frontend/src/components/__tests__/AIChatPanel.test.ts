@@ -321,9 +321,9 @@ describe('AIChatPanel', () => {
   describe('search', () => {
     it('runs search when search tool is selected and message sent', async () => {
       mockSearchDocs.mockResolvedValue({
-        tag: 'golang',
+        query: 'golang',
         total: 2,
-        items: [
+        results: [
           { path: '/docs/go.md', title: 'Go Notes' },
           { path: '/docs/go-advanced.md', title: 'Go Advanced' },
         ],
@@ -361,9 +361,9 @@ describe('AIChatPanel', () => {
 
     it('handles empty search results', async () => {
       mockSearchDocs.mockResolvedValue({
-        tag: 'nonexistent',
+        query: 'nonexistent',
         total: 0,
-        items: [],
+        results: [],
       })
 
       const wrapper = mountComponent()
@@ -545,9 +545,9 @@ describe('AIChatPanel', () => {
   describe('openFile', () => {
     it('emits openFile when clicking a doc link', async () => {
       mockSearchDocs.mockResolvedValue({
-        tag: 'doc',
+        query: 'doc',
         total: 1,
-        items: [{ path: '/docs/manual.md', title: 'User Manual' }],
+        results: [{ path: '/docs/manual.md', title: 'User Manual' }],
       })
 
       const wrapper = mountComponent()

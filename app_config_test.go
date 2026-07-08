@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -454,11 +455,12 @@ func TestSearchDocs(t *testing.T) {
 
 		result := app.SearchDocs("golang")
 		var parsed struct {
-			Tag   string `json:"tag"`
-			Items []struct {
-				Path   string `json:"path"`
-				Title  string `json:"title"`
-			} `json:"items"`
+			Query   string `json:"query"`
+			Mode    string `json:"mode"`
+			Results []struct {
+				Path  string `json:"path"`
+				Title string `json:"title"`
+			} `json:"results"`
 			Total int `json:"total"`
 		}
 		if err := json.Unmarshal([]byte(result), &parsed); err != nil {
@@ -467,15 +469,15 @@ func TestSearchDocs(t *testing.T) {
 		if parsed.Total != 1 {
 			t.Fatalf("expected total 1, got %d", parsed.Total)
 		}
-		if len(parsed.Items) != 1 {
-			t.Fatalf("expected 1 item, got %d", len(parsed.Items))
+		if len(parsed.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(parsed.Results))
 		}
 		expectedPath := filepath.Join(tmpDir, "notes/hello.md")
-		if parsed.Items[0].Path != expectedPath {
-			t.Fatalf("expected path %q, got %q", expectedPath, parsed.Items[0].Path)
+		if parsed.Results[0].Path != expectedPath {
+			t.Fatalf("expected path %q, got %q", expectedPath, parsed.Results[0].Path)
 		}
-		if parsed.Items[0].Title != "Hello" {
-			t.Fatalf("expected title 'Hello', got %q", parsed.Items[0].Title)
+		if parsed.Results[0].Title != "Hello" {
+			t.Fatalf("expected title 'Hello', got %q", parsed.Results[0].Title)
 		}
 	})
 
@@ -494,7 +496,7 @@ func TestSearchDocs(t *testing.T) {
 
 		result := app.SearchDocs("python")
 		var parsed struct {
-			Items []interface{} `json:"items"`
+			Results []interface{} `json:"results"`
 			Total int           `json:"total"`
 		}
 		if err := json.Unmarshal([]byte(result), &parsed); err != nil {
@@ -503,8 +505,8 @@ func TestSearchDocs(t *testing.T) {
 		if parsed.Total != 0 {
 			t.Fatalf("expected total 0, got %d", parsed.Total)
 		}
-		if len(parsed.Items) != 0 {
-			t.Fatalf("expected 0 items, got %d", len(parsed.Items))
+		if len(parsed.Results) != 0 {
+			t.Fatalf("expected 0 items, got %d", len(parsed.Results))
 		}
 	})
 
@@ -526,7 +528,7 @@ func TestSearchDocs(t *testing.T) {
 
 		result := app.SearchDocs("golang")
 		var parsed struct {
-			Items []interface{} `json:"items"`
+			Results []interface{} `json:"results"`
 			Total int           `json:"total"`
 		}
 		if err := json.Unmarshal([]byte(result), &parsed); err != nil {
@@ -569,6 +571,102 @@ func TestSearchDocs(t *testing.T) {
 		}
 		if parsed.Total != 2 {
 			t.Fatalf("expected total 2, got %d", parsed.Total)
+		}
+	})
+}
+
+func TestSearchDocsV2(t *testing.T) {
+	createMetaStore := func(t *testing.T, root string, store map[string]interface{}) {
+		t.Helper()
+		metaDir := filepath.Join(root, ".mindstack")
+		if err := os.MkdirAll(metaDir, 0755); err != nil {
+			t.Fatalf("failed to create .mindstack dir: %v", err)
+		}
+		data, err := json.MarshalIndent(store, "", "  ")
+		if err != nil {
+			t.Fatalf("failed to marshal meta store: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(metaDir, "meta.json"), data, 0644); err != nil {
+			t.Fatalf("failed to write meta.json: %v", err)
+		}
+	}
+
+	t.Run("tag mode defaults to AND", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		createMetaStore(t, tmpDir, map[string]interface{}{
+			"a.md": map[string]interface{}{"title": "A", "tags": []string{"api", "rest"}},
+			"b.md": map[string]interface{}{"title": "B", "tags": []string{"api"}},
+		})
+
+		app := NewApp()
+		app.SetRootPath(tmpDir)
+
+		result := app.SearchDocsV2("api,rest", "tag")
+		var parsed struct {
+			Mode    string `json:"mode"`
+			Results []struct {
+				Title string `json:"title"`
+			} `json:"results"`
+			Total int `json:"total"`
+		}
+		if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+			t.Fatalf("failed to parse result: %v", err)
+		}
+		if parsed.Mode != "tag" {
+			t.Fatalf("expected mode tag, got %q", parsed.Mode)
+		}
+		if parsed.Total != 1 || parsed.Results[0].Title != "A" {
+			t.Fatalf("expected only doc A, got %+v", parsed)
+		}
+	})
+
+	t.Run("fulltext mode finds content", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		os.WriteFile(filepath.Join(tmpDir, "a.md"), []byte("# A\nretry policy"), 0644)
+		createMetaStore(t, tmpDir, map[string]interface{}{
+			"a.md": map[string]interface{}{"title": "A"},
+		})
+
+		app := NewApp()
+		app.SetRootPath(tmpDir)
+
+		result := app.SearchDocsV2("retry", "fulltext")
+		var parsed struct {
+			Mode  string `json:"mode"`
+			Total int    `json:"total"`
+		}
+		if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+			t.Fatalf("failed to parse result: %v", err)
+		}
+		if parsed.Mode != "fulltext" {
+			t.Fatalf("expected mode fulltext, got %q", parsed.Mode)
+		}
+		if parsed.Total != 1 {
+			t.Fatalf("expected 1 result, got %d", parsed.Total)
+		}
+	})
+
+	t.Run("invalid mode returns error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		createMetaStore(t, tmpDir, map[string]interface{}{
+			"a.md": map[string]interface{}{"title": "A", "tags": []string{"api"}},
+		})
+
+		app := NewApp()
+		app.SetRootPath(tmpDir)
+
+		result := app.SearchDocsV2("api", "unknown")
+		var parsed struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+			t.Fatalf("failed to parse result: %v", err)
+		}
+		if parsed.Error == "" {
+			t.Fatalf("expected error for invalid mode, got %q", result)
+		}
+		if !strings.Contains(parsed.Error, "invalid mode") {
+			t.Fatalf("expected invalid mode error, got %q", parsed.Error)
 		}
 	})
 }

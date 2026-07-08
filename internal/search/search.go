@@ -1,10 +1,6 @@
 package search
 
-import (
-	"path/filepath"
-
-	"mindstack/internal/meta"
-)
+import "mindstack/internal/retrieval"
 
 // SearchItem is a single search result.
 type SearchItem struct {
@@ -21,21 +17,27 @@ type SearchResult struct {
 }
 
 // SearchByTag searches documents by tag in the knowledge base.
-// If ignoreCase is true, matching is case-insensitive.
+// The ignoreCase parameter is retained for backward compatibility; matching is
+// case-insensitive by default.
 func SearchByTag(kbRoot, tag, subdir string, ignoreCase bool) (*SearchResult, error) {
-	metas, err := meta.ScanAll(kbRoot, subdir)
+	rs, err := retrieval.Search(kbRoot, retrieval.Query{
+		Raw:  tag,
+		Tags: retrieval.NormalizeTagQuery(tag),
+	}, retrieval.Options{
+		Mode:    retrieval.ModeTag,
+		Subdir:  subdir,
+		TagMode: retrieval.TagModeAND,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	matched := meta.FindByTag(metas, tag, ignoreCase)
-
-	items := make([]SearchItem, 0, len(matched))
-	for _, m := range matched {
+	items := make([]SearchItem, 0, len(rs.Results))
+	for _, r := range rs.Results {
 		items = append(items, SearchItem{
-			Path:    filepath.Join(kbRoot, m.Path),
-			Title:   m.Title,
-			Summary: m.Summary,
+			Path:    r.Path,
+			Title:   r.Title,
+			Summary: r.Summary,
 		})
 	}
 
@@ -45,3 +47,4 @@ func SearchByTag(kbRoot, tag, subdir string, ignoreCase bool) (*SearchResult, er
 		Total: len(items),
 	}, nil
 }
+

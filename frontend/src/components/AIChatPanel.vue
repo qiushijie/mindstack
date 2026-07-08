@@ -452,13 +452,13 @@ function runSearch(query: string) {
       finishStream(idx)
       return
     }
-    if (result.items && result.items.length > 0) {
-      messages.value[idx].content = `Found ${result.total} document(s) for tag(s) "${result.tag}":`
-      messages.value[idx].links = result.items.map(
-        (item: { path: string; abs_path: string; title: string; summary?: string }) => ({ path: item.abs_path || item.path, title: item.title || item.path, summary: item.summary }),
+    if (result.results && result.results.length > 0) {
+      messages.value[idx].content = `Found ${result.total} document(s) for query "${result.query}":`
+      messages.value[idx].links = result.results.map(
+        (item: { path: string; title: string; summary?: string }) => ({ path: item.path, title: item.title || item.path, summary: item.summary }),
       )
     } else {
-      messages.value[idx].content = `No documents found for tag(s) "${query}".`
+      messages.value[idx].content = `No documents found for query "${query}".`
     }
     finishStream(idx)
     scrollToBottom()

@@ -182,6 +182,10 @@ export function SearchDocs(arg1) {
   return window['go']['main']['App']['SearchDocs'](arg1);
 }
 
+export function SearchDocsV2(arg1, arg2) {
+  return window['go']['main']['App']['SearchDocsV2'](arg1, arg2);
+}
+
 export function SetLocale(arg1) {
   return window['go']['main']['App']['SetLocale'](arg1);
 }

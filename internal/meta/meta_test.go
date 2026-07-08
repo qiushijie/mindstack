@@ -19,10 +19,12 @@ func TestSaveAndLoadMeta(t *testing.T) {
 	kbRoot := setupTestKB(t)
 
 	original := &DocumentMeta{
-		Title:   "Test Doc",
-		Summary: "A test document",
-		Tags:    []string{"test", "unit"},
-		Status:  "active",
+		Title:     "Test Doc",
+		Summary:   "A test document",
+		Tags:      []string{"test", "unit"},
+		Status:    "active",
+		Keywords:  []string{"unit testing", "mock"},
+		Aliases:   []string{"UT"},
 	}
 
 	err := SaveMeta(kbRoot, "docs/test.md", original)
@@ -46,6 +48,12 @@ func TestSaveAndLoadMeta(t *testing.T) {
 	}
 	if loaded.Path != "docs/test.md" {
 		t.Fatalf("expected path docs/test.md, got %s", loaded.Path)
+	}
+	if len(loaded.Keywords) != 2 || loaded.Keywords[0] != "unit testing" {
+		t.Fatalf("expected keywords [unit testing mock], got %v", loaded.Keywords)
+	}
+	if len(loaded.Aliases) != 1 || loaded.Aliases[0] != "UT" {
+		t.Fatalf("expected aliases [UT], got %v", loaded.Aliases)
 	}
 }
 
@@ -80,6 +88,30 @@ func TestLoadMeta_EmptyStore(t *testing.T) {
 	_, err := LoadMeta(kbRoot, "any.md")
 	if err == nil {
 		t.Fatal("expected error when meta file does not exist")
+	}
+}
+
+func TestLoadMeta_MissingKeywordsAndAliases(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	// Simulate an old meta.json that predates keywords and aliases.
+	oldJSON := `{"doc.md":{"title":"Old Doc","summary":"legacy","tags":["legacy"],"status":"active"}}`
+	metaDir := filepath.Join(kbRoot, workspace.KnowledgeBaseDir)
+	os.MkdirAll(metaDir, 0755)
+	os.WriteFile(filepath.Join(metaDir, "meta.json"), []byte(oldJSON), 0644)
+
+	loaded, err := LoadMeta(kbRoot, "doc.md")
+	if err != nil {
+		t.Fatalf("unexpected error loading legacy meta: %v", err)
+	}
+	if loaded.Title != "Old Doc" {
+		t.Fatalf("expected title Old Doc, got %s", loaded.Title)
+	}
+	if loaded.Keywords != nil {
+		t.Fatalf("expected nil keywords for legacy meta, got %v", loaded.Keywords)
+	}
+	if loaded.Aliases != nil {
+		t.Fatalf("expected nil aliases for legacy meta, got %v", loaded.Aliases)
 	}
 }
 
@@ -285,5 +317,60 @@ func TestMetaFilePath(t *testing.T) {
 	got := metaFilePath("/tmp/project")
 	if got != expected {
 		t.Fatalf("expected %s, got %s", expected, got)
+	}
+}
+
+func TestScanAll_SkipsInvalidPaths(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	// Seed a normal entry and several malicious/corrupted entries.
+	SaveMeta(kbRoot, "docs/valid.md", &DocumentMeta{Title: "Valid", Tags: []string{"valid"}, Status: "active"})
+
+	maliciousJSON := `{
+		"docs/valid.md": {"title":"Valid","tags":["valid"],"status":"active"},
+		"../secret.md": {"title":"Secret","tags":["secret"],"status":"active"},
+		"/etc/passwd": {"title":"Passwd","tags":["system"],"status":"active"},
+		"": {"title":"Empty","tags":["empty"],"status":"active"},
+		".": {"title":"Dot","tags":["dot"],"status":"active"},
+		"docs": {"title":"Dir","tags":["dir"],"status":"active"},
+		"dir/": {"title":"DirSlash","tags":["dirslash"],"status":"active"},
+		"config.yaml": {"title":"Config","tags":["config"],"status":"active"}
+	}`
+	metaDir := filepath.Join(kbRoot, workspace.KnowledgeBaseDir)
+	os.WriteFile(filepath.Join(metaDir, "meta.json"), []byte(maliciousJSON), 0644)
+
+	all, err := ScanAll(kbRoot, "")
+	if err != nil {
+		t.Fatalf("scan error: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected only valid entry, got %d", len(all))
+	}
+	if all[0].Path != "docs/valid.md" {
+		t.Fatalf("expected docs/valid.md, got %s", all[0].Path)
+	}
+}
+
+func TestLoadMeta_InvalidPath(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	invalidPaths := []string{"../secret.md", "/etc/passwd", ""}
+	for _, p := range invalidPaths {
+		_, err := LoadMeta(kbRoot, p)
+		if err == nil {
+			t.Fatalf("expected error for invalid path %q", p)
+		}
+	}
+}
+
+func TestSaveMeta_InvalidPath(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	invalidPaths := []string{"../secret.md", "/etc/passwd", ""}
+	for _, p := range invalidPaths {
+		err := SaveMeta(kbRoot, p, &DocumentMeta{Title: "Bad", Tags: []string{"bad"}, Status: "active"})
+		if err == nil {
+			t.Fatalf("expected error for invalid path %q", p)
+		}
 	}
 }
