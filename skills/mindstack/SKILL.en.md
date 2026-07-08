@@ -105,44 +105,54 @@ Success output:
 
 #### `mindstack search <query>`
 
-Tag search by default (comma-separate multiple tags for AND filtering); pass `--fulltext` for full-text search.
+Search the knowledge base. The default mode is tag search (comma-separate multiple tags for AND filtering). Use `--mode` to switch between `tag`, `fulltext`, and `hybrid`. The legacy `--fulltext` flag is a deprecated alias for `--mode fulltext`.
 
 ```bash
-# Tag search (default, case-insensitive)
+# Tag search (default, case-insensitive, AND for multiple tags)
 mindstack search "tutorial"
-
-# Multi-tag search (AND: doc must have ALL tags)
 mindstack search "api,rest"
 
 # Full-text search (case-insensitive, substring match)
+mindstack search --mode fulltext "keyword"
+# Deprecated alias:
 mindstack search "keyword" --fulltext
+
+# Hybrid search: combine tag and full-text recall, ranked by score
+mindstack search --mode hybrid "api retry policy"
 ```
 
-Tag search output:
+Output shape for every mode is a `ResultSet`:
+
 ```json
 {
-  "query": "tutorial",
+  "query": "api,rest",
   "mode": "tag",
   "results": [
-    {"path": "/path/to/kb/docs/guide.md", "title": "Tutorial", "summary": "Guide summary"}
+    {
+      "path": "/path/to/kb/docs/guide.md",
+      "title": "Tutorial",
+      "summary": "Guide summary",
+      "tags": ["tutorial", "api", "rest"],
+      "score": 15,
+      "breakdown": {
+        "tagHits": 2,
+        "titleHits": 0,
+        "summaryHits": 0,
+        "headingHits": 0,
+        "contentHits": 0
+      },
+      "matches": [
+        {"line": 0, "text": "api", "term": "api", "source": "tag"}
+      ]
+    }
   ],
   "total": 1
 }
 ```
 
-Full-text search output:
-```json
-{
-  "query": "keyword",
-  "mode": "fulltext",
-  "results": [
-    {"path": "/path/to/kb/docs/example.md", "title": "Example", "matchCount": 3}
-  ],
-  "total": 1
-}
-```
+`score` is the document relevance score. `breakdown` shows how the score was composed. `matches` lists individual term matches (line numbers refer to the original markdown file; `line: 0` indicates a tag match).
 
-Error codes: `SEARCH_FAILED`, `SCAN_FAILED`.
+Error codes: `SEARCH_FAILED`.
 
 ### Search vs Q&A: When to Use Which
 

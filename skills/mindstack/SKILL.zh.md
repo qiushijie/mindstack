@@ -107,44 +107,54 @@ mindstack doc ls docs/
 
 #### `mindstack search <query>`
 
-默认标签搜索（多个标签用逗号分隔实现 AND 过滤），可通过 `--fulltext` 切换为全文搜索。
+搜索知识库。默认模式为标签搜索（多个标签用逗号分隔实现 AND 过滤）。可通过 `--mode` 切换为 `tag`、`fulltext` 或 `hybrid`。旧的 `--fulltext` 标记是 `--mode fulltext` 的废弃别名。
 
 ```bash
-# 标签搜索（默认，大小写不敏感）
+# 标签搜索（默认，大小写不敏感，多标签 AND）
 mindstack search "tutorial"
-
-# 多标签搜索（AND：文档必须同时包含所有指定标签）
 mindstack search "api,rest"
 
 # 全文搜索（大小写不敏感，子串匹配）
+mindstack search --mode fulltext "keyword"
+# 废弃别名：
 mindstack search "keyword" --fulltext
+
+# 混合搜索：标签 + 全文联合召回，按相关性得分排序
+mindstack search --mode hybrid "api retry policy"
 ```
 
-标签搜索输出：
+所有模式均输出统一的 `ResultSet` 结构：
+
 ```json
 {
-  "query": "tutorial",
+  "query": "api,rest",
   "mode": "tag",
   "results": [
-    {"path": "/path/to/kb/docs/guide.md", "title": "教程", "summary": "指南摘要"}
+    {
+      "path": "/path/to/kb/docs/guide.md",
+      "title": "教程",
+      "summary": "指南摘要",
+      "tags": ["tutorial", "api", "rest"],
+      "score": 15,
+      "breakdown": {
+        "tagHits": 2,
+        "titleHits": 0,
+        "summaryHits": 0,
+        "headingHits": 0,
+        "contentHits": 0
+      },
+      "matches": [
+        {"line": 0, "text": "api", "term": "api", "source": "tag"}
+      ]
+    }
   ],
   "total": 1
 }
 ```
 
-全文搜索输出：
-```json
-{
-  "query": "keyword",
-  "mode": "fulltext",
-  "results": [
-    {"path": "/path/to/kb/docs/example.md", "title": "示例", "matchCount": 3}
-  ],
-  "total": 1
-}
-```
+`score` 为文档相关性得分，`breakdown` 展示得分构成，`matches` 列出具体命中项（行号对应原始 markdown 文件；`line: 0` 表示标签命中）。
 
-错误码：`SEARCH_FAILED`、`SCAN_FAILED`。
+错误码：`SEARCH_FAILED`。
 
 ### 搜索 vs 问答：如何选择
 
