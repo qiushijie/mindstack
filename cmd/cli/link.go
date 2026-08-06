@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,23 +33,8 @@ var linkCmd = &cobra.Command{
 			writeError(1, "INTERNAL", fmt.Sprintf("cannot get cwd: %v", err))
 		}
 
-		kbDir := filepath.Join(cwd, workspace.KnowledgeBaseDir)
-		cfgPath := filepath.Join(kbDir, "config.yaml")
-
-		var cfg *config.Config
 		if workspace.IsKnowledgeBaseInit(cwd) {
-			cfg, err = config.LoadConfig(cfgPath)
-			if err != nil {
-				writeError(1, "CONFIG_ERROR", fmt.Sprintf("cannot read config: %v", err))
-			}
-			if cfg.IsKnowledgeBase() {
-				writeError(1, "IS_KB", "current directory is a knowledge base, not a project link directory")
-			}
-		} else {
-			if err := os.MkdirAll(kbDir, 0755); err != nil {
-				writeError(1, "MKDIR_FAILED", fmt.Sprintf("cannot create .mindstack: %v", err))
-			}
-			cfg = &config.Config{Version: "1"}
+			writeError(1, "IS_KB", "current directory is a knowledge base, not a project link directory")
 		}
 
 		name := linkName
@@ -61,14 +47,31 @@ var linkCmd = &cobra.Command{
 			}
 		}
 
-		for _, existing := range cfg.KnowledgeBases {
-			if existing == kbPath {
-				writeError(1, "ALREADY_LINKED", fmt.Sprintf("knowledge base %s is already linked", kbPath))
+		if err := config.RegisterKnowledgeBase(name, kbPath); err != nil {
+			var conflict *config.NameConflictError
+			if errors.As(err, &conflict) {
+				writeError(1, "NAME_CONFLICT", fmt.Sprintf("%s, use --name to specify an alias", err))
+			}
+			writeError(1, "REGISTER_FAILED", fmt.Sprintf("cannot register knowledge base: %v", err))
+		}
+
+		projectPath := filepath.Join(cwd, workspace.ProjectConfigFile)
+		cfg := config.DefaultConfig()
+		if _, err := os.Stat(projectPath); err == nil {
+			cfg, err = config.LoadConfig(projectPath)
+			if err != nil {
+				writeError(1, "CONFIG_ERROR", fmt.Sprintf("cannot read project config: %v", err))
 			}
 		}
 
-		cfg.KnowledgeBases = append(cfg.KnowledgeBases, kbPath)
-		if err := config.SaveConfig(cfgPath, cfg); err != nil {
+		for _, existing := range cfg.KnowledgeBases {
+			if existing == name {
+				writeError(1, "ALREADY_LINKED", fmt.Sprintf("knowledge base %s is already linked", name))
+			}
+		}
+
+		cfg.KnowledgeBases = append(cfg.KnowledgeBases, name)
+		if err := config.SaveConfig(projectPath, cfg); err != nil {
 			writeError(1, "SAVE_FAILED", fmt.Sprintf("cannot save config: %v", err))
 		}
 

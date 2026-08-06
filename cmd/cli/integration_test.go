@@ -15,6 +15,18 @@ import (
 
 var binaryPath string
 
+// cliConfigPath, when non-empty, is passed as --config to every CLI
+// invocation so each test gets an isolated global KB registry.
+var cliConfigPath string
+
+// isolateConfig points the CLI's global config (KB registry) at a temp file
+// for the duration of the test.
+func isolateConfig(t *testing.T) {
+	t.Helper()
+	cliConfigPath = filepath.Join(t.TempDir(), "config.json")
+	t.Cleanup(func() { cliConfigPath = "" })
+}
+
 func TestMain(m *testing.M) {
 	tmpFile, err := os.CreateTemp("", "mindstack-test-*")
 	if err != nil {
@@ -40,6 +52,9 @@ func TestMain(m *testing.M) {
 }
 
 func runCLI(dir string, stdin string, args ...string) (stdout, stderr string, exitCode int) {
+	if cliConfigPath != "" {
+		args = append([]string{"--config", cliConfigPath}, args...)
+	}
 	cmd := exec.Command(binaryPath, args...)
 	if dir != "" {
 		cmd.Dir = dir
@@ -71,6 +86,7 @@ func parseJSON(s string) map[string]interface{} {
 
 func setupKB(t *testing.T) string {
 	t.Helper()
+	isolateConfig(t)
 	dir := t.TempDir()
 	stdout, _, code := runCLI("", "", "init", dir)
 	if code != 0 {
@@ -93,6 +109,7 @@ func createFile(t *testing.T, baseDir, relPath, content string) {
 // --- init command ---
 
 func TestInitCommand(t *testing.T) {
+	isolateConfig(t)
 	dir := t.TempDir()
 	stdout, _, code := runCLI("", "", "init", dir)
 	if code != 0 {
@@ -108,6 +125,7 @@ func TestInitCommand(t *testing.T) {
 }
 
 func TestInitDefaultPath(t *testing.T) {
+	isolateConfig(t)
 	dir := t.TempDir()
 	stdout, _, code := runCLI(dir, "", "init")
 	if code != 0 {
@@ -136,6 +154,7 @@ func TestInitAlreadyExists(t *testing.T) {
 // --- link command ---
 
 func TestLinkCommand(t *testing.T) {
+	isolateConfig(t)
 	tmpDir := t.TempDir()
 	kbDir := filepath.Join(tmpDir, "mykb")
 	runCLI("", "", "init", kbDir)
@@ -155,13 +174,17 @@ func TestLinkCommand(t *testing.T) {
 		t.Errorf("expected name=mykb, got %v", result["name"])
 	}
 
-	cfgPath := filepath.Join(projectDir, ".mindstack", "config.yaml")
+	cfgPath := filepath.Join(projectDir, "mindstack.yaml")
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-		t.Error("project config not created")
+		t.Error("mindstack.yaml not created")
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".mindstack")); !os.IsNotExist(err) {
+		t.Error(".mindstack directory should not be created for project links")
 	}
 }
 
 func TestLinkWithExplicitName(t *testing.T) {
+	isolateConfig(t)
 	tmpDir := t.TempDir()
 	kbDir := filepath.Join(tmpDir, "mykb")
 	runCLI("", "", "init", kbDir)
@@ -180,6 +203,7 @@ func TestLinkWithExplicitName(t *testing.T) {
 }
 
 func TestLinkAlreadyLinked(t *testing.T) {
+	isolateConfig(t)
 	tmpDir := t.TempDir()
 	kbDir := filepath.Join(tmpDir, "mykb")
 	runCLI("", "", "init", kbDir)
@@ -198,6 +222,7 @@ func TestLinkAlreadyLinked(t *testing.T) {
 }
 
 func TestLinkNotAKB(t *testing.T) {
+	isolateConfig(t)
 	tmpDir := t.TempDir()
 	notAKBDir := filepath.Join(tmpDir, "notakb")
 	os.MkdirAll(notAKBDir, 0755)
@@ -215,6 +240,7 @@ func TestLinkNotAKB(t *testing.T) {
 }
 
 func TestLinkFromKB(t *testing.T) {
+	isolateConfig(t)
 	tmpDir := t.TempDir()
 	kbDir1 := filepath.Join(tmpDir, "kb1")
 	runCLI("", "", "init", kbDir1)
@@ -582,15 +608,16 @@ func TestNotInitialized(t *testing.T) {
 // --- --kb flag ---
 
 func TestWithKBFlag(t *testing.T) {
+	isolateConfig(t)
 	tmpDir := t.TempDir()
 	kbDir := filepath.Join(tmpDir, "mykb")
 	runCLI("", "", "init", kbDir)
 	createFile(t, kbDir, "test.md", "# Hello")
 
 	projectDir := filepath.Join(tmpDir, "project")
-	os.MkdirAll(filepath.Join(projectDir, ".mindstack"), 0755)
-	cfgContent := fmt.Sprintf("knowledge_bases:\n  - %q\n", kbDir)
-	os.WriteFile(filepath.Join(projectDir, ".mindstack", "config.yaml"), []byte(cfgContent), 0644)
+	os.MkdirAll(projectDir, 0755)
+	cfgContent := "version: \"1\"\nknowledge_bases:\n  - mykb\n"
+	os.WriteFile(filepath.Join(projectDir, "mindstack.yaml"), []byte(cfgContent), 0644)
 
 	stdout, _, code := runCLI(projectDir, "", "--kb", "mykb", "doc", "ls")
 	if code != 0 {
@@ -604,14 +631,15 @@ func TestWithKBFlag(t *testing.T) {
 }
 
 func TestWithKBFlagNotFound(t *testing.T) {
+	isolateConfig(t)
 	tmpDir := t.TempDir()
 	kbDir := filepath.Join(tmpDir, "mykb")
 	runCLI("", "", "init", kbDir)
 
 	projectDir := filepath.Join(tmpDir, "project")
-	os.MkdirAll(filepath.Join(projectDir, ".mindstack"), 0755)
-	cfgContent := fmt.Sprintf("knowledge_bases:\n  - %q\n", kbDir)
-	os.WriteFile(filepath.Join(projectDir, ".mindstack", "config.yaml"), []byte(cfgContent), 0644)
+	os.MkdirAll(projectDir, 0755)
+	cfgContent := "version: \"1\"\nknowledge_bases:\n  - mykb\n"
+	os.WriteFile(filepath.Join(projectDir, "mindstack.yaml"), []byte(cfgContent), 0644)
 
 	_, stderr, code := runCLI(projectDir, "", "--kb", "nonexistent", "doc", "ls")
 	if code != 1 {

@@ -21,7 +21,7 @@ description: MindStack CLI 工具使用，用于 AI codegen 工具操作 markdow
 
 ## 前置条件
 
-使用命令前，当前工作目录（或其父目录）必须存在 `.mindstack/config.yaml`。关联多个知识库时需要通过 `--kb <name>` 指定目标：
+使用命令前，当前工作目录（或其父目录）必须存在 `.mindstack/config.yaml`（由 `mindstack init` 创建的知识库）或 `mindstack.yaml`（通过 `mindstack link` 关联了知识库的项目）之一。关联多个知识库时需要通过 `--kb <name>` 指定目标：
 
 ```bash
 mindstack --kb kb1 doc ls
@@ -54,6 +54,33 @@ Exit code：0 成功，1 用户错误，2 未初始化，3 LLM 不可用。
 - 编辑文档：对绝对路径调用 Edit 工具
 
 ## 命令参考
+
+### 初始化与关联
+
+#### `mindstack init`
+
+把当前目录初始化为知识库：创建 `.mindstack/config.yaml`（name/description/version），并把知识库名字→本机路径的映射注册到全局 `config.json` 的 `knowledgeBases` 字段。全局配置默认为 `~/.mindstack/config.json`，实际路径遵循 CLI 的配置解析优先级，可能落在 OS 用户配置目录。全局配置为本机私有，不要提交到 git。
+
+```bash
+mindstack init
+```
+
+#### `mindstack link <kb-path>`
+
+把当前项目关联到知识库。它会把知识库名字→本机路径的映射注册到全局配置（`--name` 可指定别名；若名字已被其他路径占用则报 `NAME_CONFLICT`，需用 `--name` 起别名），然后在项目根目录写入/追加 `mindstack.yaml`：
+
+```yaml
+version: "1"
+knowledge_bases:
+  - my-kb
+```
+
+`mindstack.yaml` 只含知识库名字、不含本机路径，可以也应该提交到 git。同一仓库的任何 clone（例如 AI codegen 工具在不同目录拉取的副本）只要本机全局配置中注册了该名字即可直接使用知识库。若 `mindstack.yaml` 中的名字未在本机注册（例如换新机器），错误信息会提示运行 `mindstack link <kb-path>` 完成注册。
+
+```bash
+mindstack link /path/to/kb
+mindstack link /path/to/kb --name my-alias
+```
 
 ### 文档浏览
 
@@ -377,10 +404,11 @@ mindstack tags       # 查看标签分布
 
 | 错误码 | 原因 | 处理 |
 |--------|------|------|
-| `NOT_INITIALIZED` (exit 2) | 未找到 `.mindstack/` | 提示用户执行 `init` 或 `link` |
+| `NOT_INITIALIZED` (exit 2) | 既未找到 `.mindstack/config.yaml`（知识库）也未找到 `mindstack.yaml`（关联项目） | 提示用户执行 `init` 或 `link` |
 | `NOT_FOUND` | 文件路径不正确 | 用 `ls` 确认文件存在 |
 | `KB_AMBIGUOUS` | 多知识库未指定目标 | 添加 `--kb <name>` |
 | `KB_NOT_FOUND` | `--kb` 名称不存在 | 用 `info` 查看可用知识库列表 |
+| `NAME_CONFLICT` | 知识库名字已被其他本机路径注册 | 给 `init` 或 `link` 加 `--name <别名>` |
 | `LLM_UNAVAILABLE` (exit 3) | LLM 未配置 | 提示用户配置 LLM 服务 |
 | `ACK_FAILED` (exit 1) | `ack` 执行失败 | 检查 LLM 是否可用、知识库是否已 build |
 

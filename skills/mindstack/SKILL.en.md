@@ -21,7 +21,7 @@ Keywords: `knowledge base` `mindstack` `document management` `document search` `
 
 ## Prerequisites
 
-Before any command, the current working directory (or one of its ancestors) must contain `.mindstack/config.yaml`. When multiple knowledge bases are linked, use `--kb <name>` to select the target:
+Before any command, the current working directory (or one of its ancestors) must contain either `.mindstack/config.yaml` (a knowledge base created by `mindstack init`) or `mindstack.yaml` (a project linked to knowledge bases via `mindstack link`). When multiple knowledge bases are linked, use `--kb <name>` to select the target:
 
 ```bash
 mindstack --kb kb1 doc ls
@@ -54,6 +54,33 @@ The `build` command emits per-line progress events (JSON) to stderr; the final r
 - Edit a document: call the Edit tool on the absolute path.
 
 ## Command Reference
+
+### Setup
+
+#### `mindstack init`
+
+Initializes the current directory as a knowledge base: creates `.mindstack/config.yaml` (name/description/version) and registers the KB name → local path mapping in the global `config.json` (`knowledgeBases` field). The global config defaults to `~/.mindstack/config.json`, but the actual path follows the CLI's config resolution priority and may fall back to the OS user config directory. The global config is machine-local and must not be committed to git.
+
+```bash
+mindstack init
+```
+
+#### `mindstack link <kb-path>`
+
+Links the current project to a knowledge base. It registers the KB name → local path mapping in the global config (use `--name` to set an alias; if the name is already registered for a different path, it fails with `NAME_CONFLICT` — pick an alias with `--name`), then writes/appends `mindstack.yaml` in the project root:
+
+```yaml
+version: "1"
+knowledge_bases:
+  - my-kb
+```
+
+`mindstack.yaml` contains only KB names, no local paths, so it can and should be committed to git. Any clone of the same repository (e.g., a copy an AI codegen tool pulls into a different directory) can use the knowledge base as long as the name is registered in that machine's global config. If a name in `mindstack.yaml` is not registered locally (e.g., on a new machine), the error message tells you to run `mindstack link <kb-path>` to register it.
+
+```bash
+mindstack link /path/to/kb
+mindstack link /path/to/kb --name my-alias
+```
 
 ### Document Browsing
 
@@ -375,10 +402,11 @@ mindstack tags       # Inspect the tag distribution
 
 | Error code | Cause | Action |
 |------------|-------|--------|
-| `NOT_INITIALIZED` (exit 2) | `.mindstack/` not found | Tell the user to run `init` or `link` |
+| `NOT_INITIALIZED` (exit 2) | Neither `.mindstack/config.yaml` (knowledge base) nor `mindstack.yaml` (linked project) found | Tell the user to run `init` or `link` |
 | `NOT_FOUND` | Wrong file path | Use `ls` to verify the file exists |
 | `KB_AMBIGUOUS` | Multiple KBs without a target | Add `--kb <name>` |
 | `KB_NOT_FOUND` | `--kb` name does not exist | Use `info` to see the list of available KBs |
+| `NAME_CONFLICT` | KB name already registered for a different local path | Pass `--name <alias>` to `init` or `link` |
 | `LLM_UNAVAILABLE` (exit 3) | LLM not configured | Tell the user to configure the LLM service |
 | `ACK_FAILED` (exit 1) | `ack` execution failed | Check that the LLM is reachable and the KB has been built |
 

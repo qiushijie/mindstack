@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -51,15 +53,15 @@ func ConfigPath() string {
 	return filepath.Join(dir, "mindstack", "config.json")
 }
 
-// Config represents .knowledge-base/config.yaml.
+// Config represents a knowledge base's .mindstack/config.yaml or a project's
+// mindstack.yaml link file.
 // Knowledge base side: has Name, Description, Version.
-// Project side (link): has KnowledgeBases pointing to KB paths.
+// Project side (mindstack.yaml): has KnowledgeBases listing KB names.
 type Config struct {
-	Name            string   `yaml:"name,omitempty" json:"name,omitempty"`
-	Description     string   `yaml:"description,omitempty" json:"description,omitempty"`
-	Version         string   `yaml:"version,omitempty" json:"version,omitempty"`
-	KnowledgeBase   string   `yaml:"knowledge_base,omitempty" json:"knowledge_base,omitempty"`    // backward compat, single link
-	KnowledgeBases  []string `yaml:"knowledge_bases,omitempty" json:"knowledge_bases,omitempty"` // multiple links
+	Name           string   `yaml:"name,omitempty" json:"name,omitempty"`
+	Description    string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Version        string   `yaml:"version,omitempty" json:"version,omitempty"`
+	KnowledgeBases []string `yaml:"knowledge_bases,omitempty" json:"knowledge_bases,omitempty"` // linked KB names
 }
 
 // DefaultConfig returns a knowledge base side config.
@@ -95,21 +97,9 @@ func SaveConfig(path string, cfg *Config) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// GetKnowledgeBases returns all linked knowledge base paths.
-// Supports both legacy single knowledge_base and new knowledge_bases list.
+// GetKnowledgeBases returns all linked knowledge base names.
 func (c *Config) GetKnowledgeBases() []string {
-	if len(c.KnowledgeBases) > 0 {
-		return c.KnowledgeBases
-	}
-	if c.KnowledgeBase != "" {
-		return []string{c.KnowledgeBase}
-	}
-	return nil
-}
-
-// IsKnowledgeBase returns true if this config represents a knowledge base (not a link).
-func (c *Config) IsKnowledgeBase() bool {
-	return len(c.GetKnowledgeBases()) == 0
+	return c.KnowledgeBases
 }
 
 var errConfigTooLarge = &configError{"config file exceeds 64KB limit"}
@@ -119,3 +109,97 @@ type configError struct {
 }
 
 func (e *configError) Error() string { return e.msg }
+
+// kbRegistryKey is the top-level key of the KB name -> path registry inside
+// the global config.json. The registry is machine-local and never committed.
+const kbRegistryKey = "knowledgeBases"
+
+// NameConflictError is returned when a KB name is already registered to a
+// different path.
+type NameConflictError struct {
+	Name         string
+	ExistingPath string
+}
+
+func (e *NameConflictError) Error() string {
+	return fmt.Sprintf("knowledge base name %q is already registered to %s", e.Name, e.ExistingPath)
+}
+
+// loadConfigFileMap reads the global config.json as a raw map so unknown
+// fields (settings, recentEntries, ...) are preserved on write.
+func loadConfigFileMap() (map[string]interface{}, string, error) {
+	path := ResolveConfigPath()
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return map[string]interface{}{}, path, nil
+	}
+	if err != nil {
+		return nil, path, err
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, path, fmt.Errorf("cannot parse config file %s: %w", path, err)
+	}
+	return m, path, nil
+}
+
+func kbRegistry(m map[string]interface{}) map[string]string {
+	reg := map[string]string{}
+	if raw, ok := m[kbRegistryKey].(map[string]interface{}); ok {
+		for k, v := range raw {
+			if s, ok := v.(string); ok {
+				reg[k] = s
+			}
+		}
+	}
+	return reg
+}
+
+// RegisterKnowledgeBase records a KB name -> path mapping in the global
+// config.json. Returns NameConflictError if the name is taken by another path.
+func RegisterKnowledgeBase(name, path string) error {
+	if name == "" || path == "" {
+		return fmt.Errorf("knowledge base name and path must not be empty")
+	}
+	m, cfgPath, err := loadConfigFileMap()
+	if err != nil {
+		return err
+	}
+	reg := kbRegistry(m)
+	if existing, ok := reg[name]; ok && existing != path {
+		return &NameConflictError{Name: name, ExistingPath: existing}
+	}
+	reg[name] = path
+	m[kbRegistryKey] = reg
+
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(cfgPath, data, 0644)
+}
+
+// ResolveKnowledgeBasePath returns the registered path for a KB name.
+func ResolveKnowledgeBasePath(name string) (string, error) {
+	m, _, err := loadConfigFileMap()
+	if err != nil {
+		return "", err
+	}
+	path, ok := kbRegistry(m)[name]
+	if !ok {
+		return "", fmt.Errorf("knowledge base %q is not registered on this machine, run 'mindstack link <kb-path>' to register it", name)
+	}
+	return path, nil
+}
+
+// ListKnowledgeBases returns all registered KB name -> path mappings.
+func ListKnowledgeBases() (map[string]string, error) {
+	m, _, err := loadConfigFileMap()
+	if err != nil {
+		return nil, err
+	}
+	return kbRegistry(m), nil
+}

@@ -18,6 +18,18 @@ import (
 
 var e2eBinary string
 
+// e2eConfigPath, when non-empty, is passed as --config to every CLI
+// invocation so each test gets an isolated global KB registry.
+var e2eConfigPath string
+
+// e2eIsolateConfig points the CLI's global config (KB registry) at a temp
+// file for the duration of the test.
+func e2eIsolateConfig(t *testing.T) {
+	t.Helper()
+	e2eConfigPath = filepath.Join(t.TempDir(), "config.json")
+	t.Cleanup(func() { e2eConfigPath = "" })
+}
+
 func TestMain(m *testing.M) {
 	tmpFile, err := os.CreateTemp("", "mindstack-e2e-*")
 	if err != nil {
@@ -45,6 +57,9 @@ func TestMain(m *testing.M) {
 // --- helpers ---
 
 func e2eRun(dir string, stdin string, args ...string) (stdout, stderr string, exitCode int) {
+	if e2eConfigPath != "" {
+		args = append([]string{"--config", e2eConfigPath}, args...)
+	}
 	cmd := exec.Command(e2eBinary, args...)
 	if dir != "" {
 		cmd.Dir = dir
@@ -89,6 +104,7 @@ func e2eMustJSON(t *testing.T, s string) map[string]interface{} {
 // Returns the KB root path.
 func setupFixtureKB(t *testing.T) string {
 	t.Helper()
+	e2eIsolateConfig(t)
 	_, filename, _, _ := runtime.Caller(0)
 	fixtureDir := filepath.Join(filepath.Dir(filename), "testdata", "workspace")
 

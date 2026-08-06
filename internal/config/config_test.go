@@ -1,8 +1,11 @@
 package config
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -14,9 +17,6 @@ func TestDefaultConfig(t *testing.T) {
 	if len(cfg.GetKnowledgeBases()) != 0 {
 		t.Fatal("expected empty knowledge bases")
 	}
-	if !cfg.IsKnowledgeBase() {
-		t.Fatal("expected IsKnowledgeBase true")
-	}
 }
 
 func TestSaveAndLoad(t *testing.T) {
@@ -27,7 +27,7 @@ func TestSaveAndLoad(t *testing.T) {
 		Name:           "test-kb",
 		Description:    "test description",
 		Version:        "1",
-		KnowledgeBases: []string{"/path/to/kb"},
+		KnowledgeBases: []string{"shared-docs"},
 	}
 
 	if err := SaveConfig(path, original); err != nil {
@@ -42,38 +42,16 @@ func TestSaveAndLoad(t *testing.T) {
 	if loaded.Name != original.Name {
 		t.Fatalf("expected name %s, got %s", original.Name, loaded.Name)
 	}
-	if len(loaded.KnowledgeBases) != 1 || loaded.KnowledgeBases[0] != "/path/to/kb" {
-		t.Fatalf("expected knowledge_bases [/path/to/kb], got %v", loaded.KnowledgeBases)
-	}
-	if loaded.IsKnowledgeBase() {
-		t.Fatal("expected IsKnowledgeBase false for linked config")
-	}
-}
-
-func TestGetKnowledgeBases_Single(t *testing.T) {
-	cfg := &Config{KnowledgeBase: "/path/to/kb"}
-	kbs := cfg.GetKnowledgeBases()
-	if len(kbs) != 1 || kbs[0] != "/path/to/kb" {
-		t.Fatalf("expected [/path/to/kb], got %v", kbs)
+	if len(loaded.KnowledgeBases) != 1 || loaded.KnowledgeBases[0] != "shared-docs" {
+		t.Fatalf("expected knowledge_bases [shared-docs], got %v", loaded.KnowledgeBases)
 	}
 }
 
 func TestGetKnowledgeBases_List(t *testing.T) {
-	cfg := &Config{KnowledgeBases: []string{"/a", "/b"}}
+	cfg := &Config{KnowledgeBases: []string{"kb-a", "kb-b"}}
 	kbs := cfg.GetKnowledgeBases()
 	if len(kbs) != 2 {
 		t.Fatalf("expected 2, got %d", len(kbs))
-	}
-}
-
-func TestGetKnowledgeBases_PreferList(t *testing.T) {
-	cfg := &Config{
-		KnowledgeBase:  "/old",
-		KnowledgeBases: []string{"/new"},
-	}
-	kbs := cfg.GetKnowledgeBases()
-	if len(kbs) != 1 || kbs[0] != "/new" {
-		t.Fatalf("expected [/new] (list takes priority), got %v", kbs)
 	}
 }
 
@@ -223,5 +201,161 @@ func TestConfigError_Error(t *testing.T) {
 	msg := err.Error()
 	if msg != "config file exceeds 64KB limit" {
 		t.Fatalf("unexpected error message: %q", msg)
+	}
+}
+
+// -------------------------------------------------------
+// KB registry (global config.json)
+// -------------------------------------------------------
+
+// useRegistry isolates the global KB registry to a temp config file.
+func useRegistry(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.json")
+	SetCustomConfigPath(path)
+	t.Cleanup(func() { SetCustomConfigPath("") })
+	return path
+}
+
+func TestRegisterAndResolveKnowledgeBase(t *testing.T) {
+	useRegistry(t)
+
+	if err := RegisterKnowledgeBase("docs", "/tmp/docs-kb"); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+
+	path, err := ResolveKnowledgeBasePath("docs")
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if path != "/tmp/docs-kb" {
+		t.Fatalf("expected /tmp/docs-kb, got %s", path)
+	}
+}
+
+func TestResolveKnowledgeBasePath_NotRegistered(t *testing.T) {
+	useRegistry(t)
+
+	_, err := ResolveKnowledgeBasePath("missing")
+	if err == nil {
+		t.Fatal("expected error for unregistered name")
+	}
+	if !strings.Contains(err.Error(), "mindstack link") {
+		t.Fatalf("expected 'mindstack link' hint in error, got: %v", err)
+	}
+}
+
+func TestRegisterKnowledgeBase_NameConflict(t *testing.T) {
+	useRegistry(t)
+
+	if err := RegisterKnowledgeBase("docs", "/path/a"); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+
+	// Re-registering the same name to the same path is idempotent.
+	if err := RegisterKnowledgeBase("docs", "/path/a"); err != nil {
+		t.Fatalf("re-register same path should succeed: %v", err)
+	}
+
+	err := RegisterKnowledgeBase("docs", "/path/b")
+	if err == nil {
+		t.Fatal("expected conflict error")
+	}
+	var conflict *NameConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("expected NameConflictError, got %T: %v", err, err)
+	}
+	if conflict.Name != "docs" || conflict.ExistingPath != "/path/a" {
+		t.Fatalf("unexpected conflict details: %+v", conflict)
+	}
+}
+
+func TestRegisterKnowledgeBase_EmptyArgs(t *testing.T) {
+	useRegistry(t)
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "", path: "/tmp/docs-kb"},
+		{name: "docs", path: ""},
+		{name: "", path: ""},
+	} {
+		if err := RegisterKnowledgeBase(tc.name, tc.path); err == nil {
+			t.Fatalf("expected error for name=%q path=%q", tc.name, tc.path)
+		}
+	}
+
+	kbs, err := ListKnowledgeBases()
+	if err != nil {
+		t.Fatalf("list error: %v", err)
+	}
+	if len(kbs) != 0 {
+		t.Fatalf("expected empty registry after rejected registrations, got %v", kbs)
+	}
+}
+
+func TestListKnowledgeBases(t *testing.T) {
+	useRegistry(t)
+
+	if err := RegisterKnowledgeBase("kb-a", "/path/a"); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+	if err := RegisterKnowledgeBase("kb-b", "/path/b"); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+
+	kbs, err := ListKnowledgeBases()
+	if err != nil {
+		t.Fatalf("list error: %v", err)
+	}
+	if len(kbs) != 2 || kbs["kb-a"] != "/path/a" || kbs["kb-b"] != "/path/b" {
+		t.Fatalf("unexpected registry: %v", kbs)
+	}
+}
+
+func TestListKnowledgeBases_Empty(t *testing.T) {
+	useRegistry(t)
+
+	kbs, err := ListKnowledgeBases()
+	if err != nil {
+		t.Fatalf("list error: %v", err)
+	}
+	if len(kbs) != 0 {
+		t.Fatalf("expected empty registry, got %v", kbs)
+	}
+}
+
+func TestRegisterKnowledgeBase_PreservesOtherFields(t *testing.T) {
+	cfgPath := useRegistry(t)
+
+	original := `{"settings": {"theme": "dark"}, "recentEntries": ["/x"]}`
+	if err := os.WriteFile(cfgPath, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RegisterKnowledgeBase("docs", "/tmp/docs-kb"); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("cannot parse written config: %v", err)
+	}
+
+	settings, ok := m["settings"].(map[string]interface{})
+	if !ok || settings["theme"] != "dark" {
+		t.Fatalf("settings not preserved: %v", m)
+	}
+	if _, ok := m["recentEntries"]; !ok {
+		t.Fatalf("recentEntries not preserved: %v", m)
+	}
+	reg, ok := m[kbRegistryKey].(map[string]interface{})
+	if !ok || reg["docs"] != "/tmp/docs-kb" {
+		t.Fatalf("registry not written: %v", m)
 	}
 }

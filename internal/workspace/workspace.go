@@ -11,6 +11,11 @@ import (
 
 const KnowledgeBaseDir = ".mindstack"
 
+// ProjectConfigFile is the committable link file at a project root. It lists
+// knowledge base names; the name -> local path mapping lives in the global
+// config.json registry.
+const ProjectConfigFile = "mindstack.yaml"
+
 // KBInfo holds resolved knowledge base info.
 type KBInfo struct {
 	Name string `json:"name"`
@@ -43,8 +48,9 @@ func ValidatePath(rootPath, targetPath string) error {
 	return nil
 }
 
-// FindKnowledgeBase walks up from startDir looking for .mindstack/config.yaml.
-// Returns the directory containing .mindstack/ (the project root), not the .mindstack dir itself.
+// FindKnowledgeBase walks up from startDir looking for a knowledge base
+// (.mindstack/config.yaml) or a linked project (mindstack.yaml).
+// Returns the directory containing the marker, not the marker itself.
 func FindKnowledgeBase(startDir string) (string, error) {
 	absDir, err := filepath.Abs(startDir)
 	if err != nil {
@@ -57,61 +63,71 @@ func FindKnowledgeBase(startDir string) (string, error) {
 		if _, err := os.Stat(configPath); err == nil {
 			return dir, nil
 		}
+		projectPath := filepath.Join(dir, ProjectConfigFile)
+		if _, err := os.Stat(projectPath); err == nil {
+			return dir, nil
+		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("no knowledge base found from %s, run 'mindstack init' first", startDir)
+			return "", fmt.Errorf("no knowledge base found from %s, run 'mindstack init' or 'mindstack link' first", startDir)
 		}
 		dir = parent
 	}
 }
 
-// ResolveKnowledgeBases reads the config and resolves all linked knowledge bases.
-// If config has knowledge_bases entries (link mode), returns resolved paths with names.
-// If it's a knowledge base itself, returns its own dir with name from config.
-func ResolveKnowledgeBases(kbDir string) ([]KBInfo, error) {
-	configPath := filepath.Join(kbDir, KnowledgeBaseDir, "config.yaml")
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read config: %w", err)
+// ResolveKnowledgeBases resolves all knowledge bases for a directory.
+// If dir is a knowledge base itself (.mindstack/config.yaml), returns its own
+// dir with name from config. This check takes priority, matching
+// FindKnowledgeBase, so a KB containing a stray mindstack.yaml still resolves
+// as itself.
+// Otherwise, if dir has a mindstack.yaml (link mode), resolves each listed KB
+// name to a local path via the global registry. Duplicate names are resolved
+// once, keeping first occurrence order.
+func ResolveKnowledgeBases(dir string) ([]KBInfo, error) {
+	configPath := filepath.Join(dir, KnowledgeBaseDir, "config.yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		cfg, err := config.LoadConfig(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("cannot read config: %w", err)
+		}
+		name := cfg.Name
+		if name == "" {
+			name = filepath.Base(dir)
+		}
+		return []KBInfo{{Name: name, Path: dir}}, nil
 	}
 
-	links := cfg.GetKnowledgeBases()
-	if len(links) > 0 {
+	projectPath := filepath.Join(dir, ProjectConfigFile)
+	if _, err := os.Stat(projectPath); err == nil {
+		cfg, err := config.LoadConfig(projectPath)
+		if err != nil {
+			return nil, fmt.Errorf("cannot read project config: %w", err)
+		}
+		names := cfg.GetKnowledgeBases()
+		if len(names) == 0 {
+			return nil, fmt.Errorf("no knowledge bases listed in %s", projectPath)
+		}
 		var result []KBInfo
-		for _, link := range links {
-			abs, err := filepath.Abs(link)
-			if err != nil {
+		seen := map[string]bool{}
+		for _, name := range names {
+			if seen[name] {
 				continue
 			}
-			name := resolveKBName(abs)
-			result = append(result, KBInfo{Name: name, Path: abs})
-		}
-		if len(result) == 0 {
-			return nil, fmt.Errorf("no valid knowledge bases found in config")
+			seen[name] = true
+			path, err := config.ResolveKnowledgeBasePath(name)
+			if err != nil {
+				return nil, err
+			}
+			if !IsKnowledgeBaseInit(path) {
+				return nil, fmt.Errorf("registered path for knowledge base %q is no longer a knowledge base: %s, run 'mindstack link <kb-path>' to re-register", name, path)
+			}
+			result = append(result, KBInfo{Name: name, Path: path})
 		}
 		return result, nil
 	}
 
-	// It's a knowledge base itself
-	name := cfg.Name
-	if name == "" {
-		name = filepath.Base(kbDir)
-	}
-	return []KBInfo{{Name: name, Path: kbDir}}, nil
-}
-
-// resolveKBName reads the name from a knowledge base's config.
-func resolveKBName(kbPath string) string {
-	configPath := filepath.Join(kbPath, KnowledgeBaseDir, "config.yaml")
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		return filepath.Base(kbPath)
-	}
-	if cfg.Name != "" {
-		return cfg.Name
-	}
-	return filepath.Base(kbPath)
+	return nil, fmt.Errorf("cannot read config: %w", os.ErrNotExist)
 }
 
 // ResolveFirstKnowledgeBase is a convenience wrapper that returns the first KB root path.

@@ -48,22 +48,24 @@ func init() {
 
 // resolveRoot finds the knowledge base root path.
 // If --kb is set, looks up the linked KB by name.
-// Otherwise walks up from cwd to find a local .mindstack.
+// Otherwise walks up from cwd to find a knowledge base or linked project.
 func resolveRoot() string {
 	dir, err := os.Getwd()
 	if err != nil {
 		writeError(1, "INTERNAL", fmt.Sprintf("cannot get cwd: %v", err))
 	}
 
+	kbDir, err := workspace.FindKnowledgeBase(dir)
+	if err != nil {
+		writeError(2, "NOT_INITIALIZED", err.Error())
+	}
+
+	kbs, err := workspace.ResolveKnowledgeBases(kbDir)
+	if err != nil {
+		writeError(1, "RESOLVE_FAILED", err.Error())
+	}
+
 	if kbName != "" {
-		kbDir, err := workspace.FindKnowledgeBase(dir)
-		if err != nil {
-			writeError(2, "NOT_INITIALIZED", err.Error())
-		}
-		kbs, err := workspace.ResolveKnowledgeBases(kbDir)
-		if err != nil {
-			writeError(1, "RESOLVE_FAILED", err.Error())
-		}
 		for _, kb := range kbs {
 			if kb.Name == kbName {
 				return kb.Path
@@ -72,25 +74,6 @@ func resolveRoot() string {
 		writeError(1, "KB_NOT_FOUND", fmt.Sprintf("knowledge base %q not found, available: %v", kbName, kbNames(kbs)))
 	}
 
-	kbDir, err := workspace.FindKnowledgeBase(dir)
-	if err != nil {
-		writeError(2, "NOT_INITIALIZED", err.Error())
-	}
-
-	cfgPath := filepath.Join(kbDir, workspace.KnowledgeBaseDir, "config.yaml")
-	cfg, err := config.LoadConfig(cfgPath)
-	if err != nil {
-		writeError(1, "CONFIG_ERROR", fmt.Sprintf("cannot read config: %v", err))
-	}
-
-	if cfg.IsKnowledgeBase() {
-		return kbDir
-	}
-
-	kbs, err := workspace.ResolveKnowledgeBases(kbDir)
-	if err != nil {
-		writeError(1, "RESOLVE_FAILED", err.Error())
-	}
 	if len(kbs) == 1 {
 		return kbs[0].Path
 	}

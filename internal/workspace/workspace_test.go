@@ -8,6 +8,13 @@ import (
 	"mindstack/internal/config"
 )
 
+// useRegistry isolates the global KB registry to a temp config file.
+func useRegistry(t *testing.T) {
+	t.Helper()
+	config.SetCustomConfigPath(filepath.Join(t.TempDir(), "config.json"))
+	t.Cleanup(func() { config.SetCustomConfigPath("") })
+}
+
 func TestValidatePath_Normal(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "sub", "file.md")
@@ -117,9 +124,10 @@ func TestResolveKnowledgeBases_Self(t *testing.T) {
 }
 
 func TestResolveKnowledgeBases_Linked(t *testing.T) {
+	useRegistry(t)
+
 	project := t.TempDir()
 	kbPath := filepath.Join(t.TempDir(), "kb")
-	os.MkdirAll(kbPath, 0755)
 
 	// Init the KB with a name
 	kbCfgDir := filepath.Join(kbPath, KnowledgeBaseDir)
@@ -128,10 +136,16 @@ func TestResolveKnowledgeBases_Linked(t *testing.T) {
 	kbCfg.Name = "shared-docs"
 	config.SaveConfig(filepath.Join(kbCfgDir, "config.yaml"), kbCfg)
 
-	// Link project to KB
-	linkCfgDir := filepath.Join(project, KnowledgeBaseDir)
-	os.MkdirAll(linkCfgDir, 0755)
-	config.SaveConfig(filepath.Join(linkCfgDir, "config.yaml"), &config.Config{KnowledgeBases: []string{kbPath}})
+	// Register the KB name in the global registry
+	if err := config.RegisterKnowledgeBase("shared-docs", kbPath); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+
+	// Link project to KB via mindstack.yaml
+	config.SaveConfig(filepath.Join(project, ProjectConfigFile), &config.Config{
+		Version:        "1",
+		KnowledgeBases: []string{"shared-docs"},
+	})
 
 	kbs, err := ResolveKnowledgeBases(project)
 	if err != nil {
@@ -149,25 +163,28 @@ func TestResolveKnowledgeBases_Linked(t *testing.T) {
 }
 
 func TestResolveKnowledgeBases_Multiple(t *testing.T) {
+	useRegistry(t)
+
 	project := t.TempDir()
 
-	// Create two KBs
+	// Create and register two KBs
 	for _, name := range []string{"kb-a", "kb-b"} {
 		kbPath := filepath.Join(t.TempDir(), name)
-		os.MkdirAll(kbPath, 0755)
 		kbCfgDir := filepath.Join(kbPath, KnowledgeBaseDir)
 		os.MkdirAll(kbCfgDir, 0755)
 		cfg := config.DefaultConfig()
 		cfg.Name = name
 		config.SaveConfig(filepath.Join(kbCfgDir, "config.yaml"), cfg)
+
+		if err := config.RegisterKnowledgeBase(name, kbPath); err != nil {
+			t.Fatalf("register error: %v", err)
+		}
 	}
 
-	kbA := filepath.Join(t.TempDir(), "kb-a")
-	kbB := filepath.Join(t.TempDir(), "kb-b")
-
-	linkCfgDir := filepath.Join(project, KnowledgeBaseDir)
-	os.MkdirAll(linkCfgDir, 0755)
-	config.SaveConfig(filepath.Join(linkCfgDir, "config.yaml"), &config.Config{KnowledgeBases: []string{kbA, kbB}})
+	config.SaveConfig(filepath.Join(project, ProjectConfigFile), &config.Config{
+		Version:        "1",
+		KnowledgeBases: []string{"kb-a", "kb-b"},
+	})
 
 	kbs, err := ResolveKnowledgeBases(project)
 	if err != nil {
@@ -181,6 +198,108 @@ func TestResolveKnowledgeBases_Multiple(t *testing.T) {
 	}
 	if kbs[1].Name != "kb-b" {
 		t.Fatalf("expected name 'kb-b', got %s", kbs[1].Name)
+	}
+}
+
+func TestResolveKnowledgeBases_UnregisteredName(t *testing.T) {
+	useRegistry(t)
+
+	project := t.TempDir()
+	config.SaveConfig(filepath.Join(project, ProjectConfigFile), &config.Config{
+		Version:        "1",
+		KnowledgeBases: []string{"ghost"},
+	})
+
+	_, err := ResolveKnowledgeBases(project)
+	if err == nil {
+		t.Fatal("expected error for unregistered KB name")
+	}
+}
+
+func TestResolveKnowledgeBases_RegisteredPathNotAKB(t *testing.T) {
+	useRegistry(t)
+
+	project := t.TempDir()
+
+	// Register a name pointing at a dir that is not a knowledge base
+	notKB := t.TempDir()
+	if err := config.RegisterKnowledgeBase("stale", notKB); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+
+	config.SaveConfig(filepath.Join(project, ProjectConfigFile), &config.Config{
+		Version:        "1",
+		KnowledgeBases: []string{"stale"},
+	})
+
+	_, err := ResolveKnowledgeBases(project)
+	if err == nil {
+		t.Fatal("expected error for registered path that is not a KB")
+	}
+}
+
+func TestResolveKnowledgeBases_BothMarkersPrefersSelf(t *testing.T) {
+	useRegistry(t)
+
+	// A KB dir that also contains a stray mindstack.yaml must resolve as the
+	// KB itself, matching FindKnowledgeBase priority.
+	dir := t.TempDir()
+	kbDir := filepath.Join(dir, KnowledgeBaseDir)
+	os.MkdirAll(kbDir, 0755)
+	cfg := config.DefaultConfig()
+	cfg.Name = "self-kb"
+	config.SaveConfig(filepath.Join(kbDir, "config.yaml"), cfg)
+	config.SaveConfig(filepath.Join(dir, ProjectConfigFile), &config.Config{
+		Version:        "1",
+		KnowledgeBases: []string{"other-kb"},
+	})
+
+	kbs, err := ResolveKnowledgeBases(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kbs) != 1 {
+		t.Fatalf("expected 1, got %d", len(kbs))
+	}
+	if kbs[0].Name != "self-kb" {
+		t.Fatalf("expected name 'self-kb', got %s", kbs[0].Name)
+	}
+	if kbs[0].Path != dir {
+		t.Fatalf("expected path %s, got %s", dir, kbs[0].Path)
+	}
+}
+
+func TestResolveKnowledgeBases_DuplicateNames(t *testing.T) {
+	useRegistry(t)
+
+	project := t.TempDir()
+	kbPath := filepath.Join(t.TempDir(), "kb")
+
+	kbCfgDir := filepath.Join(kbPath, KnowledgeBaseDir)
+	os.MkdirAll(kbCfgDir, 0755)
+	kbCfg := config.DefaultConfig()
+	kbCfg.Name = "shared-docs"
+	config.SaveConfig(filepath.Join(kbCfgDir, "config.yaml"), kbCfg)
+
+	if err := config.RegisterKnowledgeBase("shared-docs", kbPath); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
+
+	// A hand-edited mindstack.yaml may list the same name twice.
+	config.SaveConfig(filepath.Join(project, ProjectConfigFile), &config.Config{
+		Version:        "1",
+		KnowledgeBases: []string{"shared-docs", "shared-docs"},
+	})
+
+	kbs, err := ResolveKnowledgeBases(project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kbs) != 1 {
+		t.Fatalf("expected 1 deduplicated KB, got %d", len(kbs))
+	}
+	if kbs[0].Name != "shared-docs" {
+		t.Fatalf("expected name 'shared-docs', got %s", kbs[0].Name)
 	}
 }
 
@@ -201,30 +320,21 @@ func TestResolveFirstKnowledgeBase(t *testing.T) {
 	}
 }
 
-func TestResolveKnowledgeBases_LegacySingleLink(t *testing.T) {
-	project := t.TempDir()
-	kbPath := filepath.Join(t.TempDir(), "kb")
-	os.MkdirAll(kbPath, 0755)
+func TestFindKnowledgeBase_ProjectLink(t *testing.T) {
+	dir := t.TempDir()
+	config.SaveConfig(filepath.Join(dir, ProjectConfigFile), &config.Config{
+		Version:        "1",
+		KnowledgeBases: []string{"shared-docs"},
+	})
 
-	kbCfgDir := filepath.Join(kbPath, KnowledgeBaseDir)
-	os.MkdirAll(kbCfgDir, 0755)
-	kbCfg := config.DefaultConfig()
-	kbCfg.Name = "legacy-kb"
-	config.SaveConfig(filepath.Join(kbCfgDir, "config.yaml"), kbCfg)
+	child := filepath.Join(dir, "subdir")
+	os.MkdirAll(child, 0755)
 
-	// Use old single knowledge_base field
-	linkCfgDir := filepath.Join(project, KnowledgeBaseDir)
-	os.MkdirAll(linkCfgDir, 0755)
-	config.SaveConfig(filepath.Join(linkCfgDir, "config.yaml"), &config.Config{KnowledgeBase: kbPath})
-
-	kbs, err := ResolveKnowledgeBases(project)
+	found, err := FindKnowledgeBase(child)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(kbs) != 1 {
-		t.Fatalf("expected 1, got %d", len(kbs))
-	}
-	if kbs[0].Name != "legacy-kb" {
-		t.Fatalf("expected name 'legacy-kb', got %s", kbs[0].Name)
+	if found != dir {
+		t.Fatalf("expected %s, got %s", dir, found)
 	}
 }

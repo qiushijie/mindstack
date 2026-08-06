@@ -86,6 +86,14 @@ func cmdParseJSON(s string) map[string]interface{} {
 	return result
 }
 
+// isolateRegistry points the global KB registry at a temp config file so
+// tests never touch the real user config.
+func isolateRegistry(t *testing.T) {
+	t.Helper()
+	config.SetCustomConfigPath(filepath.Join(t.TempDir(), "config.json"))
+	t.Cleanup(func() { config.SetCustomConfigPath("") })
+}
+
 func setupTestKB(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -138,6 +146,7 @@ func writeTestRelations(t *testing.T, kbDir string, rels map[string]interface{})
 // --- init command ---
 
 func TestCmdInit(t *testing.T) {
+	isolateRegistry(t)
 	dir := t.TempDir()
 	stdout, _, code := runCmd(t, "init", dir)
 	if code != 0 {
@@ -153,6 +162,7 @@ func TestCmdInit(t *testing.T) {
 }
 
 func TestCmdInitDefaultPath(t *testing.T) {
+	isolateRegistry(t)
 	dir := t.TempDir()
 	oldDir, _ := os.Getwd()
 	os.Chdir(dir)
@@ -182,6 +192,7 @@ func TestCmdInitAlreadyExists(t *testing.T) {
 // --- link command ---
 
 func TestCmdLink(t *testing.T) {
+	isolateRegistry(t)
 	tmpDir := t.TempDir()
 	kbDir := filepath.Join(tmpDir, "mykb")
 	kbInner := filepath.Join(kbDir, ".mindstack")
@@ -204,6 +215,15 @@ func TestCmdLink(t *testing.T) {
 	result := cmdParseJSON(stdout)
 	if result["linked"] != true {
 		t.Error("expected linked=true")
+	}
+	if result["name"] != "mykb" {
+		t.Errorf("expected name=mykb, got %v", result["name"])
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, "mindstack.yaml")); os.IsNotExist(err) {
+		t.Error("mindstack.yaml not created")
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".mindstack")); !os.IsNotExist(err) {
+		t.Error(".mindstack directory should not be created for project links")
 	}
 }
 
@@ -709,6 +729,7 @@ func TestCmdNotInitialized(t *testing.T) {
 // --- --kb flag ---
 
 func TestCmdWithKBFlag(t *testing.T) {
+	isolateRegistry(t)
 	tmpDir := t.TempDir()
 	kbDir := filepath.Join(tmpDir, "mykb")
 	kbInner := filepath.Join(kbDir, ".mindstack")
@@ -717,12 +738,14 @@ func TestCmdWithKBFlag(t *testing.T) {
 	cfg.Name = "mykb"
 	config.SaveConfig(filepath.Join(kbInner, "config.yaml"), cfg)
 	createTestFile(t, kbDir, "test.md", "# Hello")
+	if err := config.RegisterKnowledgeBase("mykb", kbDir); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
 
 	projectDir := filepath.Join(tmpDir, "project")
-	projInner := filepath.Join(projectDir, ".mindstack")
-	os.MkdirAll(projInner, 0755)
-	projCfg := fmt.Sprintf("knowledge_bases:\n  - %q\n", kbDir)
-	os.WriteFile(filepath.Join(projInner, "config.yaml"), []byte(projCfg), 0644)
+	os.MkdirAll(projectDir, 0755)
+	projCfg := "version: \"1\"\nknowledge_bases:\n  - mykb\n"
+	os.WriteFile(filepath.Join(projectDir, "mindstack.yaml"), []byte(projCfg), 0644)
 
 	oldDir, _ := os.Getwd()
 	os.Chdir(projectDir)
@@ -739,6 +762,7 @@ func TestCmdWithKBFlag(t *testing.T) {
 }
 
 func TestCmdWithKBFlagNotFound(t *testing.T) {
+	isolateRegistry(t)
 	tmpDir := t.TempDir()
 	kbDir := filepath.Join(tmpDir, "mykb")
 	kbInner := filepath.Join(kbDir, ".mindstack")
@@ -746,12 +770,14 @@ func TestCmdWithKBFlagNotFound(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Name = "mykb"
 	config.SaveConfig(filepath.Join(kbInner, "config.yaml"), cfg)
+	if err := config.RegisterKnowledgeBase("mykb", kbDir); err != nil {
+		t.Fatalf("register error: %v", err)
+	}
 
 	projectDir := filepath.Join(tmpDir, "project")
-	projInner := filepath.Join(projectDir, ".mindstack")
-	os.MkdirAll(projInner, 0755)
-	projCfg := fmt.Sprintf("knowledge_bases:\n  - %q\n", kbDir)
-	os.WriteFile(filepath.Join(projInner, "config.yaml"), []byte(projCfg), 0644)
+	os.MkdirAll(projectDir, 0755)
+	projCfg := "version: \"1\"\nknowledge_bases:\n  - mykb\n"
+	os.WriteFile(filepath.Join(projectDir, "mindstack.yaml"), []byte(projCfg), 0644)
 
 	oldDir, _ := os.Getwd()
 	os.Chdir(projectDir)
@@ -967,13 +993,11 @@ func TestCmdBuildNotInitialized(t *testing.T) {
 	}
 }
 
-
-
-
 func TestCmdKBAmbiguous(t *testing.T) {
+	isolateRegistry(t)
 	tmpDir := t.TempDir()
 
-	// Create two KBs
+	// Create and register two KBs
 	for _, name := range []string{"kb1", "kb2"} {
 		kbDir := filepath.Join(tmpDir, name)
 		kbInner := filepath.Join(kbDir, ".mindstack")
@@ -981,15 +1005,16 @@ func TestCmdKBAmbiguous(t *testing.T) {
 		cfg := config.DefaultConfig()
 		cfg.Name = name
 		config.SaveConfig(filepath.Join(kbInner, "config.yaml"), cfg)
+		if err := config.RegisterKnowledgeBase(name, kbDir); err != nil {
+			t.Fatalf("register error: %v", err)
+		}
 	}
 
-	// Create project linking to both KBs
+	// Create project linking to both KBs by name
 	projectDir := filepath.Join(tmpDir, "project")
-	projInner := filepath.Join(projectDir, ".mindstack")
-	os.MkdirAll(projInner, 0755)
-	projCfg := fmt.Sprintf("knowledge_bases:\n  - %q\n  - %q\n",
-		filepath.Join(tmpDir, "kb1"), filepath.Join(tmpDir, "kb2"))
-	os.WriteFile(filepath.Join(projInner, "config.yaml"), []byte(projCfg), 0644)
+	os.MkdirAll(projectDir, 0755)
+	projCfg := "version: \"1\"\nknowledge_bases:\n  - kb1\n  - kb2\n"
+	os.WriteFile(filepath.Join(projectDir, "mindstack.yaml"), []byte(projCfg), 0644)
 
 	oldDir, _ := os.Getwd()
 	os.Chdir(projectDir)
