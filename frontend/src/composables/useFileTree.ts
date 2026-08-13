@@ -261,17 +261,36 @@ export function useFileTree() {
       const raw = await LoadConfig()
       const config = JSON.parse(raw || '{}')
       if (config.lastFolderPath) {
-        rootPath.value = config.lastFolderPath
-        await SetWorkspaceRoot(config.lastFolderPath)
-        const entries = await ReadDirEntries(config.lastFolderPath)
-        treeData.value = entriesToNodes(entries)
+        if (await FileExists(config.lastFolderPath)) {
+          rootPath.value = config.lastFolderPath
+          await SetWorkspaceRoot(config.lastFolderPath)
+          const entries = await ReadDirEntries(config.lastFolderPath)
+          treeData.value = entriesToNodes(entries)
 
-        if (config.lastFilePath) {
-          const content = await ReadFileContent(config.lastFilePath)
-          openTab(config.lastFilePath)
-          tabContentCache.set(config.lastFilePath, content)
-          applyContent(config.lastFilePath, content)
-          navigateTo('editor')
+          if (config.lastFilePath) {
+            if (await FileExists(config.lastFilePath)) {
+              const content = await ReadFileContent(config.lastFilePath)
+              openTab(config.lastFilePath)
+              tabContentCache.set(config.lastFilePath, content)
+              applyContent(config.lastFilePath, content)
+              navigateTo('editor')
+            } else {
+              // The saved file no longer exists (moved, renamed, or the drive
+              // mount changed). Restore the folder but drop the stale file
+              // reference; otherwise the editor opens blank and looks like a
+              // failed load. ReadFileContent returns '' on read errors, so
+              // an existence check here is the only way to tell them apart.
+              config.lastFilePath = ''
+              await SaveConfig(JSON.stringify(config))
+            }
+          }
+        } else {
+          // Saved folder is gone (e.g. the drive is not mounted). Drop the
+          // stale paths so the next launch starts from a clean state instead
+          // of an empty file tree that looks like a broken load.
+          config.lastFolderPath = ''
+          config.lastFilePath = ''
+          await SaveConfig(JSON.stringify(config))
         }
       }
     } catch (err) {
@@ -525,6 +544,9 @@ export function useFileTree() {
   }
 
   async function openRecentFolder(path: string) {
+    // Skip stale recent folders (drive unmounted, folder moved).
+    if (!(await FileExists(path))) return
+
     clearAutoSaveTimer()
     clearTabs()
     tabContentCache.clear()
@@ -543,6 +565,11 @@ export function useFileTree() {
   }
 
   async function openRecentFile(path: string) {
+    // Skip stale recent entries (file moved, renamed, or drive unmounted).
+    // ReadFileContent returns '' on read errors, so without this check the
+    // editor would open blank and look like a failed load.
+    if (!(await FileExists(path))) return
+
     clearAutoSaveTimer()
     saveCurrentToCache()
 

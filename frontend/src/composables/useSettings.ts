@@ -23,13 +23,20 @@ const autoSave = ref(true)
 const autoSaveDelay = ref(5)
 const locale = ref<Locale>('en')
 const theme = ref<'light' | 'dark'>('light')
-const lineNumbers = ref(true)
+// Default to no line numbers so Windows matches the macOS rendering, where
+// the editor gutter does not show line numbers by default.
+const lineNumbers = ref(false)
 const wordWrap = ref(true)
 const models = ref<ModelConfig[]>([])
 const activeModelId = ref('')
 const showKeyIds = ref<Set<string>>(new Set())
 const platform = ref<UIPlatform>('macos')
 const uiPlatform = ref<UIPlatform>('macos')
+// Tracks whether the user explicitly chose a platform in the debug settings.
+// Without this flag a stale saved value (e.g. persisted by a dev-mode run
+// without the Wails runtime, which defaults to 'macos') would override the
+// actually detected platform and hide the window controls on Windows.
+const uiPlatformSetByUser = ref(false)
 const rawMode = ref(false)
 const debugMode = ref(false)
 const defaultBranch = ref('main')
@@ -82,6 +89,7 @@ async function doSave() {
           models: models.value,
           activeModelId: activeModelId.value,
           uiPlatform: uiPlatform.value,
+          uiPlatformSetByUser: uiPlatformSetByUser.value,
           debugMode: debugMode.value,
           defaultBranch: defaultBranch.value,
           autoCommit: autoCommit.value,
@@ -135,7 +143,12 @@ export function useSettings() {
         const p = await GetPlatform()
         const detected = p === 'windows' ? 'windows' : 'macos'
         platform.value = detected
-        uiPlatform.value = (s.uiPlatform === 'macos' || s.uiPlatform === 'windows') ? s.uiPlatform : detected
+        // The detected platform is the source of truth for window controls.
+        // A saved value is only honored when the user explicitly chose it in
+        // the debug settings; stale defaults from dev-mode runs (GetPlatform
+        // unavailable -> 'macos') must never hide the controls on Windows.
+        const saved = s.uiPlatform === 'macos' || s.uiPlatform === 'windows' ? s.uiPlatform : null
+        uiPlatform.value = saved && s.uiPlatformSetByUser === true ? saved : detected
       } catch {
         platform.value = 'macos'
         uiPlatform.value = 'macos'
@@ -181,6 +194,12 @@ export function useSettings() {
     doSave().then(() => ReloadLLM().catch((err) => { console.warn('[Settings] Failed to reload LLM:', err) }))
   }
 
+  function setUiPlatform(v: UIPlatform) {
+    uiPlatform.value = v
+    uiPlatformSetByUser.value = true
+    doSave()
+  }
+
   function toggleShowKey(id: string) {
     const s = new Set(showKeyIds.value)
     if (s.has(id)) s.delete(id)
@@ -193,7 +212,7 @@ export function useSettings() {
     models, activeModelId, showKeyIds,
     platform, uiPlatform, rawMode, debugMode,
     defaultBranch, autoCommit, autoPull, gitRemote,
-    loadSettings, saveSettings,
+    loadSettings, saveSettings, setUiPlatform,
     addModel, removeModel, activateModel, toggleShowKey,
   }
 }

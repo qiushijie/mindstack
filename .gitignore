@@ -6,6 +6,7 @@ CLAUDE.md
 
 # wails
 build/*
+mindstack.exe
 !build/appicon.png
 !build/mdFileIcon.png
 node_modules

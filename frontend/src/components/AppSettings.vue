@@ -95,7 +95,7 @@ const debugKeywords = computed(() => [
   t('settings.platform.windows'),
 ].join(' '))
 
-const { autoSave, autoSaveDelay, locale, theme, lineNumbers, wordWrap, models, activeModelId, showKeyIds, platform, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, gitRemote, saveSettings, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
+const { autoSave, autoSaveDelay, locale, theme, lineNumbers, wordWrap, models, activeModelId, showKeyIds, platform, uiPlatform, debugMode, defaultBranch, autoCommit, autoPull, gitRemote, saveSettings, setUiPlatform, addModel, removeModel, activateModel, toggleShowKey } = useSettings()
 const fontFamily = ref('Inter')
 const fontSize = ref(16)
 const tabSize = ref(2)
@@ -488,14 +488,14 @@ async function syncRemoteUrl() {
                 <button
                   class="theme-btn"
                   :class="{ active: uiPlatform === 'macos' }"
-                  @click="uiPlatform = 'macos'"
+                  @click="setUiPlatform('macos')"
                 >
                   {{ t('settings.platform.macos') }}
                 </button>
                 <button
                   class="theme-btn"
                   :class="{ active: uiPlatform === 'windows' }"
-                  @click="uiPlatform = 'windows'"
+                  @click="setUiPlatform('windows')"
                 >
                   {{ t('settings.platform.windows') }}
                 </button>

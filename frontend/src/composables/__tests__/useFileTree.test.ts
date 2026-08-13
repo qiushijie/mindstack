@@ -13,6 +13,7 @@ vi.mock('../../../wailsjs/go/main/App', () => ({
   SetWorkspaceRoot: vi.fn(),
   GetFileServerPort: vi.fn().mockResolvedValue(0),
   AddRecentEntry: vi.fn(),
+  FileExists: vi.fn().mockResolvedValue(true),
 }))
 
 vi.mock('../../../wailsjs/go/models', () => ({
@@ -78,6 +79,7 @@ import {
   LoadConfig,
   SaveConfig,
   AddRecentEntry,
+  FileExists,
 } from '../../../wailsjs/go/main/App'
 import type { EditorAdapter } from '../../editor/EditorAdapter'
 import { useFileTree } from '../useFileTree'
@@ -131,6 +133,8 @@ function resetState() {
 describe('useFileTree', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    // Default: paths exist. Tests that exercise stale paths override this.
+    vi.mocked(FileExists).mockResolvedValue(true)
     resetState()
   })
 
@@ -1211,6 +1215,44 @@ describe('useFileTree', () => {
 
       expect(rootPath.value).toBe('')
       expect(selectedFilePath.value).toBe('')
+    })
+
+    it('skips a missing lastFilePath and clears it from config', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue(JSON.stringify({
+        lastFolderPath: '/root',
+        lastFilePath: '/root/deleted.md',
+      }))
+      vi.mocked(ReadDirEntries).mockResolvedValue([
+        { name: 'notes.md', path: '/root/notes.md', isDir: false },
+      ])
+      vi.mocked(FileExists).mockImplementation(async (p) => p === '/root')
+
+      const { rootPath, selectedFilePath, restoreSession } = useFileTree()
+      await restoreSession()
+
+      expect(rootPath.value).toBe('/root')
+      expect(selectedFilePath.value).toBe('')
+      // stale file reference is persisted so the next launch starts clean
+      const saved = JSON.parse(vi.mocked(SaveConfig).mock.calls.at(-1)![0] as string)
+      expect(saved.lastFilePath).toBe('')
+      expect(saved.lastFolderPath).toBe('/root')
+    })
+
+    it('skips a missing lastFolderPath and clears it from config', async () => {
+      vi.mocked(LoadConfig).mockResolvedValue(JSON.stringify({
+        lastFolderPath: '/gone',
+        lastFilePath: '/gone/deleted.md',
+      }))
+      vi.mocked(FileExists).mockResolvedValue(false)
+
+      const { rootPath, selectedFilePath, restoreSession } = useFileTree()
+      await restoreSession()
+
+      expect(rootPath.value).toBe('')
+      expect(selectedFilePath.value).toBe('')
+      const saved = JSON.parse(vi.mocked(SaveConfig).mock.calls.at(-1)![0] as string)
+      expect(saved.lastFolderPath).toBe('')
+      expect(saved.lastFilePath).toBe('')
     })
 
     it('handles invalid config JSON', async () => {
