@@ -308,11 +308,14 @@ func main() {
 func (a *App) buildMenu() *menu.Menu {
 	appMenu := menu.NewMenu()
 
-	fileMenu := appMenu.AddSubmenu(a.menuText("file"))
-	fileMenu.AddText(a.menuText("about"), nil, func(_ *menu.CallbackData) {
+	// Application menu. macOS overrides this title with the app name, so only
+	// About stays here; file operations live in the File menu below.
+	appSubmenu := appMenu.AddSubmenu("MindStack")
+	appSubmenu.AddText(a.menuText("about"), nil, func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:navigate", "about")
 	})
-	fileMenu.AddSeparator()
+
+	fileMenu := appMenu.AddSubmenu(a.menuText("file"))
 	fileMenu.AddText(a.menuText("new"), keys.CmdOrCtrl("n"), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:file:new")
 	})
@@ -365,11 +368,6 @@ func (a *App) buildMenu() *menu.Menu {
 		}
 	}
 
-	fileMenu.AddSeparator()
-	fileMenu.AddText(a.menuText("save"), keys.CmdOrCtrl("s"), func(_ *menu.CallbackData) {
-		runtime.EventsEmit(a.ctx, "menu:file:save")
-	})
-
 	editMenu := appMenu.AddSubmenu(a.menuText("edit"))
 	editMenu.AddText(a.menuText("undo"), keys.CmdOrCtrl("z"), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:edit:undo")
@@ -386,6 +384,10 @@ func (a *App) buildMenu() *menu.Menu {
 	})
 	editMenu.AddText(a.menuText("paste"), keys.CmdOrCtrl("v"), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:edit:paste")
+	})
+	editMenu.AddSeparator()
+	editMenu.AddText(a.menuText("save"), keys.CmdOrCtrl("s"), func(_ *menu.CallbackData) {
+		runtime.EventsEmit(a.ctx, "menu:file:save")
 	})
 
 	buildMenu := appMenu.AddSubmenu(a.menuText("sync"))
