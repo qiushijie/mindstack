@@ -311,6 +311,14 @@ export function useFileTree() {
     selectedFileContent.value = ''
     isDirty.value = false
 
+    // Clear the editor document so stale content and rendered widgets from the
+    // previous workspace do not leak into the newly opened folder.
+    if (editorAdapter) {
+      suppressDirtyMark = true
+      editorAdapter.setContent('')
+      suppressDirtyMark = false
+    }
+
     await SetWorkspaceRoot(path)
     const entries = await ReadDirEntries(path)
     treeData.value = entriesToNodes(entries)
@@ -555,6 +563,14 @@ export function useFileTree() {
     selectedFilePath.value = ''
     selectedFileContent.value = ''
     isDirty.value = false
+
+    // Clear the editor document so stale content and rendered widgets from the
+    // previous workspace do not leak into the newly opened folder.
+    if (editorAdapter) {
+      suppressDirtyMark = true
+      editorAdapter.setContent('')
+      suppressDirtyMark = false
+    }
 
     await SetWorkspaceRoot(path)
     const entries = await ReadDirEntries(path)

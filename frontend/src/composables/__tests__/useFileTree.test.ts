@@ -193,6 +193,19 @@ describe('useFileTree', () => {
       expect(selectedFilePath.value).toBe('')
       expect(isDirty.value).toBe(false)
     })
+
+    it('clears editor content when opening a new folder', async () => {
+      vi.mocked(OpenFolderDialog).mockResolvedValue('/home/user/newproject')
+      vi.mocked(ReadDirEntries).mockResolvedValue([])
+
+      const { openFolder, setEditorAdapter } = useFileTree()
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
+      setEditorAdapter(mockAdapter)
+
+      await openFolder()
+
+      expect(mockAdapter.setContent).toHaveBeenCalledWith('')
+    })
   })
 
   describe('openFile', () => {
@@ -1091,6 +1104,18 @@ describe('useFileTree', () => {
       expect(treeData.value).toHaveLength(1)
       expect(treeData.value[0].name).toBe('notes.md')
       expect(AddRecentEntry).toHaveBeenCalledWith('/recent', true)
+    })
+
+    it('clears editor content when opening a recent folder', async () => {
+      vi.mocked(ReadDirEntries).mockResolvedValue([])
+
+      const { openRecentFolder, setEditorAdapter } = useFileTree()
+      const mockAdapter = createMockEditorAdapter({ setContent: vi.fn(), getContent: vi.fn() })
+      setEditorAdapter(mockAdapter)
+
+      await openRecentFolder('/recent')
+
+      expect(mockAdapter.setContent).toHaveBeenCalledWith('')
     })
   })
 
