@@ -220,6 +220,13 @@ onMounted(async () => {
     }
   })
 
+  EventsOff('menu:file:open-local-kb')
+  EventsOn('menu:file:open-local-kb', (path: string) => {
+    if (path) {
+      openRecentFolder(path)
+    }
+  })
+
   EventsOff('menu:file:save')
   EventsOn('menu:file:save', () => {
     saveCurrentFile()

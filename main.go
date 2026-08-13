@@ -3,6 +3,9 @@ package main
 import (
 	"embed"
 	"os"
+	"sort"
+
+	"mindstack/internal/config"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -25,6 +28,8 @@ var menuLabels = map[string]map[string]string{
 		"openRecent":       "Open Recent",
 		"noRecentItems":    "No Recent Items",
 		"clearRecentItems": "Clear Recent Items",
+		"localKb":          "Local Knowledge Bases",
+		"noLocalKb":        "No Local Knowledge Bases",
 		"save":             "Save",
 		"edit":             "Edit",
 		"undo":             "Undo",
@@ -54,6 +59,8 @@ var menuLabels = map[string]map[string]string{
 		"openRecent":       "最近使った項目",
 		"noRecentItems":    "最近の項目はありません",
 		"clearRecentItems": "最近の項目をクリア",
+		"localKb":          "ローカル知識ベース",
+		"noLocalKb":        "ローカル知識ベースはありません",
 		"save":             "保存",
 		"edit":             "編集",
 		"undo":             "元に戻す",
@@ -83,6 +90,8 @@ var menuLabels = map[string]map[string]string{
 		"openRecent":       "Ouvrir récent",
 		"noRecentItems":    "Aucun élément récent",
 		"clearRecentItems": "Effacer les éléments récents",
+		"localKb":          "Bases de connaissances locales",
+		"noLocalKb":        "Aucune base de connaissances locale",
 		"save":             "Enregistrer",
 		"edit":             "Édition",
 		"undo":             "Annuler",
@@ -112,6 +121,8 @@ var menuLabels = map[string]map[string]string{
 		"openRecent":       "Zuletzt geöffnet",
 		"noRecentItems":    "Keine zuletzt geöffneten Elemente",
 		"clearRecentItems": "Zuletzt geöffnete Elemente löschen",
+		"localKb":          "Lokale Wissensdatenbanken",
+		"noLocalKb":        "Keine lokalen Wissensdatenbanken",
 		"save":             "Speichern",
 		"edit":             "Bearbeiten",
 		"undo":             "Rückgängig",
@@ -141,6 +152,8 @@ var menuLabels = map[string]map[string]string{
 		"openRecent":       "Abrir reciente",
 		"noRecentItems":    "No hay elementos recientes",
 		"clearRecentItems": "Borrar elementos recientes",
+		"localKb":          "Bases de conocimiento locales",
+		"noLocalKb":        "No hay bases de conocimiento locales",
 		"save":             "Guardar",
 		"edit":             "Editar",
 		"undo":             "Deshacer",
@@ -170,6 +183,8 @@ var menuLabels = map[string]map[string]string{
 		"openRecent":       "Открыть недавнее",
 		"noRecentItems":    "Нет недавних элементов",
 		"clearRecentItems": "Очистить недавние элементы",
+		"localKb":          "Локальные базы знаний",
+		"noLocalKb":        "Нет локальных баз знаний",
 		"save":             "Сохранить",
 		"edit":             "Правка",
 		"undo":             "Отменить",
@@ -199,6 +214,8 @@ var menuLabels = map[string]map[string]string{
 		"openRecent":       "최근 항목 열기",
 		"noRecentItems":    "최근 항목 없음",
 		"clearRecentItems": "최근 항목 지우기",
+		"localKb":          "로컬 지식 베이스",
+		"noLocalKb":        "로컬 지식 베이스 없음",
 		"save":             "저장",
 		"edit":             "편집",
 		"undo":             "실행 취소",
@@ -228,6 +245,8 @@ var menuLabels = map[string]map[string]string{
 		"openRecent":       "打开最近",
 		"noRecentItems":    "无最近项目",
 		"clearRecentItems": "清空最近项目",
+		"localKb":          "本地知识库",
+		"noLocalKb":        "无本地知识库",
 		"save":             "保存",
 		"edit":             "编辑",
 		"undo":             "撤销",
@@ -332,6 +351,20 @@ func (a *App) buildMenu() *menu.Menu {
 		})
 	}
 
+	// Local knowledge bases submenu, populated from the machine-local KB registry.
+	localKbMenu := fileMenu.AddSubmenu(a.menuText("localKb"))
+	kbs := listLocalKnowledgeBases()
+	if len(kbs) == 0 {
+		item := localKbMenu.AddText(a.menuText("noLocalKb"), nil, func(_ *menu.CallbackData) {})
+		item.Disabled = true
+	} else {
+		for _, kb := range kbs {
+			localKbMenu.AddText(kb.Name, nil, func(_ *menu.CallbackData) {
+				runtime.EventsEmit(a.ctx, "menu:file:open-local-kb", kb.Path)
+			})
+		}
+	}
+
 	fileMenu.AddSeparator()
 	fileMenu.AddText(a.menuText("save"), keys.CmdOrCtrl("s"), func(_ *menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:file:save")
@@ -409,4 +442,36 @@ func (a *App) rebuildMenu() {
 	}
 	newMenu := a.buildMenu()
 	runtime.MenuSetApplicationMenu(a.ctx, newMenu)
+}
+
+// knowledgeBaseEntry is a registered knowledge base shown in the File menu.
+type knowledgeBaseEntry struct {
+	Name string
+	Path string
+}
+
+// listLocalKnowledgeBases returns registered knowledge bases whose root
+// directory still exists, sorted by name. Returns nil when the registry
+// cannot be read.
+func listLocalKnowledgeBases() []knowledgeBaseEntry {
+	reg, err := config.ListKnowledgeBases()
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(reg))
+	for name := range reg {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var entries []knowledgeBaseEntry
+	for _, name := range names {
+		path := reg[name]
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		entries = append(entries, knowledgeBaseEntry{Name: name, Path: path})
+	}
+	return entries
 }
