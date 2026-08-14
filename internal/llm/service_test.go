@@ -642,6 +642,26 @@ func TestGetToolCallingModel_Success(t *testing.T) {
 }
 
 // -------------------------------------------------------
+// GetBaseChatModel
+// -------------------------------------------------------
+
+func TestGetBaseChatModel_NoModel(t *testing.T) {
+	svc := NewService("dummy")
+	if got := svc.GetBaseChatModel(); got != nil {
+		t.Fatalf("expected nil when no model, got %v", got)
+	}
+}
+
+func TestGetBaseChatModel_Success(t *testing.T) {
+	svc := NewService("dummy")
+	cm := &mockChatModel{}
+	svc.chatModel = cm
+	if got := svc.GetBaseChatModel(); got != cm {
+		t.Fatalf("expected base chat model, got %v", got)
+	}
+}
+
+// -------------------------------------------------------
 // GenerateWithTool
 // -------------------------------------------------------
 

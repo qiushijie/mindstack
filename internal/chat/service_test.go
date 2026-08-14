@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	einoschema "github.com/cloudwego/eino/schema"
 	"gorm.io/driver/sqlite"
@@ -896,87 +895,60 @@ func TestStreamPlainChat_CompressError(t *testing.T) {
 	svc.streamPlainChat(1, messages)
 }
 
-// -------------------------------------------------------
-// streamChunkEmitter callbacks
-// -------------------------------------------------------
-
-func TestStreamChunkEmitter_OnStart(t *testing.T) {
-	e := &streamChunkEmitter{}
-	ctx := e.OnStart(context.Background(), nil, nil)
-	if ctx == nil {
-		t.Fatal("expected non-nil context")
-	}
+// mockADKModel implements model.ChatModel for testing runUnifiedAgent with the eino ADK.
+// The ADK drives the model in streaming mode, so only Stream is exercised by tests.
+type mockADKModel struct {
+	streamFn func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.StreamReader[*einoschema.Message], error)
 }
 
-func TestStreamChunkEmitter_OnEnd_NilOutput(t *testing.T) {
-	e := &streamChunkEmitter{}
-	ctx := e.OnEnd(context.Background(), nil, nil)
-	if ctx == nil {
-		t.Fatal("expected non-nil context")
-	}
+func (m *mockADKModel) Generate(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error) {
+	return nil, fmt.Errorf("generate not used in streaming mode")
 }
 
-func TestStreamChunkEmitter_OnError(t *testing.T) {
-	e := &streamChunkEmitter{}
-	ctx := e.OnError(context.Background(), nil, fmt.Errorf("test"))
-	if ctx == nil {
-		t.Fatal("expected non-nil context")
-	}
+func (m *mockADKModel) Stream(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.StreamReader[*einoschema.Message], error) {
+	return m.streamFn(ctx, input, opts...)
 }
 
-func TestStreamChunkEmitter_Needed(t *testing.T) {
-	e := &streamChunkEmitter{}
-	// info=nil returns false
-	if e.Needed(context.Background(), nil, 0) {
-		t.Fatal("expected Needed to return false when info is nil")
-	}
-	// Valid timing returns true
-	info := &callbacks.RunInfo{}
-	if !e.Needed(context.Background(), info, callbacks.TimingOnEnd) {
-		t.Fatal("expected Needed to return true for TimingOnEnd")
-	}
-	if !e.Needed(context.Background(), info, callbacks.TimingOnEndWithStreamOutput) {
-		t.Fatal("expected Needed to return true for TimingOnEndWithStreamOutput")
-	}
-	if e.Needed(context.Background(), info, callbacks.TimingOnStart) {
-		t.Fatal("expected Needed to return false for TimingOnStart")
-	}
-}
-
-func TestStreamChunkEmitter_OnStartWithStreamInput(t *testing.T) {
-	e := &streamChunkEmitter{}
-	ctx := e.OnStartWithStreamInput(context.Background(), nil, nil)
-	if ctx == nil {
-		t.Fatal("expected non-nil context")
-	}
-}
-
-// mockToolChatModel implements model.ToolCallingChatModel for testing runUnifiedAgent.
-type mockToolChatModel struct {
-	generateFn func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error)
-}
-
-func (m *mockToolChatModel) Generate(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error) {
-	return m.generateFn(ctx, input, opts...)
-}
-
-func (m *mockToolChatModel) Stream(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.StreamReader[*einoschema.Message], error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *mockToolChatModel) WithTools(tools []*einoschema.ToolInfo) (model.ToolCallingChatModel, error) {
+func (m *mockADKModel) WithTools(tools []*einoschema.ToolInfo) (model.ToolCallingChatModel, error) {
 	return m, nil
 }
 
-func (m *mockToolChatModel) BindTools(tools []*einoschema.ToolInfo) error {
+func (m *mockADKModel) BindTools(tools []*einoschema.ToolInfo) error {
 	return nil
+}
+
+// streamMessages wraps a fixed list of assistant messages into a stream reader.
+func streamMessages(msgs ...*einoschema.Message) *einoschema.StreamReader[*einoschema.Message] {
+	return einoschema.StreamReaderFromArray(msgs)
 }
 
 // -------------------------------------------------------
 // runUnifiedAgent
 // -------------------------------------------------------
 
-func TestRunUnifiedAgent_NoToolCalling(t *testing.T) {
+// captureEvents overrides eventsEmit and returns a restore func plus a getter for
+// captured events as parsed JSON maps (event name stored under "_event").
+func captureEvents() (restore func(), events func() []map[string]any) {
+	orig := eventsEmit
+	var captured []map[string]any
+	eventsEmit = func(ctx context.Context, eventName string, optionalData ...interface{}) {
+		m := map[string]any{"_event": eventName}
+		if len(optionalData) > 0 {
+			if s, ok := optionalData[0].(string); ok {
+				var parsed map[string]any
+				if json.Unmarshal([]byte(s), &parsed) == nil {
+					for k, v := range parsed {
+						m[k] = v
+					}
+				}
+			}
+		}
+		captured = append(captured, m)
+	}
+	return func() { eventsEmit = orig }, func() []map[string]any { return captured }
+}
+
+func TestRunUnifiedAgent_NoModel(t *testing.T) {
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	llmSvc := llm.NewService("dummy")
 	svc := NewService(db, llmSvc)
@@ -986,17 +958,20 @@ func TestRunUnifiedAgent_NoToolCalling(t *testing.T) {
 	req := ChatRequest{WorkspacePath: "/workspace", UserMessage: "hello"}
 	messages := []*einoschema.Message{{Role: einoschema.User, Content: "hello"}}
 
-	// No tool calling model configured - falls back to streamPlainChat
+	// No model configured - falls back to streamPlainChat
 	svc.runUnifiedAgent(1, messages, req)
 }
 
 func TestRunUnifiedAgent_Success(t *testing.T) {
+	restore, _ := captureEvents()
+	defer restore()
+
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	llmSvc := llm.NewService("dummy")
 
-	mockModel := &mockToolChatModel{
-		generateFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error) {
-			return &einoschema.Message{Role: einoschema.Assistant, Content: "normal response"}, nil
+	mockModel := &mockADKModel{
+		streamFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.StreamReader[*einoschema.Message], error) {
+			return streamMessages(&einoschema.Message{Role: einoschema.Assistant, Content: "normal response"}), nil
 		},
 	}
 	llmSvc.SetChatModel(mockModel)
@@ -1009,14 +984,28 @@ func TestRunUnifiedAgent_Success(t *testing.T) {
 	messages := []*einoschema.Message{{Role: einoschema.User, Content: "hello"}}
 
 	svc.runUnifiedAgent(1, messages, req)
+
+	msgs, err := svc.store.GetMessages(1)
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].Role != "assistant" || msgs[0].Content != "normal response" {
+		t.Fatalf("unexpected assistant message: %+v", msgs[0])
+	}
 }
 
-func TestRunUnifiedAgent_GenerateError(t *testing.T) {
+func TestRunUnifiedAgent_StreamError(t *testing.T) {
+	restore, events := captureEvents()
+	defer restore()
+
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	llmSvc := llm.NewService("dummy")
 
-	mockModel := &mockToolChatModel{
-		generateFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error) {
+	mockModel := &mockADKModel{
+		streamFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.StreamReader[*einoschema.Message], error) {
 			return nil, fmt.Errorf("model error")
 		},
 	}
@@ -1030,15 +1019,28 @@ func TestRunUnifiedAgent_GenerateError(t *testing.T) {
 	messages := []*einoschema.Message{{Role: einoschema.User, Content: "hello"}}
 
 	svc.runUnifiedAgent(1, messages, req)
+
+	foundError := false
+	for _, ev := range events() {
+		if ev["_event"] == "chat:message:chunk" && ev["done"] == true && ev["error"] != "" {
+			foundError = true
+		}
+	}
+	if !foundError {
+		t.Fatalf("expected error done event, got %v", events())
+	}
 }
 
 func TestRunUnifiedAgent_WithSystemMessage(t *testing.T) {
+	restore, _ := captureEvents()
+	defer restore()
+
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	llmSvc := llm.NewService("dummy")
 
-	mockModel := &mockToolChatModel{
-		generateFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error) {
-			return &einoschema.Message{Role: einoschema.Assistant, Content: "response"}, nil
+	mockModel := &mockADKModel{
+		streamFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.StreamReader[*einoschema.Message], error) {
+			return streamMessages(&einoschema.Message{Role: einoschema.Assistant, Content: "response"}), nil
 		},
 	}
 	llmSvc.SetChatModel(mockModel)
@@ -1057,13 +1059,21 @@ func TestRunUnifiedAgent_WithSystemMessage(t *testing.T) {
 }
 
 func TestRunUnifiedAgent_ToolResult(t *testing.T) {
+	restore, events := captureEvents()
+	defer restore()
+
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	llmSvc := llm.NewService("dummy")
 
-	toolResult := `{"_tool_result":true,"tool":"edit","changes":[{"search":"a","replace":"b","position":"all"}],"explanation":"test"}`
-	mockModel := &mockToolChatModel{
-		generateFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.Message, error) {
-			return &einoschema.Message{Role: einoschema.Assistant, Content: toolResult}, nil
+	args := `{"changes":[{"search":"a","replace":"b","position":"replace"}],"explanation":"test"}`
+	mockModel := &mockADKModel{
+		streamFn: func(ctx context.Context, input []*einoschema.Message, opts ...model.Option) (*einoschema.StreamReader[*einoschema.Message], error) {
+			return streamMessages(&einoschema.Message{
+				Role: einoschema.Assistant,
+				ToolCalls: []einoschema.ToolCall{
+					{ID: "call_1", Type: "function", Function: einoschema.FunctionCall{Name: "edit", Arguments: args}},
+				},
+			}), nil
 		},
 	}
 	llmSvc.SetChatModel(mockModel)
@@ -1076,4 +1086,30 @@ func TestRunUnifiedAgent_ToolResult(t *testing.T) {
 	messages := []*einoschema.Message{{Role: einoschema.User, Content: "edit"}}
 
 	svc.runUnifiedAgent(1, messages, req)
+
+	// An edit event with search/replace blocks should be emitted.
+	foundEdit := false
+	for _, ev := range events() {
+		if ev["_event"] == "chat:edit:chunk" {
+			foundEdit = true
+			if content, _ := ev["content"].(string); !strings.Contains(content, "<<<<<<< SEARCH") {
+				t.Fatalf("expected search/replace content in edit event, got %v", ev)
+			}
+		}
+	}
+	if !foundEdit {
+		t.Fatalf("expected edit event, got %v", events())
+	}
+
+	// The assistant message should be persisted as search/replace blocks.
+	msgs, err := svc.store.GetMessages(1)
+	if err != nil {
+		t.Fatalf("get messages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if !strings.Contains(msgs[0].Content, "<<<<<<< SEARCH") {
+		t.Fatalf("expected search/replace blocks in saved message, got %q", msgs[0].Content)
+	}
 }

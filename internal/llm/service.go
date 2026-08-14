@@ -180,6 +180,16 @@ func (s *Service) GetActiveModel() *ActiveModelConfig {
 	return &cp
 }
 
+// GetBaseChatModel returns the underlying chat model as a BaseChatModel for use by the eino ADK.
+func (s *Service) GetBaseChatModel() model.BaseChatModel {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.chatModel == nil {
+		return nil
+	}
+	return s.chatModel
+}
+
 // GetToolCallingModel returns the underlying chat model as a ToolCallingChatModel.
 func (s *Service) GetToolCallingModel() model.ToolCallingChatModel {
 	s.mu.RLock()

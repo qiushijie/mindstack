@@ -7,15 +7,11 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/callbacks"
-	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/flow/agent"
-	"github.com/cloudwego/eino/flow/agent/react"
 	einoschema "github.com/cloudwego/eino/schema"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"gorm.io/gorm"
@@ -186,90 +182,6 @@ func (t *editTool) InvokableRun(ctx context.Context, argumentsInJSON string, opt
 	return string(out), nil
 }
 
-// --- Streaming Callback Handler ---
-
-// streamChunkEmitter is a callback handler that intercepts ChatModel stream output
-// and emits chunks to the frontend in real-time for normal chat responses.
-type streamChunkEmitter struct {
-	ctx       context.Context
-	sessionID uint
-	// hasToolCall tracks whether any ChatModel round produced tool calls.
-	// If true, this is an edit flow (via ToolReturnDirectly) and we should not emit chat chunks.
-	hasToolCall atomic.Bool
-}
-
-func (e *streamChunkEmitter) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
-	return ctx
-}
-
-func (e *streamChunkEmitter) OnEnd(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
-	modelOutput := model.ConvCallbackOutput(output)
-	if modelOutput == nil || modelOutput.Message == nil {
-		return ctx
-	}
-	if len(modelOutput.Message.ToolCalls) > 0 {
-		e.hasToolCall.Store(true)
-	}
-	return ctx
-}
-
-func (e *streamChunkEmitter) OnEndWithStreamOutput(ctx context.Context, info *callbacks.RunInfo, output *einoschema.StreamReader[callbacks.CallbackOutput]) context.Context {
-	go func() {
-		defer output.Close()
-
-		for {
-			cbOut, err := output.Recv()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return
-			}
-
-			chunk := model.ConvCallbackOutput(cbOut)
-			if chunk == nil || chunk.Message == nil {
-				continue
-			}
-
-			// If this round contains tool calls, mark it and stop emitting.
-			if len(chunk.Message.ToolCalls) > 0 {
-				e.hasToolCall.Store(true)
-				break
-			}
-
-			// Only emit content chunks for normal chat (no tool calls in this round)
-			if chunk.Message.Content != "" && !e.hasToolCall.Load() {
-				data, _ := json.Marshal(map[string]any{
-					"type":      "chat",
-					"sessionId": e.sessionID,
-					"content":   chunk.Message.Content,
-					"done":      false,
-					"error":     "",
-				})
-				eventsEmit(e.ctx, "chat:message:chunk", string(data))
-			}
-		}
-	}()
-
-	return ctx
-}
-
-func (e *streamChunkEmitter) OnError(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
-	return ctx
-}
-
-func (e *streamChunkEmitter) OnStartWithStreamInput(ctx context.Context, info *callbacks.RunInfo, input *einoschema.StreamReader[callbacks.CallbackInput]) context.Context {
-	return ctx
-}
-
-func (e *streamChunkEmitter) Needed(ctx context.Context, info *callbacks.RunInfo, timing callbacks.CallbackTiming) bool {
-	if info == nil {
-		return false
-	}
-	// Need both OnEnd (Generate path) and OnEndWithStreamOutput (Stream path)
-	return timing == callbacks.TimingOnEnd || timing == callbacks.TimingOnEndWithStreamOutput
-}
-
 // --- Unified Chat Agent ---
 
 func (s *Service) StreamChatWithHistory(reqJSON string) string {
@@ -315,9 +227,9 @@ func (s *Service) StreamChatWithHistory(reqJSON string) string {
 func (s *Service) runUnifiedAgent(sessionID uint, messages []*einoschema.Message, req ChatRequest) {
 	logInfof(s.ctx, "[chat] starting unified agent for session=%d", sessionID)
 
-	chatModel := s.llm.GetToolCallingModel()
-	if chatModel == nil {
-		logError(s.ctx, "[chat] model does not support tool calling, falling back to plain chat")
+	baseModel := s.llm.GetBaseChatModel()
+	if baseModel == nil {
+		logError(s.ctx, "[chat] no model configured, falling back to plain chat")
 		s.streamPlainChat(sessionID, messages)
 		return
 	}
@@ -340,157 +252,177 @@ func (s *Service) runUnifiedAgent(sessionID uint, messages []*einoschema.Message
 	compressed, err := s.compressMessages(messages)
 	if err != nil {
 		logErrorf(s.ctx, "[chat] compress messages error: %v", err)
-		data, _ := json.Marshal(map[string]any{
-			"type":      "chat",
-			"sessionId": sessionID,
-			"done":      true,
-			"error":     "compress messages: " + err.Error(),
-		})
-		eventsEmit(s.ctx, "chat:message:chunk", string(data))
+		emitChatChunk(s.ctx, sessionID, "", true, "compress messages: "+err.Error())
 		return
 	}
 	messages = compressed
 
-	logInfof(s.ctx, "[chat] creating ReAct agent with edit tools")
-	agent_, err := react.NewAgent(s.ctx, &react.AgentConfig{
-		ToolCallingModel: chatModel,
-		ToolsConfig: compose.ToolsNodeConfig{
-			Tools: []tool.BaseTool{
-				&editTool{},
+	agent_, err := adk.NewChatModelAgent(s.ctx, &adk.ChatModelAgentConfig{
+		Name:  "mindstack-chat",
+		Model: baseModel,
+		ToolsConfig: adk.ToolsConfig{
+			ToolsNodeConfig: compose.ToolsNodeConfig{
+				Tools: []tool.BaseTool{&editTool{}},
 			},
-		},
-		ToolReturnDirectly: map[string]struct{}{
-			editToolInfo.Name: {},
-		},
-		StreamToolCallChecker: func(ctx context.Context, sr *einoschema.StreamReader[*einoschema.Message]) (bool, error) {
-			defer sr.Close()
-			for {
-				msg, err := sr.Recv()
-				if err == io.EOF {
-					return false, nil
-				}
-				if err != nil {
-					return false, err
-				}
-				if len(msg.ToolCalls) > 0 {
-					return true, nil
-				}
-			}
+			ReturnDirectly: map[string]bool{editToolInfo.Name: true},
 		},
 	})
 	if err != nil {
 		logErrorf(s.ctx, "[chat] failed to create agent: %v", err)
-		data, _ := json.Marshal(map[string]any{
-			"type":      "chat",
-			"sessionId": sessionID,
-			"done":      true,
-			"error":     "failed to create agent: " + err.Error(),
-		})
-		eventsEmit(s.ctx, "chat:message:chunk", string(data))
+		emitChatChunk(s.ctx, sessionID, "", true, "failed to create agent: "+err.Error())
 		return
 	}
 
-	// Create streaming callback handler to emit chunks in real-time
-	emitter := &streamChunkEmitter{
-		ctx:       s.ctx,
-		sessionID: sessionID,
+	runner := adk.NewRunner(s.ctx, adk.RunnerConfig{Agent: agent_, EnableStreaming: true})
+
+	logInfof(s.ctx, "[chat] running ADK agent with %d messages", len(messages))
+	iter := runner.Run(s.ctx, messages)
+
+	var fullContent string
+	isEdit := false
+	for {
+		event, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if event.Err != nil {
+			logErrorf(s.ctx, "[chat] agent error: %v", event.Err)
+			emitChatChunk(s.ctx, sessionID, "", true, event.Err.Error())
+			return
+		}
+		if event.Output == nil || event.Output.MessageOutput == nil {
+			continue
+		}
+
+		mv := event.Output.MessageOutput
+		switch mv.Role {
+		case einoschema.Assistant:
+			if mv.IsStreaming {
+				if mv.MessageStream == nil {
+					continue
+				}
+				stream := mv.MessageStream
+				for {
+					chunk, err := stream.Recv()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						logErrorf(s.ctx, "[chat] stream recv error: %v", err)
+						break
+					}
+					// Tool-call rounds carry no text; skip them and let the tool event drive output.
+					if len(chunk.ToolCalls) > 0 {
+						continue
+					}
+					if chunk.Content != "" {
+						fullContent += chunk.Content
+						emitChatChunk(s.ctx, sessionID, chunk.Content, false, "")
+					}
+				}
+			} else if mv.Message != nil && len(mv.Message.ToolCalls) == 0 && mv.Message.Content != "" {
+				fullContent += mv.Message.Content
+				emitChatChunk(s.ctx, sessionID, mv.Message.Content, false, "")
+			}
+		case einoschema.Tool:
+			if mv.ToolName == editToolInfo.Name {
+				isEdit = true
+				s.handleEditResult(sessionID, mv.Message)
+			}
+		}
 	}
 
-	logInfof(s.ctx, "[chat] calling agent.Generate with %d messages", len(messages))
-	resp, err := agent_.Generate(s.ctx, messages, agent.WithComposeOptions(compose.WithCallbacks(emitter)))
-	if err != nil {
-		logErrorf(s.ctx, "[chat] agent.Generate error: %v", err)
-		data, _ := json.Marshal(map[string]any{
-			"type":      "chat",
-			"sessionId": sessionID,
-			"done":      true,
-			"error":     err.Error(),
-		})
-		eventsEmit(s.ctx, "chat:message:chunk", string(data))
+	// Edit results are finalized inside handleEditResult; nothing more to emit here.
+	if isEdit {
 		return
 	}
 
-	logInfof(s.ctx, "[chat] agent response: role=%s, contentLen=%d, hasToolCall=%v", resp.Role, len(resp.Content), emitter.hasToolCall.Load())
+	// Normal chat response. Emit a final done event with full content as fallback
+	// (streaming may not always emit chunks), then persist.
+	if len(fullContent) > 100000 {
+		fullContent = fullContent[:100000] + "\n... [truncated]"
+	}
+	emitChatChunk(s.ctx, sessionID, fullContent, true, "")
+	if _, err := s.store.AddMessage(sessionID, "assistant", fullContent); err != nil {
+		logErrorf(s.ctx, "failed to save assistant message: %v", err)
+	}
+}
 
-	// Check if this is a tool result (edit)
+// emitChatChunk emits a chat:message:chunk event to the frontend.
+func emitChatChunk(ctx context.Context, sessionID uint, content string, done bool, errMsg string) {
+	data, _ := json.Marshal(map[string]any{
+		"type":      "chat",
+		"sessionId": sessionID,
+		"content":   content,
+		"done":      done,
+		"error":     errMsg,
+	})
+	eventsEmit(ctx, "chat:message:chunk", string(data))
+}
+
+// handleEditResult renders an edit tool result as search/replace blocks, emits
+// chat:edit:chunk plus a terminating chat done event, and persists the message.
+func (s *Service) handleEditResult(sessionID uint, msg *einoschema.Message) {
+	content := ""
+	if msg != nil {
+		content = msg.Content
+	}
+
 	var toolResult struct {
-		ToolResult  bool `json:"_tool_result"`
-		Tool        string `json:"tool"`
-		Changes []struct {
+		ToolResult bool   `json:"_tool_result"`
+		Tool       string `json:"tool"`
+		Changes    []struct {
 			Search   string `json:"search"`
 			Replace  string `json:"replace"`
 			Position string `json:"position"`
 		} `json:"changes"`
 		Explanation string `json:"explanation"`
 	}
-	isEdit := false
-	if json.Unmarshal([]byte(resp.Content), &toolResult) == nil && toolResult.ToolResult {
-		isEdit = true
+	if json.Unmarshal([]byte(content), &toolResult) != nil || !toolResult.ToolResult {
+		logErrorf(s.ctx, "[chat] invalid edit tool result: %q", content)
+		return
 	}
 
-	logInfof(s.ctx, "[chat] content=%s, isEdit=%v", resp.Content, isEdit)
+	logInfof(s.ctx, "[chat] detected edit result, changes=%d", len(toolResult.Changes))
 
-	if isEdit {
-		logInfof(s.ctx, "[chat] detected edit result, changes=%d", len(toolResult.Changes))
-		// Render changes as search/replace text for frontend
-		var srText string
-		for _, c := range toolResult.Changes {
-			srText += "<<<<<<< SEARCH\n" + c.Search + "\n=======\n" + c.Replace + "\n>>>>>>> REPLACE\n\n"
-		}
-		// Emit edit event
-		data, _ := json.Marshal(map[string]any{
-			"type":        "edit",
-			"sessionId":   sessionID,
-			"content":     srText,
-			"changes":     toolResult.Changes,
-			"explanation": toolResult.Explanation,
-			"done":        true,
-			"error":       "",
-		})
-		eventsEmit(s.ctx, "chat:edit:chunk", string(data))
+	// Render changes as search/replace text for frontend
+	var srText string
+	for _, c := range toolResult.Changes {
+		srText += "<<<<<<< SEARCH\n" + c.Search + "\n=======\n" + c.Replace + "\n>>>>>>> REPLACE\n\n"
+	}
+	// Emit edit event
+	data, _ := json.Marshal(map[string]any{
+		"type":        "edit",
+		"sessionId":   sessionID,
+		"content":     srText,
+		"changes":     toolResult.Changes,
+		"explanation": toolResult.Explanation,
+		"done":        true,
+		"error":       "",
+	})
+	eventsEmit(s.ctx, "chat:edit:chunk", string(data))
 
-		// Also emit a chat done event so the stream listener cleans up
-		doneData, _ := json.Marshal(map[string]any{
-			"type":      "chat",
-			"sessionId": sessionID,
-			"done":      true,
-		})
-		eventsEmit(s.ctx, "chat:message:chunk", string(doneData))
+	// Also emit a chat done event so the stream listener cleans up
+	doneData, _ := json.Marshal(map[string]any{
+		"type":      "chat",
+		"sessionId": sessionID,
+		"done":      true,
+	})
+	eventsEmit(s.ctx, "chat:message:chunk", string(doneData))
 
-		// Save to DB: render changes as search/replace blocks
-		var contentToSave string
-		if toolResult.Explanation != "" {
-			contentToSave = toolResult.Explanation + "\n\n"
-		}
-		for _, c := range toolResult.Changes {
-			contentToSave += "<<<<<<< SEARCH\n" + c.Search + "\n=======\n" + c.Replace + "\n>>>>>>> REPLACE\n\n"
-		}
-		if len(contentToSave) > 100000 {
-			contentToSave = contentToSave[:100000] + "\n... [truncated]"
-		}
-		if _, err := s.store.AddMessage(sessionID, "assistant", contentToSave); err != nil {
-			logErrorf(s.ctx, "failed to save assistant message: %v", err)
-		}
-	} else {
-		// Normal chat response
-		content := resp.Content
-		if len(content) > 100000 {
-			content = content[:100000] + "\n... [truncated]"
-		}
-
-		// Emit final done event with full content as fallback (streaming callback may not always emit chunks)
-		data, _ := json.Marshal(map[string]any{
-			"type":      "chat",
-			"sessionId": sessionID,
-			"content":   content,
-			"done":      true,
-			"error":     "",
-		})
-		eventsEmit(s.ctx, "chat:message:chunk", string(data))
-
-		if _, err := s.store.AddMessage(sessionID, "assistant", content); err != nil {
-			logErrorf(s.ctx, "failed to save assistant message: %v", err)
-		}
+	// Save to DB: render changes as search/replace blocks
+	var contentToSave string
+	if toolResult.Explanation != "" {
+		contentToSave = toolResult.Explanation + "\n\n"
+	}
+	for _, c := range toolResult.Changes {
+		contentToSave += "<<<<<<< SEARCH\n" + c.Search + "\n=======\n" + c.Replace + "\n>>>>>>> REPLACE\n\n"
+	}
+	if len(contentToSave) > 100000 {
+		contentToSave = contentToSave[:100000] + "\n... [truncated]"
+	}
+	if _, err := s.store.AddMessage(sessionID, "assistant", contentToSave); err != nil {
+		logErrorf(s.ctx, "failed to save assistant message: %v", err)
 	}
 }
 
@@ -522,7 +454,7 @@ For normal questions and conversation, respond naturally without using tools.`
 	return prompt
 }
 
-// streamPlainChat is a fallback when the model does not support tool calling.
+// streamPlainChat is a fallback when no chat model is configured.
 func (s *Service) streamPlainChat(sessionID uint, messages []*einoschema.Message) {
 	var fullContent string
 
