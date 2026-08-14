@@ -90,6 +90,10 @@ function createMockEditorAdapter<T extends Partial<EditorAdapter>>(overrides: T 
   const defaults: EditorAdapter = {
     getContent: () => '',
     setContent: () => {},
+    loadDocument: () => {},
+    removeDocument: () => {},
+    clearDocuments: () => {},
+    renameDocument: () => {},
     getSelection: () => ({ anchor: 0, head: 0 }),
     setSelection: () => {},
     getSelectedText: () => null,
@@ -110,7 +114,13 @@ function createMockEditorAdapter<T extends Partial<EditorAdapter>>(overrides: T 
     findPrevious: () => false,
     getSearchMatchInfo: () => ({ current: 0, total: 0 }),
   }
-  return { ...defaults, ...overrides }
+  const adapter: EditorAdapter & T = { ...defaults, ...overrides }
+  // Default loadDocument delegates to setContent so existing assertions on
+  // setContent continue to hold for the mock adapter.
+  if (!('loadDocument' in overrides)) {
+    adapter.loadDocument = (_path: string, content: string) => { adapter.setContent(content) }
+  }
+  return adapter
 }
 
 // Helper: reset shared module state between tests

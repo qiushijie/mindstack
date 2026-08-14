@@ -1,4 +1,5 @@
 import { EditorView } from '@codemirror/view'
+import { EditorState, type Extension } from '@codemirror/state'
 import {
   setSearchQuery,
   getSearchQuery,
@@ -18,7 +19,13 @@ import type {
 } from '../EditorAdapter'
 
 export class CodeMirrorAdapter implements EditorAdapter {
-  constructor(private readonly view: EditorView) {}
+  private readonly documentStates = new Map<string, EditorState>()
+  private currentPath = ''
+
+  constructor(
+    private readonly view: EditorView,
+    private readonly extensionsFactory?: () => Extension[],
+  ) {}
 
   getContent(): string {
     return this.view.state.doc.toString()
@@ -32,6 +39,56 @@ export class CodeMirrorAdapter implements EditorAdapter {
         ? this.clampSelection(oldSelection, content.length)
         : { anchor: 0 },
     })
+  }
+
+  loadDocument(path: string, content: string): void {
+    // Stash the currently shown document's full state (content + undo/redo +
+    // selection) under its own path before switching away from it.
+    if (this.currentPath) {
+      this.documentStates.set(this.currentPath, this.view.state)
+    }
+    this.currentPath = path
+
+    let state = this.documentStates.get(path)
+    // A cached state whose text no longer matches the requested content is
+    // stale (e.g. the file changed on disk), so drop it and rebuild.
+    if (state && state.doc.toString() !== content) {
+      state = undefined
+      this.documentStates.delete(path)
+    }
+    if (!state) {
+      state = EditorState.create({
+        doc: content,
+        extensions: this.extensionsFactory?.() ?? [],
+      })
+    }
+    this.view.setState(state)
+  }
+
+  removeDocument(path: string): void {
+    this.documentStates.delete(path)
+    if (this.currentPath === path) {
+      this.currentPath = ''
+    }
+  }
+
+  clearDocuments(): void {
+    this.documentStates.clear()
+    this.currentPath = ''
+  }
+
+  renameDocument(oldPath: string, newPath: string): void {
+    const state =
+      this.currentPath === oldPath
+        ? this.view.state
+        : this.documentStates.get(oldPath)
+    this.documentStates.delete(oldPath)
+    if (state) {
+      this.documentStates.set(newPath, state)
+    }
+    if (this.currentPath === oldPath) {
+      this.currentPath = newPath
+    }
   }
 
   getSelection(): EditorSelection {

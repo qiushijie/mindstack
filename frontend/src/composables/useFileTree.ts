@@ -183,6 +183,7 @@ if (import.meta.env.DEV) {
     clearAutoSaveTimer()
     clearTabs()
     tabContentCache.clear()
+    if (editorAdapter) editorAdapter.clearDocuments()
     dirtyTabs.value = []
     rootPath.value = ''
     treeData.value = []
@@ -190,7 +191,7 @@ if (import.meta.env.DEV) {
     selectedFileContent.value = ''
     isDirty.value = false
     if (editorAdapter) {
-      editorAdapter.setContent('')
+      editorAdapter.loadDocument('', '')
     }
   }
   ;(window as any).__setCopiedFilePath = (path: string) => {
@@ -236,8 +237,14 @@ export function useFileTree() {
     isDirty.value = dirtyTabs.value.includes(path)
     if (editorAdapter) {
       suppressDirtyMark = true
-      editorAdapter.setContent(content)
+      editorAdapter.loadDocument(path, content)
       suppressDirtyMark = false
+    }
+    // loadDocument may swap the editor state (restoring a cached document),
+    // so re-apply the current file path after the swap.
+    const view = sharedView.value
+    if (view) {
+      view.dispatch({ effects: setCurrentFilePath.of(isUntitledPath(path) ? '' : path) })
     }
   }
 
@@ -305,6 +312,7 @@ export function useFileTree() {
     clearAutoSaveTimer()
     clearTabs()
     tabContentCache.clear()
+    if (editorAdapter) editorAdapter.clearDocuments()
     dirtyTabs.value = []
     rootPath.value = path
     selectedFilePath.value = ''
@@ -315,7 +323,7 @@ export function useFileTree() {
     // previous workspace do not leak into the newly opened folder.
     if (editorAdapter) {
       suppressDirtyMark = true
-      editorAdapter.setContent('')
+      editorAdapter.loadDocument('', '')
       suppressDirtyMark = false
     }
 
@@ -409,6 +417,7 @@ export function useFileTree() {
         isDirty.value = false
         dirtyTabs.value = dirtyTabs.value.filter(p => p !== oldPath)
         tabContentCache.delete(oldPath)
+        if (editorAdapter) editorAdapter.renameDocument(oldPath, savePath)
         tabContentCache.set(savePath, content)
 
         // Refresh file tree and navigate
@@ -439,7 +448,7 @@ export function useFileTree() {
     isDirty.value = false
     if (editorAdapter) {
       suppressDirtyMark = true
-      editorAdapter.setContent('')
+      editorAdapter.loadDocument(untitledPath, '')
       suppressDirtyMark = false
     }
     navigateTo('editor')
@@ -533,6 +542,7 @@ export function useFileTree() {
       if (tab.path === currentPath) continue
       if (dirtyTabs.value.includes(tab.path)) continue
       tabContentCache.delete(tab.path)
+      if (editorAdapter) editorAdapter.removeDocument(tab.path)
     }
 
     if (currentPath && !isUntitledPath(currentPath) && !isDirty.value) {
@@ -558,6 +568,7 @@ export function useFileTree() {
     clearAutoSaveTimer()
     clearTabs()
     tabContentCache.clear()
+    if (editorAdapter) editorAdapter.clearDocuments()
     dirtyTabs.value = []
     rootPath.value = path
     selectedFilePath.value = ''
@@ -568,7 +579,7 @@ export function useFileTree() {
     // previous workspace do not leak into the newly opened folder.
     if (editorAdapter) {
       suppressDirtyMark = true
-      editorAdapter.setContent('')
+      editorAdapter.loadDocument('', '')
       suppressDirtyMark = false
     }
 
@@ -639,6 +650,7 @@ export function useFileTree() {
 
     if (!isPageTab(path)) {
       tabContentCache.delete(path)
+      if (editorAdapter) editorAdapter.removeDocument(path)
       dirtyTabs.value = dirtyTabs.value.filter(p => p !== path)
     }
 
@@ -657,7 +669,7 @@ export function useFileTree() {
       selectedFileContent.value = ''
       isDirty.value = false
       if (editorAdapter) {
-        editorAdapter.setContent('')
+        editorAdapter.loadDocument('', '')
       }
       navigateTo('editor')
     }
@@ -687,6 +699,7 @@ export function useFileTree() {
     for (const tab of tabs.value) {
       if (tab.path !== keepPath && !isPageTab(tab.path)) {
         tabContentCache.delete(tab.path)
+        if (editorAdapter) editorAdapter.removeDocument(tab.path)
         dirtyTabs.value = dirtyTabs.value.filter(p => p !== tab.path)
       }
     }
@@ -723,6 +736,7 @@ export function useFileTree() {
     for (const tab of tabs.value) {
       if (!isPageTab(tab.path)) {
         tabContentCache.delete(tab.path)
+        if (editorAdapter) editorAdapter.removeDocument(tab.path)
         dirtyTabs.value = dirtyTabs.value.filter(p => p !== tab.path)
       }
     }
@@ -733,7 +747,7 @@ export function useFileTree() {
     selectedFileContent.value = ''
     isDirty.value = false
     if (editorAdapter) {
-      editorAdapter.setContent('')
+      editorAdapter.loadDocument('', '')
     }
     navigateTo('editor')
 
@@ -751,6 +765,7 @@ export function useFileTree() {
     for (const tab of removed) {
       if (!isPageTab(tab.path)) {
         tabContentCache.delete(tab.path)
+        if (editorAdapter) editorAdapter.removeDocument(tab.path)
         dirtyTabs.value = dirtyTabs.value.filter(p => p !== tab.path)
       }
     }
@@ -765,7 +780,7 @@ export function useFileTree() {
       selectedFilePath.value = ''
       selectedFileContent.value = ''
       isDirty.value = false
-      if (editorAdapter) editorAdapter.setContent('')
+      if (editorAdapter) editorAdapter.loadDocument('', '')
     } else if (!tabs.value.find(t => t.path === selectedFilePath.value)) {
       const nextTab = tabs.value[activeTabIndex.value]
       if (nextTab && !isPageTab(nextTab.path)) {

@@ -44,7 +44,6 @@ interface UseCodeMirrorReturn {
   doc: Ref<string>
   focus: () => void
   destroy: () => void
-  setContent: (content: string) => void
 }
 
 type ShallowRef<T> = ReturnType<typeof shallowRef<T>>
@@ -62,6 +61,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
   const view = shallowRef<EditorView | null>(null)
   const doc = ref(options.initialDoc ?? '')
   const { editorView: sharedView } = useEditorState()
+  const { selectedFilePath } = useFileTree()
   let themeObserver: MutationObserver | null = null
 
   let scrollDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -126,15 +126,31 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     ]
   }
 
+  function buildExtensions(): Extension[] {
+    return [
+      ...getBaseExtensions(),
+      extCompartment.of(options.extensions ?? []),
+    ]
+  }
+
+  function reconfigureViewOptions() {
+    if (!view.value) return
+    view.value.dispatch({
+      effects: [
+        themeCompartment.reconfigure(createEditorTheme(isDarkTheme())),
+        richCompartment.reconfigure(getRichExtensions()),
+        lineNumbersCompartment.reconfigure(options.lineNumbers?.value ? lineNumbers() : []),
+        lineWrappingCompartment.reconfigure(options.wordWrap?.value ? EditorView.lineWrapping : []),
+      ],
+    })
+  }
+
   onMounted(() => {
     if (!options.container.value) return
 
     const state = EditorState.create({
       doc: options.initialDoc ?? '',
-      extensions: [
-        ...getBaseExtensions(),
-        extCompartment.of(options.extensions ?? []),
-      ],
+      extensions: buildExtensions(),
     })
 
     view.value = new EditorView({
@@ -142,7 +158,7 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
       parent: options.container.value,
     })
     sharedView.value = view.value
-    const adapter = new CodeMirrorAdapter(view.value)
+    const adapter = new CodeMirrorAdapter(view.value, buildExtensions)
     sharedEditorAdapter.value = adapter
     sharedCommandRunner.value = new CommandRunner({
       adapter,
@@ -150,12 +166,12 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     })
 
     // Sync current file path and content into editor state
-    const { selectedFilePath, selectedFileContent } = useFileTree()
+    const { selectedFileContent } = useFileTree()
     if (selectedFilePath.value) {
       view.value.dispatch({ effects: setCurrentFilePath.of(selectedFilePath.value) })
     }
     if (selectedFileContent.value) {
-      setContent(selectedFileContent.value)
+      adapter.loadDocument(selectedFilePath.value, selectedFileContent.value)
     }
 
     // Watch for theme changes and reconfigure editor theme
@@ -180,14 +196,6 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     sharedEditorAdapter.value = null
     sharedCommandRunner.value = null
   })
-
-  function setContent(content: string) {
-    if (!view.value) return
-    view.value.dispatch({
-      changes: { from: 0, to: view.value.state.doc.length, insert: content },
-      selection: { anchor: 0 },
-    })
-  }
 
   function focus() {
     view.value?.focus()
@@ -231,5 +239,9 @@ export function useCodeMirror(options: UseCodeMirrorOptions): UseCodeMirrorRetur
     })
   }
 
-  return { view, doc, focus, destroy, setContent }
+  watch(selectedFilePath, () => {
+    reconfigureViewOptions()
+  })
+
+  return { view, doc, focus, destroy }
 }

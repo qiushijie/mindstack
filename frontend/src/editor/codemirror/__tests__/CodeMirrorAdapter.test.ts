@@ -282,4 +282,62 @@ describe('CodeMirrorAdapter', () => {
       expect(typeof adapter.findPrevious()).toBe('boolean')
     })
   })
+
+  describe('loadDocument', () => {
+    it('切换文档后撤销不会回退到上一个文档的内容', () => {
+      const buildExtensions = () => [history()]
+      const histView = new EditorView({
+        state: EditorState.create({ doc: '', extensions: buildExtensions() }),
+        parent: document.body,
+      })
+      const histAdapter = new CodeMirrorAdapter(histView, buildExtensions)
+
+      // Load A and edit it, giving A a non-empty undo history.
+      histAdapter.loadDocument('/a.md', 'content A')
+      histAdapter.replaceRange({ from: 9, to: 9, insert: '!' })
+      expect(histAdapter.getContent()).toBe('content A!')
+
+      // Load B — this must reset the undo history, otherwise undo would
+      // revert B back to A's content.
+      histAdapter.loadDocument('/b.md', 'content B')
+      expect(histAdapter.getContent()).toBe('content B')
+
+      undo(histView)
+      expect(histAdapter.getContent()).toBe('content B')
+
+      // Switching back to A restores its own content and undo history.
+      histAdapter.loadDocument('/a.md', 'content A!')
+      expect(histAdapter.getContent()).toBe('content A!')
+      undo(histView)
+      expect(histAdapter.getContent()).toBe('content A')
+
+      histView.destroy()
+    })
+  })
+
+  describe('renameDocument', () => {
+    it('re-keys current state to new path and preserves undo history', () => {
+      const buildExtensions = () => [history()]
+      const histView = new EditorView({
+        state: EditorState.create({ doc: '', extensions: buildExtensions() }),
+        parent: document.body,
+      })
+      const histAdapter = new CodeMirrorAdapter(histView, buildExtensions)
+
+      histAdapter.loadDocument('/untitled.md', 'draft')
+      histAdapter.replaceRange({ from: 5, to: 5, insert: '!' })
+      expect(histAdapter.getContent()).toBe('draft!')
+
+      histAdapter.renameDocument('/untitled.md', '/real.md')
+
+      // Switching away and back restores the renamed document's own undo history.
+      histAdapter.loadDocument('/other.md', 'other')
+      histAdapter.loadDocument('/real.md', 'draft!')
+      expect(histAdapter.getContent()).toBe('draft!')
+      undo(histView)
+      expect(histAdapter.getContent()).toBe('draft')
+
+      histView.destroy()
+    })
+  })
 })

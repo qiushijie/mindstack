@@ -68,7 +68,7 @@ function toggleAIChat() {
   showAIChat.value = !showAIChat.value
 }
 
-const { view, focus, setContent } = useCodeMirror({
+const { view, focus } = useCodeMirror({
   container: containerRef,
   rawMode,
   lineNumbers,

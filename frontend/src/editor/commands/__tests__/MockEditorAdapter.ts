@@ -32,6 +32,22 @@ export class MockEditorAdapter implements EditorAdapter {
     }
   }
 
+  loadDocument(_path: string, content: string): void {
+    this.setContent(content)
+  }
+
+  removeDocument(_path: string): void {
+    // no-op in mock
+  }
+
+  clearDocuments(): void {
+    // no-op in mock
+  }
+
+  renameDocument(_oldPath: string, _newPath: string): void {
+    // no-op in mock
+  }
+
   getSelection(): EditorSelection {
     return { ...this._selection }
   }
