@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { waitForAppReady } from '../helpers/app'
+import { waitForAppReady, dismissGitInitPrompt } from '../helpers/app'
 import { openTestWorkspace, waitForTreeReady, getTreeItem } from '../helpers/filetree'
 
 async function mockGoBindings(page: import('@playwright/test').Page) {
@@ -67,6 +67,7 @@ test.describe('Tab Bar Extreme - Tab Deduplication & Overflow', () => {
       return (window as any).__setTestWorkspace?.(path, nodes)
     }, { path: wsPath, nodes: children })
     await page.waitForTimeout(300)
+    await dismissGitInitPrompt(page)
     await waitForTreeReady(page)
 
     // Open all files
@@ -123,6 +124,7 @@ test.describe('Tab Bar Extreme - Same Name Files', () => {
       return (window as any).__setTestWorkspace?.(path, nodes)
     }, { path: wsPath, nodes })
     await page.waitForTimeout(300)
+    await dismissGitInitPrompt(page)
     await waitForTreeReady(page)
 
     // Open both files

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { waitForAppReady } from '../helpers/app'
+import { waitForAppReady, dismissGitInitPrompt } from '../helpers/app'
 import { openTestWorkspace, waitForTreeReady, getTreeItem } from '../helpers/filetree'
 
 async function mockGoBindings(page: import('@playwright/test').Page) {
@@ -65,6 +65,7 @@ test.describe('File Tree Extreme - Deep Nesting', () => {
       return (window as any).__setTestWorkspace?.(path, nodes)
     }, { path: wsPath, nodes })
     await page.waitForTimeout(300)
+    await dismissGitInitPrompt(page)
     await waitForTreeReady(page)
 
     // All nodes should be visible
@@ -112,6 +113,7 @@ test.describe('File Tree Extreme - Deep Nesting', () => {
       return (window as any).__setTestWorkspace?.(path, nodes)
     }, { path: wsPath, nodes })
     await page.waitForTimeout(300)
+    await dismissGitInitPrompt(page)
     await waitForTreeReady(page)
 
     // Verify first, last, and a middle file are all visible
@@ -147,6 +149,7 @@ test.describe('File Tree Extreme - Special Names', () => {
       return (window as any).__setTestWorkspace?.(path, nodes)
     }, { path: wsPath, nodes })
     await page.waitForTimeout(300)
+    await dismissGitInitPrompt(page)
     await waitForTreeReady(page)
 
     await expect(getTreeItem(page, 'my file.md')).toBeVisible()
@@ -167,6 +170,7 @@ test.describe('File Tree Extreme - Special Names', () => {
       return (window as any).__setTestWorkspace?.(path, nodes)
     }, { path: wsPath, nodes })
     await page.waitForTimeout(300)
+    await dismissGitInitPrompt(page)
     await waitForTreeReady(page)
 
     await expect(getTreeItem(page, '中文文档.md')).toBeVisible()
@@ -187,6 +191,7 @@ test.describe('File Tree Extreme - Special Names', () => {
       return (window as any).__setTestWorkspace?.(path, nodes)
     }, { path: wsPath, nodes })
     await page.waitForTimeout(300)
+    await dismissGitInitPrompt(page)
     await waitForTreeReady(page)
 
     await expect(getTreeItem(page, 'file@v1.0-test.md')).toBeVisible()
@@ -215,6 +220,7 @@ test.describe('File Tree Extreme - Empty Directory', () => {
       return (window as any).__setTestWorkspace?.(path, nodes)
     }, { path: wsPath, nodes })
     await page.waitForTimeout(300)
+    await dismissGitInitPrompt(page)
     await waitForTreeReady(page)
 
     // Empty folder should be visible

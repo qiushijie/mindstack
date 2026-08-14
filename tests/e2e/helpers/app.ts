@@ -45,3 +45,20 @@ export async function navigateTo(page: Page, name: 'editor' | 'settings' | 'rela
   }, name)
   await page.waitForTimeout(100)
 }
+
+// Dismiss the "initialize git repository" confirm dialog if it appears after
+// opening a non-git workspace. App.vue watches rootPath and calls GitCheckInit;
+// when the backend reports the folder is not a git repo it shows a blocking
+// overlay. This is a pre-step that must run after a workspace is loaded (the
+// prompt appears asynchronously); it no-ops when the prompt never shows, e.g.
+// the workspace is already a git repo or the Go backend is unavailable.
+export async function dismissGitInitPrompt(page: Page): Promise<void> {
+  const overlay = page.locator('.confirm-dialog-overlay')
+  try {
+    await overlay.waitFor({ state: 'visible', timeout: 3000 })
+    await page.locator('.btn-cancel').click()
+    await overlay.waitFor({ state: 'hidden', timeout: 3000 })
+  } catch {
+    // No git-init prompt appeared; nothing to dismiss.
+  }
+}

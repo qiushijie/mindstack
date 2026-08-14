@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { waitForAppReady, navigateTo } from '../helpers/app'
+import { waitForAppReady, navigateTo, dismissGitInitPrompt } from '../helpers/app'
 import { openTestWorkspace, waitForTreeReady, getTreeItem } from '../helpers/filetree'
 
 test.describe('Settings Persistence', () => {
@@ -7,15 +7,8 @@ test.describe('Settings Persistence', () => {
     await page.goto('/')
     await waitForAppReady(page)
 
-    // Dismiss the git-init confirm dialog that appears when a workspace loads
-    const dialog = page.locator('.confirm-dialog-overlay')
-    try {
-      await dialog.waitFor({ state: 'visible', timeout: 3000 })
-      await page.locator('.btn-cancel').click()
-      await dialog.waitFor({ state: 'hidden', timeout: 3000 })
-    } catch {
-      // Dialog did not appear, that's fine
-    }
+    // Dismiss the git-init confirm dialog if a workspace is restored on load
+    await dismissGitInitPrompt(page)
   })
 
   test('should preserve model settings after file tree operations', async ({ page }) => {
