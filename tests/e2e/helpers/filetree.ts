@@ -38,6 +38,18 @@ export async function openTestWorkspace(page: Page): Promise<void> {
     return (window as any).__setTestWorkspace?.(path, nodes)
   }, { path: wsPath, nodes })
   await page.waitForTimeout(300)
+
+  // The fixture workspace is not a git repository, so opening it triggers the
+  // app's git-init prompt (App.vue watches rootPath and calls GitCheckInit).
+  // Dismiss it so tests can interact with the tree without a blocking overlay.
+  const overlay = page.locator('.confirm-dialog-overlay')
+  try {
+    await overlay.waitFor({ state: 'visible', timeout: 3000 })
+    await page.locator('.btn-cancel').click()
+    await overlay.waitFor({ state: 'hidden', timeout: 3000 })
+  } catch {
+    // No git-init prompt appeared; nothing to dismiss.
+  }
 }
 
 export async function waitForTreeReady(page: Page): Promise<void> {
