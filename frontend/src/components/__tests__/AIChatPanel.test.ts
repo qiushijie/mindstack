@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import AIChatPanel from '../AIChatPanel.vue'
@@ -688,6 +688,102 @@ describe('AIChatPanel', () => {
       expect(wrapper.find('.history-view').exists()).toBe(false)
       expect(wrapper.find('.message-area').exists()).toBe(true)
       expect(wrapper.find('.chat-title').text()).toBe('AI Assistant')
+    })
+  })
+
+  describe('dragging', () => {
+    let wrapper!: ReturnType<typeof mountComponent>
+
+    beforeEach(() => {
+      wrapper = mountComponent()
+    })
+
+    afterEach(() => {
+      wrapper.unmount()
+    })
+
+    function panelPosition() {
+      const el = wrapper.find('.ai-chat-panel').element as HTMLElement
+      return { left: parseInt(el.style.left, 10), top: parseInt(el.style.top, 10) }
+    }
+
+    function moveMouse(x: number, y: number, buttons = 1) {
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, buttons }))
+    }
+
+    it('moves the panel while dragging with the left button', async () => {
+      const start = panelPosition()
+
+      await wrapper.find('.chat-header').trigger('mousedown', { button: 0, clientX: 100, clientY: 100 })
+      moveMouse(80, 85, 1)
+      await nextTick()
+
+      expect(panelPosition()).toEqual({ left: start.left - 20, top: start.top - 15 })
+    })
+
+    it('stops dragging after mouseup', async () => {
+      await wrapper.find('.chat-header').trigger('mousedown', { button: 0, clientX: 100, clientY: 100 })
+      moveMouse(80, 85, 1)
+      await nextTick()
+      const dragged = panelPosition()
+
+      document.dispatchEvent(new MouseEvent('mouseup'))
+      moveMouse(500, 500, 1)
+      await nextTick()
+
+      expect(panelPosition()).toEqual(dragged)
+    })
+
+    it('ignores mousedown from a non-left button', async () => {
+      const start = panelPosition()
+
+      await wrapper.find('.chat-header').trigger('mousedown', { button: 2, clientX: 100, clientY: 100 })
+      moveMouse(300, 300, 2)
+      await nextTick()
+
+      expect(panelPosition()).toEqual(start)
+    })
+
+    it('does not start dragging from a header button', async () => {
+      const start = panelPosition()
+
+      await wrapper.find('.close-btn').trigger('mousedown', { button: 0, clientX: 100, clientY: 100 })
+      moveMouse(300, 300, 1)
+      await nextTick()
+
+      expect(panelPosition()).toEqual(start)
+    })
+
+    it('ends a stale drag when the mouse moves with no button pressed', async () => {
+      await wrapper.find('.chat-header').trigger('mousedown', { button: 0, clientX: 100, clientY: 100 })
+      moveMouse(80, 85, 1)
+      await nextTick()
+      const dragged = panelPosition()
+
+      // Simulate a dropped mouseup (the bug scenario): no mouseup is dispatched,
+      // but the user later moves the mouse without any button held down.
+      moveMouse(600, 600, 0)
+      await nextTick()
+
+      expect(panelPosition()).toEqual(dragged)
+
+      // The stale listener is now gone, so further moves no longer drag the panel.
+      moveMouse(700, 700, 1)
+      await nextTick()
+      expect(panelPosition()).toEqual(dragged)
+    })
+
+    it('ends dragging when the window loses focus', async () => {
+      await wrapper.find('.chat-header').trigger('mousedown', { button: 0, clientX: 100, clientY: 100 })
+      moveMouse(80, 85, 1)
+      await nextTick()
+      const dragged = panelPosition()
+
+      window.dispatchEvent(new Event('blur'))
+
+      moveMouse(500, 500, 1)
+      await nextTick()
+      expect(panelPosition()).toEqual(dragged)
     })
   })
 })

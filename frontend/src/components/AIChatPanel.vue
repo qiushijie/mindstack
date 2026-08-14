@@ -86,6 +86,7 @@ function resetPosition() {
 }
 
 function onDragStart(e: MouseEvent) {
+  if (e.button !== 0) return
   e.preventDefault()
   dragStartX = e.clientX
   dragStartY = e.clientY
@@ -96,6 +97,13 @@ function onDragStart(e: MouseEvent) {
 }
 
 function onDragMove(e: MouseEvent) {
+  // The button-state guard is the reliable backstop: unlike pointer/mouse
+  // capture, it checks the physical button state, so a dropped mouseup can
+  // never leave a listener that keeps dragging the panel.
+  if (!(e.buttons & 1)) {
+    onDragEnd()
+    return
+  }
   const dx = e.clientX - dragStartX
   const dy = e.clientY - dragStartY
   const pos = clampPosition(dragStartPanelX + dx, dragStartPanelY + dy)
@@ -110,6 +118,9 @@ function onDragEnd() {
 
 onMounted(() => {
   resetPosition()
+  // Safety net: end any in-progress drag when the window loses focus, in case
+  // the mouseup event is dropped by the WebView.
+  window.addEventListener('blur', onDragEnd)
   if (rootPath.value) {
     loadSessions(rootPath.value)
   }
@@ -184,6 +195,7 @@ watch(rootPath, (newPath) => {
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
+  window.removeEventListener('blur', onDragEnd)
   EventsOff('build:progress')
   EventsOff('chat:edit:chunk')
   if (gitSyncTimer.value) clearTimeout(gitSyncTimer.value)
