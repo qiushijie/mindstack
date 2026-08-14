@@ -202,18 +202,6 @@ func TestBuildWorkspace_AlreadyInProgress(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// SearchDocs — empty root
-// ---------------------------------------------------------------------------
-
-func TestSearchDocs_EmptyRootPath(t *testing.T) {
-	app := NewApp()
-	result := app.SearchDocs("tag")
-	if result != `{"error":"no workspace open"}` {
-		t.Fatalf("expected 'no workspace open' error, got %q", result)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // GetActiveModelInfo — llm nil model
 // ---------------------------------------------------------------------------
 
@@ -915,32 +903,6 @@ func TestChat_MultipleMessages(t *testing.T) {
 	}
 	if m["content"] != "Multi response" {
 		t.Fatalf("expected content 'Multi response', got %q", m["content"])
-	}
-}
-
-// ---------------------------------------------------------------------------
-// SearchDocs — error path (invalid meta.json)
-// ---------------------------------------------------------------------------
-
-func TestSearchDocs_InvalidMeta(t *testing.T) {
-	tmpDir := t.TempDir()
-	metaDir := filepath.Join(tmpDir, ".mindstack")
-	if err := os.MkdirAll(metaDir, 0755); err != nil {
-		t.Fatalf("failed to create .mindstack dir: %v", err)
-	}
-	// Write invalid JSON to meta.json
-	os.WriteFile(filepath.Join(metaDir, "meta.json"), []byte("{invalid json}"), 0644)
-
-	app := NewApp()
-	app.SetRootPath(tmpDir)
-
-	result := app.SearchDocs("test")
-	var m map[string]string
-	if err := json.Unmarshal([]byte(result), &m); err != nil {
-		t.Fatalf("result is not valid JSON: %v", err)
-	}
-	if _, ok := m["error"]; !ok {
-		t.Fatal("expected error for invalid meta.json, got success")
 	}
 }
 

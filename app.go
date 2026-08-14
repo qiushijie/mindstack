@@ -1060,30 +1060,6 @@ func (a *App) saveRecentEntriesLocked() {
 	os.WriteFile(cp, out, 0644)
 }
 
-func (a *App) SearchDocs(tag string) string {
-	a.mu.RLock()
-	root := a.rootPath
-	a.mu.RUnlock()
-
-	if root == "" {
-		return `{"error":"no workspace open"}`
-	}
-
-	rs, err := retrieval.Search(root, retrieval.Query{
-		Raw:  tag,
-		Tags: retrieval.NormalizeTagQuery(tag),
-	}, retrieval.Options{
-		Mode:    retrieval.ModeTag,
-		TagMode: retrieval.TagModeAND,
-	})
-	if err != nil {
-		out, _ := json.Marshal(map[string]string{"error": err.Error()})
-		return string(out)
-	}
-	out, _ := json.Marshal(rs)
-	return string(out)
-}
-
 // SearchDocsV2 searches documents using the unified retrieval engine.
 // mode accepts "tag", "fulltext", or "hybrid"; empty string defaults to "tag".
 func (a *App) SearchDocsV2(query string, mode string) string {

@@ -178,10 +178,6 @@ export function SaveFileDialog(arg1) {
   return window['go']['main']['App']['SaveFileDialog'](arg1);
 }
 
-export function SearchDocs(arg1) {
-  return window['go']['main']['App']['SearchDocs'](arg1);
-}
-
 export function SearchDocsV2(arg1, arg2) {
   return window['go']['main']['App']['SearchDocsV2'](arg1, arg2);
 }
