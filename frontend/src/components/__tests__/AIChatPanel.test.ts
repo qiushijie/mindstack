@@ -280,7 +280,7 @@ describe('AIChatPanel', () => {
       // Tool button should be active
       expect(wrapper.find('.tool-btn').classes()).toContain('active')
       // Placeholder should change
-      expect((wrapper.find('.chat-input').element as HTMLTextAreaElement).placeholder).toBe('Enter tags to search...')
+      expect((wrapper.find('.chat-input').element as HTMLTextAreaElement).placeholder).toBe('Enter keywords or tags to search...')
     })
 
     it('triggers build when build tool is selected', async () => {

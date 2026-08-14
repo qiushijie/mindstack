@@ -339,7 +339,7 @@ interface ToolMenuItem {
 }
 
 const toolMenuItems: ToolMenuItem[] = [
-  { command: '/search', label: 'Search', icon: 'search', placeholder: 'Enter tags to search...' },
+  { command: '/search', label: 'Search', icon: 'search', placeholder: 'Enter keywords or tags to search...' },
   { command: '/git', label: 'Git Sync', icon: 'git-branch', placeholder: 'Enter "push" or "pull"...' },
   { command: '/build', label: 'Build', icon: 'refresh-cw', placeholder: '' },
 ]

@@ -1,21 +1,21 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 vi.mock('../../../wailsjs/go/main/App', () => ({
-  SearchDocs: vi.fn(),
+  SearchDocsV2: vi.fn(),
 }))
 
-import { SearchDocs } from '../../../wailsjs/go/main/App'
+import { SearchDocsV2 } from '../../../wailsjs/go/main/App'
 import { useSearch } from '../useSearch'
 
 beforeEach(() => {
-  vi.mocked(SearchDocs).mockReset()
+  vi.mocked(SearchDocsV2).mockReset()
 })
 
 describe('useSearch', () => {
   describe('searchDocs', () => {
     it('returns parsed result on successful search', async () => {
       const docs = [{ path: '/notes.md', title: 'Notes', matches: ['hello'] }]
-      vi.mocked(SearchDocs).mockResolvedValue(JSON.stringify({ results: docs }))
+      vi.mocked(SearchDocsV2).mockResolvedValue(JSON.stringify({ results: docs }))
 
       const { searchDocs, searchLoading, searchError } = useSearch()
       const result = await searchDocs('hello')
@@ -23,12 +23,12 @@ describe('useSearch', () => {
       expect(result).toEqual({ results: docs })
       expect(searchError.value).toBe('')
       expect(searchLoading.value).toBe(false)
-      expect(SearchDocs).toHaveBeenCalledWith('hello')
+      expect(SearchDocsV2).toHaveBeenCalledWith('hello', 'hybrid')
     })
 
     it('sets loading during the call and clears after', async () => {
       let resolveSearch!: (value: string) => void
-      vi.mocked(SearchDocs).mockReturnValue(new Promise<string>((resolve) => { resolveSearch = resolve }))
+      vi.mocked(SearchDocsV2).mockReturnValue(new Promise<string>((resolve) => { resolveSearch = resolve }))
 
       const { searchDocs, searchLoading } = useSearch()
       const promise = searchDocs('test')
@@ -42,7 +42,7 @@ describe('useSearch', () => {
     })
 
     it('returns null and sets error when response contains error', async () => {
-      vi.mocked(SearchDocs).mockResolvedValue(JSON.stringify({ error: 'Index not found' }))
+      vi.mocked(SearchDocsV2).mockResolvedValue(JSON.stringify({ error: 'Index not found' }))
 
       const { searchDocs, searchError } = useSearch()
       const result = await searchDocs('query')
@@ -51,8 +51,8 @@ describe('useSearch', () => {
       expect(searchError.value).toBe('Index not found')
     })
 
-    it('returns null and sets error when SearchDocs throws', async () => {
-      vi.mocked(SearchDocs).mockRejectedValue(new Error('Network failure'))
+    it('returns null and sets error when SearchDocsV2 throws', async () => {
+      vi.mocked(SearchDocsV2).mockRejectedValue(new Error('Network failure'))
 
       const { searchDocs, searchError } = useSearch()
       const result = await searchDocs('query')
@@ -62,7 +62,7 @@ describe('useSearch', () => {
     })
 
     it('returns null and sets error for non-Error rejection', async () => {
-      vi.mocked(SearchDocs).mockRejectedValue('raw failure')
+      vi.mocked(SearchDocsV2).mockRejectedValue('raw failure')
 
       const { searchDocs, searchError } = useSearch()
       const result = await searchDocs('query')
@@ -72,7 +72,7 @@ describe('useSearch', () => {
     })
 
     it('clears previous error on new successful call', async () => {
-      vi.mocked(SearchDocs)
+      vi.mocked(SearchDocsV2)
         .mockRejectedValueOnce(new Error('fail'))
         .mockResolvedValueOnce(JSON.stringify({ results: [] }))
 
@@ -84,14 +84,14 @@ describe('useSearch', () => {
       expect(searchError.value).toBe('')
     })
 
-    it('handles empty tag', async () => {
-      vi.mocked(SearchDocs).mockResolvedValue(JSON.stringify({ results: [] }))
+    it('handles empty query', async () => {
+      vi.mocked(SearchDocsV2).mockResolvedValue(JSON.stringify({ results: [] }))
 
       const { searchDocs } = useSearch()
       const result = await searchDocs('')
 
       expect(result).toEqual({ results: [] })
-      expect(SearchDocs).toHaveBeenCalledWith('')
+      expect(SearchDocsV2).toHaveBeenCalledWith('', 'hybrid')
     })
   })
 })
