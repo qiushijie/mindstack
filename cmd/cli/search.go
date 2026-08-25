@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
+	"mindstack/internal/chat"
 	"mindstack/internal/meta"
 	"mindstack/internal/retrieval"
 
@@ -13,6 +13,7 @@ import (
 var (
 	searchFulltext bool
 	searchMode     string
+	searchLimit    int
 )
 
 var searchCmd = &cobra.Command{
@@ -50,23 +51,13 @@ Hybrid search (recommended for AI codegen tools):
 		mode := resolveSearchMode()
 		query := args[0]
 
-		vocab := buildTagVocab(root)
-		opts := retrieval.Options{
-			Mode:    mode,
-			Subdir:  "",
-			TagMode: retrieval.TagModeOR,
+		metas, err := meta.ScanAll(root, "")
+		if err != nil {
+			writeError(1, "SEARCH_FAILED", err.Error())
+			return
 		}
-
-		var q retrieval.Query
-		switch mode {
-		case retrieval.ModeTag:
-			opts.TagMode = retrieval.TagModeAND
-			q = retrieval.Query{Raw: query, Tags: retrieval.NormalizeTagQuery(query)}
-		case retrieval.ModeFulltext:
-			q = retrieval.Query{Raw: query, Terms: retrieval.NormalizeFulltextQuery(query)}
-		case retrieval.ModeHybrid:
-			q = retrieval.BuildQuery(query, vocab)
-		}
+		q, opts := retrieval.BuildQueryForMode(query, mode, retrieval.CollectTagVocab(metas))
+		opts.Limit = searchLimit
 
 		rs, err := retrieval.Search(root, q, opts)
 		if err != nil {
@@ -74,7 +65,7 @@ Hybrid search (recommended for AI codegen tools):
 			return
 		}
 
-		saveToHistory(root, query, rs)
+		saveToHistory(root, chat.SessionKindSearch(string(mode)), query, rs)
 		writeJSON(rs)
 	},
 }
@@ -101,23 +92,6 @@ func resolveSearchMode() retrieval.Mode {
 func init() {
 	searchCmd.Flags().BoolVar(&searchFulltext, "fulltext", false, "search by full text instead of tag (deprecated, use --mode fulltext)")
 	searchCmd.Flags().StringVar(&searchMode, "mode", "", "search mode: tag, fulltext, hybrid")
+	searchCmd.Flags().IntVar(&searchLimit, "limit", 0, "max results to return (0 = unlimited)")
 	searchCmd.MarkFlagsMutuallyExclusive("fulltext", "mode")
-}
-
-// buildTagVocab loads all tags from the knowledge base metadata.
-func buildTagVocab(kbRoot string) map[string]struct{} {
-	metas, err := meta.ScanAll(kbRoot, "")
-	if err != nil {
-		return nil
-	}
-	vocab := make(map[string]struct{})
-	for _, m := range metas {
-		for _, t := range m.Tags {
-			t = strings.ToLower(strings.TrimSpace(t))
-			if t != "" {
-				vocab[t] = struct{}{}
-			}
-		}
-	}
-	return vocab
 }

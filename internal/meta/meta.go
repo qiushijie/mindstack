@@ -10,7 +10,7 @@ import (
 	"mindstack/internal/workspace"
 )
 
-const maxMetaSize = 2 * 1024 * 1024 // 2MB
+const maxMetaSize = 16 * 1024 * 1024 // 16MB
 
 // validateMetaPath ensures path is a safe document path relative to kbRoot.
 // It rejects empty paths, absolute paths, and any path that escapes kbRoot.
@@ -67,15 +67,19 @@ func metaFilePath(kbRoot string) string {
 
 func loadAll(kbRoot string) (metaStore, error) {
 	path := metaFilePath(kbRoot)
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return make(metaStore), nil
 		}
-		return nil, fmt.Errorf("read meta file: %w", err)
+		return nil, fmt.Errorf("stat meta file: %w", err)
 	}
-	if len(data) > maxMetaSize {
-		return nil, fmt.Errorf("meta file too large")
+	if info.Size() > maxMetaSize {
+		return nil, fmt.Errorf("meta file %s too large: %d bytes exceeds %d byte limit", path, info.Size(), maxMetaSize)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read meta file: %w", err)
 	}
 	var store metaStore
 	if err := json.Unmarshal(data, &store); err != nil {

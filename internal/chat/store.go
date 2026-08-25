@@ -7,6 +7,22 @@ import (
 	"gorm.io/gorm"
 )
 
+// Session kinds recorded in ChatSession.Kind. Query history sessions are
+// namespaced by source so identical queries from different sources never
+// merge into one another.
+const (
+	// SessionKindChat is a regular interactive chat session.
+	SessionKindChat = "chat"
+	// SessionKindAck is a session recorded by the ack command.
+	SessionKindAck = "ack"
+)
+
+// SessionKindSearch returns the session kind for a search query with the
+// given retrieval mode (tag, fulltext, or hybrid).
+func SessionKindSearch(mode string) string {
+	return "search:" + mode
+}
+
 // ChatSession represents a conversation session tied to a workspace.
 type ChatSession struct {
 	ID            uint          `gorm:"primaryKey" json:"id"`
@@ -14,6 +30,7 @@ type ChatSession struct {
 	UpdatedAt     time.Time     `json:"updatedAt"`
 	WorkspacePath string        `gorm:"index;not null" json:"workspacePath"`
 	Title         string        `json:"title"`
+	Kind          string        `gorm:"index" json:"kind"`
 	Messages      []ChatMessage `gorm:"foreignKey:SessionID;constraint:OnDelete:CASCADE" json:"messages"`
 }
 
@@ -39,10 +56,17 @@ func (s *Store) AutoMigrate() error {
 	return s.db.AutoMigrate(&ChatSession{}, &ChatMessage{})
 }
 
+// CreateSession creates a regular interactive chat session (kind "chat").
 func (s *Store) CreateSession(workspacePath, title string) (*ChatSession, error) {
+	return s.CreateSessionWithKind(workspacePath, title, SessionKindChat)
+}
+
+// CreateSessionWithKind creates a session of the given kind.
+func (s *Store) CreateSessionWithKind(workspacePath, title, kind string) (*ChatSession, error) {
 	session := &ChatSession{
 		WorkspacePath: workspacePath,
 		Title:         title,
+		Kind:          kind,
 	}
 	if err := s.db.Create(session).Error; err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
@@ -99,6 +123,31 @@ func (s *Store) AddMessage(sessionID uint, role, content string) (*ChatMessage, 
 	// Update session updated_at
 	_ = s.UpdateSessionTime(sessionID)
 	return msg, nil
+}
+
+// ReplaceLastAssistantMessage updates the content of the most recent assistant
+// message in the given session. If the session has no assistant message yet,
+// a new one is appended.
+func (s *Store) ReplaceLastAssistantMessage(sessionID uint, content string) error {
+	// Use Find instead of First so a missing row does not trigger gorm's
+	// "record not found" log. The root cause is fixed in internal/db, which
+	// configures gorm's logger with IgnoreRecordNotFoundError and stderr
+	// output; Find is kept here so stores built with a default gorm config
+	// (e.g. in tests) stay quiet as well.
+	var matches []ChatMessage
+	if err := s.db.Where("session_id = ? AND role = ?", sessionID, "assistant").
+		Order("created_at DESC, id DESC").Limit(1).Find(&matches).Error; err != nil {
+		return fmt.Errorf("find last assistant message: %w", err)
+	}
+	if len(matches) == 0 {
+		_, err := s.AddMessage(sessionID, "assistant", content)
+		return err
+	}
+	if err := s.db.Model(&matches[0]).Update("content", content).Error; err != nil {
+		return fmt.Errorf("update assistant message: %w", err)
+	}
+	_ = s.UpdateSessionTime(sessionID)
+	return nil
 }
 
 func (s *Store) GetMessages(sessionID uint) ([]ChatMessage, error) {

@@ -1084,18 +1084,11 @@ func (a *App) SearchDocsV2(query string, mode string) string {
 		m = retrieval.ModeTag
 	}
 
-	vocab := buildDesktopTagVocab(root)
-	opts := retrieval.Options{Mode: m, TagMode: retrieval.TagModeOR}
-	var q retrieval.Query
-	switch m {
-	case retrieval.ModeTag:
-		opts.TagMode = retrieval.TagModeAND
-		q = retrieval.Query{Raw: query, Tags: retrieval.NormalizeTagQuery(query)}
-	case retrieval.ModeFulltext:
-		q = retrieval.Query{Raw: query, Terms: retrieval.NormalizeFulltextQuery(query)}
-	case retrieval.ModeHybrid:
-		q = retrieval.BuildQuery(query, vocab)
+	var vocab map[string]struct{}
+	if metas, err := meta.ScanAll(root, ""); err == nil {
+		vocab = retrieval.CollectTagVocab(metas)
 	}
+	q, opts := retrieval.BuildQueryForMode(query, m, vocab)
 
 	rs, err := retrieval.Search(root, q, opts)
 	if err != nil {
@@ -1103,24 +1096,8 @@ func (a *App) SearchDocsV2(query string, mode string) string {
 		return string(out)
 	}
 	out, _ := json.Marshal(rs)
+	a.recordQueryHistory(root, chat.SessionKindSearch(string(m)), query, string(out))
 	return string(out)
-}
-
-func buildDesktopTagVocab(kbRoot string) map[string]struct{} {
-	metas, err := meta.ScanAll(kbRoot, "")
-	if err != nil {
-		return nil
-	}
-	vocab := make(map[string]struct{})
-	for _, m := range metas {
-		for _, t := range m.Tags {
-			t = strings.ToLower(strings.TrimSpace(t))
-			if t != "" {
-				vocab[t] = struct{}{}
-			}
-		}
-	}
-	return vocab
 }
 
 func (a *App) Ack(query string) string {
@@ -1139,7 +1116,17 @@ func (a *App) Ack(query string) string {
 		return string(out)
 	}
 	out, _ := json.Marshal(result)
+	a.recordQueryHistory(root, chat.SessionKindAck, query, string(out))
 	return string(out)
+}
+
+// recordQueryHistory persists a search/ack interaction to chat history under
+// the given session kind. Errors are silently ignored to not affect the main flow.
+func (a *App) recordQueryHistory(kbRoot, kind, query, resultJSON string) {
+	if a.chatService == nil {
+		return
+	}
+	_ = chat.RecordQuerySession(a.chatService.Store(), kbRoot, kind, query, resultJSON)
 }
 
 func (a *App) GetDocumentMetas() string {

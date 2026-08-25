@@ -9,7 +9,7 @@ import (
 	"mindstack/internal/workspace"
 )
 
-const maxRelationSize = 4 * 1024 * 1024 // 4MB
+const maxRelationSize = 32 * 1024 * 1024 // 32MB
 
 // Relation represents a directed relationship between two documents.
 type Relation struct {
@@ -31,15 +31,19 @@ func filePath(kbRoot string) string {
 // Load reads the relation store from disk.
 func Load(kbRoot string) (Store, error) {
 	path := filePath(kbRoot)
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return make(Store), nil
 		}
-		return nil, fmt.Errorf("read relations: %w", err)
+		return nil, fmt.Errorf("stat relations: %w", err)
 	}
-	if len(data) > maxRelationSize {
-		return nil, fmt.Errorf("relations file too large")
+	if info.Size() > maxRelationSize {
+		return nil, fmt.Errorf("relations file %s too large: %d bytes exceeds %d byte limit", path, info.Size(), maxRelationSize)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read relations: %w", err)
 	}
 	var store Store
 	if err := json.Unmarshal(data, &store); err != nil {

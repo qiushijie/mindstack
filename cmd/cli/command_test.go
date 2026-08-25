@@ -13,6 +13,7 @@ import (
 	"mindstack/internal/chat"
 	"mindstack/internal/config"
 	"mindstack/internal/db"
+	"mindstack/internal/meta"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -33,6 +34,10 @@ func resetFlags() {
 	linkName = ""
 	searchFulltext = false
 	searchMode = ""
+	consolidateApply = false
+	consolidateLLM = false
+	consolidateYes = false
+	consolidatePlan = ""
 	resetCmdFlags(rootCmd)
 }
 
@@ -400,6 +405,264 @@ func TestCmdTagsWithData(t *testing.T) {
 	}
 }
 
+// --- tags consolidate command ---
+
+// setupConsolidateKB creates a KB whose tags contain normalization and plural
+// variants of "automation".
+func setupConsolidateKB(t *testing.T) string {
+	t.Helper()
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "a.md", "# A")
+	createTestFile(t, dir, "b.md", "# B")
+	writeTestMeta(t, dir, map[string]interface{}{
+		"a.md": map[string]interface{}{"title": "A", "tags": []string{"Automation", "rest-api"}},
+		"b.md": map[string]interface{}{"title": "B", "tags": []string{"automation", "automations"}},
+	})
+	return dir
+}
+
+func TestCmdTagsConsolidateDryRun(t *testing.T) {
+	dir := setupConsolidateKB(t)
+
+	stdout, _, code := runCmd(t, "tags", "consolidate")
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["dryRun"] != true {
+		t.Errorf("dryRun = %v, want true", result["dryRun"])
+	}
+	if result["before"].(float64) != 4 {
+		t.Errorf("before = %v, want 4", result["before"])
+	}
+	if result["after"].(float64) != 2 {
+		t.Errorf("after = %v, want 2", result["after"])
+	}
+	if result["affectedDocs"].(float64) != 2 {
+		t.Errorf("affectedDocs = %v, want 2", result["affectedDocs"])
+	}
+	mappings, ok := result["mappings"].([]interface{})
+	if !ok || len(mappings) != 2 {
+		t.Fatalf("expected 2 mappings, got %v", result["mappings"])
+	}
+	for _, raw := range mappings {
+		m := raw.(map[string]interface{})
+		if m["to"] != "automation" {
+			t.Errorf("mapping to = %v, want automation", m["to"])
+		}
+	}
+
+	// Dry-run must not modify meta.json on disk.
+	m, err := meta.LoadMeta(dir, "a.md")
+	if err != nil {
+		t.Fatalf("load meta: %v", err)
+	}
+	if len(m.Tags) != 2 || m.Tags[0] != "Automation" {
+		t.Errorf("dry-run modified tags: %v", m.Tags)
+	}
+}
+
+func TestCmdTagsConsolidateApply(t *testing.T) {
+	dir := setupConsolidateKB(t)
+
+	stdout, _, code := runCmd(t, "tags", "consolidate", "--apply", "--yes")
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["applied"] != true {
+		t.Errorf("applied = %v, want true", result["applied"])
+	}
+	if result["docsUpdated"].(float64) != 2 {
+		t.Errorf("docsUpdated = %v, want 2", result["docsUpdated"])
+	}
+
+	m, err := meta.LoadMeta(dir, "a.md")
+	if err != nil {
+		t.Fatalf("load meta a.md: %v", err)
+	}
+	if len(m.Tags) != 2 || m.Tags[0] != "automation" || m.Tags[1] != "rest-api" {
+		t.Errorf("a.md tags = %v, want [automation rest-api]", m.Tags)
+	}
+	mb, err := meta.LoadMeta(dir, "b.md")
+	if err != nil {
+		t.Fatalf("load meta b.md: %v", err)
+	}
+	if len(mb.Tags) != 1 || mb.Tags[0] != "automation" {
+		t.Errorf("b.md tags = %v, want [automation]", mb.Tags)
+	}
+}
+
+func TestCmdTagsConsolidateNotInitialized(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(oldDir) })
+
+	_, stderr, code := runCmd(t, "tags", "consolidate")
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_INITIALIZED")) {
+		t.Errorf("expected NOT_INITIALIZED, got: %s", stderr)
+	}
+}
+
+func TestCmdTagsConsolidateLLMUnavailable(t *testing.T) {
+	setupConsolidateKB(t)
+	t.Setenv("MINDSTACK_CONFIG_DIR", t.TempDir())
+
+	_, stderr, code := runCmd(t, "tags", "consolidate", "--llm")
+	if code != 3 {
+		t.Fatalf("expected exit code 3, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("LLM_UNAVAILABLE")) {
+		t.Errorf("expected LLM_UNAVAILABLE, got: %s", stderr)
+	}
+}
+
+// --- tags consolidate --plan ---
+
+// writeDryRunPlan runs a dry-run consolidation and saves the plan JSON to a
+// file, mimicking a user reviewing the dry-run output before applying it.
+func writeDryRunPlan(t *testing.T) (dir, planPath string) {
+	t.Helper()
+	dir = setupConsolidateKB(t)
+
+	stdout, _, code := runCmd(t, "tags", "consolidate")
+	if code != 0 {
+		t.Fatalf("dry-run exit code %d", code)
+	}
+	planPath = filepath.Join(t.TempDir(), "plan.json")
+	if err := os.WriteFile(planPath, []byte(stdout), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return dir, planPath
+}
+
+func TestCmdTagsConsolidatePlanRoundTrip(t *testing.T) {
+	dir, planPath := writeDryRunPlan(t)
+
+	stdout, _, code := runCmd(t, "tags", "consolidate", "--apply", "--plan", planPath)
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["applied"] != true {
+		t.Errorf("applied = %v, want true", result["applied"])
+	}
+	if result["docsUpdated"].(float64) != 2 {
+		t.Errorf("docsUpdated = %v, want 2", result["docsUpdated"])
+	}
+
+	m, err := meta.LoadMeta(dir, "a.md")
+	if err != nil {
+		t.Fatalf("load meta a.md: %v", err)
+	}
+	if len(m.Tags) != 2 || m.Tags[0] != "automation" || m.Tags[1] != "rest-api" {
+		t.Errorf("a.md tags = %v, want [automation rest-api]", m.Tags)
+	}
+}
+
+func TestCmdTagsConsolidatePlanRequiresApply(t *testing.T) {
+	_, planPath := writeDryRunPlan(t)
+
+	_, stderr, code := runCmd(t, "tags", "consolidate", "--plan", planPath)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("INVALID_FLAGS")) {
+		t.Errorf("expected INVALID_FLAGS, got: %s", stderr)
+	}
+}
+
+func TestCmdTagsConsolidatePlanRejectsLLM(t *testing.T) {
+	_, planPath := writeDryRunPlan(t)
+
+	_, stderr, code := runCmd(t, "tags", "consolidate", "--apply", "--llm", "--plan", planPath)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("INVALID_FLAGS")) {
+		t.Errorf("expected INVALID_FLAGS, got: %s", stderr)
+	}
+}
+
+func TestCmdTagsConsolidatePlanReadFailed(t *testing.T) {
+	setupConsolidateKB(t)
+
+	_, stderr, code := runCmd(t, "tags", "consolidate", "--apply", "--plan", filepath.Join(t.TempDir(), "missing.json"))
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("PLAN_READ_FAILED")) {
+		t.Errorf("expected PLAN_READ_FAILED, got: %s", stderr)
+	}
+}
+
+func TestCmdTagsConsolidatePlanParseFailed(t *testing.T) {
+	setupConsolidateKB(t)
+	planPath := filepath.Join(t.TempDir(), "plan.json")
+	if err := os.WriteFile(planPath, []byte("not json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, code := runCmd(t, "tags", "consolidate", "--apply", "--plan", planPath)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("PLAN_PARSE_FAILED")) {
+		t.Errorf("expected PLAN_PARSE_FAILED, got: %s", stderr)
+	}
+}
+
+func TestCmdTagsConsolidatePlanStaleBeforeMismatch(t *testing.T) {
+	dir, planPath := writeDryRunPlan(t)
+
+	// The vocabulary grows after the plan was generated.
+	createTestFile(t, dir, "c.md", "# C")
+	writeTestMeta(t, dir, map[string]interface{}{
+		"a.md": map[string]interface{}{"title": "A", "tags": []string{"Automation", "rest-api"}},
+		"b.md": map[string]interface{}{"title": "B", "tags": []string{"automation", "automations"}},
+		"c.md": map[string]interface{}{"title": "C", "tags": []string{"brand-new"}},
+	})
+
+	_, stderr, code := runCmd(t, "tags", "consolidate", "--apply", "--plan", planPath)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("PLAN_STALE")) {
+		t.Errorf("expected PLAN_STALE, got: %s", stderr)
+	}
+
+	// The stale plan must not have been applied.
+	m, err := meta.LoadMeta(dir, "a.md")
+	if err != nil {
+		t.Fatalf("load meta a.md: %v", err)
+	}
+	if len(m.Tags) != 2 || m.Tags[0] != "Automation" {
+		t.Errorf("stale plan modified tags: %v", m.Tags)
+	}
+}
+
+func TestCmdTagsConsolidatePlanStaleFromMissing(t *testing.T) {
+	dir, planPath := writeDryRunPlan(t)
+
+	// A mapped tag disappears from the vocabulary (distinct count stays 4).
+	writeTestMeta(t, dir, map[string]interface{}{
+		"a.md": map[string]interface{}{"title": "A", "tags": []string{"Automation", "rest-api"}},
+		"b.md": map[string]interface{}{"title": "B", "tags": []string{"automation", "renamed-tag"}},
+	})
+
+	_, stderr, code := runCmd(t, "tags", "consolidate", "--apply", "--plan", planPath)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("PLAN_STALE")) {
+		t.Errorf("expected PLAN_STALE, got: %s", stderr)
+	}
+}
+
 // --- search command ---
 
 func TestCmdSearchFulltext(t *testing.T) {
@@ -421,6 +684,31 @@ func TestCmdSearchFulltext(t *testing.T) {
 	}
 	if result["total"].(float64) != 1 {
 		t.Errorf("total = %v, want 1", result["total"])
+	}
+}
+
+func TestCmdSearchLimit(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "doc1.md", "# Doc1")
+	createTestFile(t, dir, "doc2.md", "# Doc2")
+	writeTestMeta(t, dir, map[string]interface{}{
+		"doc1.md": map[string]interface{}{"title": "Doc1", "tags": []string{"api"}},
+		"doc2.md": map[string]interface{}{"title": "Doc2", "tags": []string{"api"}},
+	})
+
+	stdout, _, code := runCmd(t, "search", "--limit", "1", "api")
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	result := cmdParseJSON(stdout)
+	if result["total"].(float64) != 2 {
+		t.Errorf("total = %v, want 2 (matches before limit)", result["total"])
+	}
+	if result["returned"].(float64) != 1 {
+		t.Errorf("returned = %v, want 1", result["returned"])
+	}
+	if len(result["results"].([]interface{})) != 1 {
+		t.Errorf("results length = %v, want 1", len(result["results"].([]interface{})))
 	}
 }
 

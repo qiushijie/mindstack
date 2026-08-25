@@ -4,10 +4,13 @@
 //
 // Pipeline:
 //  1. Scan all document metadata.
-//  2. Ask the LLM to map the query to existing tags AND extract search keywords.
+//  2. Ask the LLM once to route the query: map it to existing tags AND extract
+//     search keywords in a single call. On failure, fall back to empty tags and
+//     keywords tokenized from the raw query.
 //  3. Recall candidate documents locally by tag union + title/summary/full-text
 //     hits using LLM-extracted keywords, ranked and capped to topRecall.
 //  4. Ask the LLM once to rerank the candidates and return relevance scores.
+//     On failure, fall back to the local recall order (score descending).
 //  5. For each top-ranked document, extract relevant snippets via LLM with local
 //     keyword-matching fallback.
 //  6. Merge all extracted snippets, sort by score, and keep the top results.
@@ -25,6 +28,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"mindstack/internal/meta"
 	"mindstack/internal/retrieval"
@@ -105,8 +109,8 @@ type LLMClient interface {
 	Chat(ctx context.Context, messages []*schema.Message) (string, error)
 }
 
-// Ack runs the full /ack pipeline: tag extraction -> recall -> rerank ->
-// local snippet extraction -> summary. kbRoot must be an absolute path to a
+// Ack runs the full /ack pipeline: route -> recall -> rerank ->
+// snippet extraction -> summary. kbRoot must be an absolute path to a
 // synced knowledge base root.
 func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Result, error) {
 	query = strings.TrimSpace(query)
@@ -122,35 +126,8 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 	allTags, counts := selectTagCandidates(metas, query)
 	tagList := formatTagsWithCounts(allTags, counts)
 
-	// Concurrent tag + keyword extraction via errgroup.
-	g, gctx := errgroup.WithContext(ctx)
-
-	var pickedTags []string
-	var keywords []string
-
-	g.Go(func() error {
-		tags, err := extractTagsFromQuery(gctx, llmSvc, query, tagList, allTags, lang)
-		if err != nil {
-			return nil // non-fatal: tags stay nil
-		}
-		pickedTags = tags
-		return nil
-	})
-
-	g.Go(func() error {
-		kws, err := extractKeywordsFromQuery(gctx, llmSvc, query, lang)
-		if err != nil || len(kws) == 0 {
-			return nil // non-fatal: keywords stay nil, will fallback below
-		}
-		keywords = kws
-		return nil
-	})
-
-	_ = g.Wait()
-
-	if keywords == nil {
-		keywords = []string{strings.ToLower(query)}
-	}
+	// Single LLM call to route the query: tag mapping + keyword extraction.
+	pickedTags, keywords := routeQuery(ctx, llmSvc, query, tagList, allTags, lang)
 
 	cache := newContentCache()
 	candidates := recallCandidates(metas, cache, kbRoot, pickedTags, keywords)
@@ -176,8 +153,12 @@ func Ack(ctx context.Context, llmSvc LLMClient, kbRoot, query, lang string) (*Re
 		previews = append(previews, preview)
 	}
 
-	// Single LLM call to rerank all candidates.
+	// Single LLM call to rerank all candidates. On failure (network error or
+	// unparseable response), fall back to the local recall order.
 	ranked := rerankCandidates(ctx, llmSvc, query, previews, lang, topSnippets)
+	if len(ranked) == 0 {
+		ranked = fallbackRank(candidates, topSnippets)
+	}
 	if len(ranked) == 0 {
 		return &Result{Query: query, Tags: pickedTags, Keywords: keywords, Snippets: []Snippet{}}, nil
 	}
@@ -458,7 +439,7 @@ type candidate struct {
 	summaryHits  int
 	headingsHits int
 	fulltextHits int
-	score        int
+	score        float64
 	matches      []retrieval.LineMatch
 }
 
@@ -532,6 +513,37 @@ func rerankCandidates(ctx context.Context, svc LLMClient, query string, previews
 	var items []rerankItem
 	if err := json.Unmarshal([]byte(cleaned), &items); err != nil {
 		return nil
+	}
+	return items
+}
+
+// fallbackRank builds rerank items from the local recall order (candidate.score
+// descending) when the LLM rerank step fails, keeping the pipeline alive.
+// Local recall scores are unbounded, so they are normalized to the 0-1 range
+// (score/maxScore) to stay comparable with the 0-1 scores the LLM rerank
+// produces; otherwise fallback documents would unconditionally outrank any
+// LLM-scored snippet in the final merge. A zero maxScore yields all-zero
+// scores.
+func fallbackRank(candidates []candidate, topK int) []rerankItem {
+	if len(candidates) == 0 {
+		return nil
+	}
+	sorted := make([]candidate, len(candidates))
+	copy(sorted, candidates)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].score > sorted[j].score
+	})
+	if len(sorted) > topK {
+		sorted = sorted[:topK]
+	}
+	maxScore := sorted[0].score
+	items := make([]rerankItem, 0, len(sorted))
+	for _, c := range sorted {
+		score := 0.0
+		if maxScore > 0 {
+			score = c.score / maxScore
+		}
+		items = append(items, rerankItem{Path: c.relPath, Score: score})
 	}
 	return items
 }
@@ -628,6 +640,21 @@ func writeMatchedExcerpts(sb *strings.Builder, lines []string, matches []retriev
 	}
 }
 
+// snippetDecay returns the score decay factor for the idx-th snippet (0-based)
+// of a document in document position order, so that earlier matches of the same
+// document outrank later ones while remaining comparable to other documents'
+// scores: 1st -> 1.0, 2nd -> 0.85, 3rd and beyond -> 0.7.
+func snippetDecay(idx int) float64 {
+	switch {
+	case idx <= 0:
+		return 1.0
+	case idx == 1:
+		return 0.85
+	default:
+		return 0.7
+	}
+}
+
 // extractSnippetsLocal extracts relevant snippets from a document by local
 // keyword matching without any LLM calls. It uses the original line numbers
 // preserved by the filtered content. The returned location uses the absolute
@@ -675,7 +702,9 @@ func extractSnippetsLocal(keywords []string, kbRoot, relPath string, fc *retriev
 
 	// Expand context and build snippets. Because the filtered content may skip
 	// lines, we cannot join them on a contiguous slice. Instead, collect all
-	// filtered lines that fall within the expanded range.
+	// filtered lines that fall within the expanded range. Each snippet's final
+	// score is the recall score of its document scaled by a positional decay, so
+	// snippets from the same document and across documents sort consistently.
 	var snippets []Snippet
 	for _, r := range ranges {
 		s := max(1, r.start-contextLines)
@@ -701,7 +730,7 @@ func extractSnippetsLocal(keywords []string, kbRoot, relPath string, fc *retriev
 		snippets = append(snippets, Snippet{
 			Location: snippetLocation(absPath, actualStart, actualEnd),
 			Content:  strings.Join(lines, "\n"),
-			Score:    docScore,
+			Score:    docScore * snippetDecay(len(snippets)),
 		})
 	}
 
@@ -787,59 +816,135 @@ func extractSnippetsLLM(ctx context.Context, svc LLMClient, query, kbRoot, relPa
 	return snippets
 }
 
-func extractTagsFromQuery(ctx context.Context, svc LLMClient, query string, tagList string, allTags []string, lang string) ([]string, error) {
-	if len(allTags) == 0 {
-		return nil, nil
+// routeQuery merges tag mapping and keyword extraction into a single LLM call.
+// The LLM returns a JSON object {"tags":[],"keywords":[]}. On any failure (LLM
+// error or unparseable response), it falls back to empty tags and keywords
+// tokenized from the raw query, so the recall step always has something to
+// search with. Returned keywords are lowercased because the retrieval engine
+// matches terms against lowercased text; tags keep their original casing
+// because they must match the knowledge-base tag list verbatim.
+func routeQuery(ctx context.Context, svc LLMClient, query, tagList string, allTags []string, lang string) (tags, keywords []string) {
+	fallbackKeywords := func() []string {
+		return tokenizeFallback(query)
 	}
-	prompt := fmt.Sprintf(loadPrompt("tag", lang), query, tagList)
+
+	prompt := fmt.Sprintf(loadPrompt("route", lang), query, tagList)
 
 	resp, err := svc.Chat(ctx, []*schema.Message{{Role: schema.User, Content: prompt}})
 	if err != nil {
-		return nil, err
+		return nil, fallbackKeywords()
 	}
 
-	cleaned := stripJSONFences(resp)
-	var picked []string
-	if err := json.Unmarshal([]byte(cleaned), &picked); err != nil {
-		return nil, fmt.Errorf("parse tag response: %w (raw: %s)", err, resp)
+	cleaned := extractJSONObject(stripJSONFences(resp))
+	var route struct {
+		Tags     []string `json:"tags"`
+		Keywords []string `json:"keywords"`
+	}
+	if err := json.Unmarshal([]byte(cleaned), &route); err != nil {
+		return nil, fallbackKeywords()
 	}
 
 	allowed := make(map[string]struct{}, len(allTags))
 	for _, t := range allTags {
 		allowed[t] = struct{}{}
 	}
-	out := make([]string, 0, len(picked))
-	for _, t := range picked {
+	seenTags := make(map[string]struct{}, len(route.Tags))
+	for _, t := range route.Tags {
 		t = strings.TrimSpace(t)
-		if _, ok := allowed[t]; ok {
-			out = append(out, t)
+		if _, ok := allowed[t]; !ok {
+			continue
 		}
+		if _, dup := seenTags[t]; dup {
+			continue
+		}
+		seenTags[t] = struct{}{}
+		tags = append(tags, t)
 	}
-	return out, nil
+	seenKeywords := make(map[string]struct{}, len(route.Keywords))
+	for _, k := range route.Keywords {
+		k = strings.ToLower(strings.TrimSpace(k))
+		if k == "" {
+			continue
+		}
+		if _, dup := seenKeywords[k]; dup {
+			continue
+		}
+		seenKeywords[k] = struct{}{}
+		keywords = append(keywords, k)
+	}
+	if len(keywords) == 0 {
+		keywords = fallbackKeywords()
+	}
+	return tags, keywords
 }
 
-func extractKeywordsFromQuery(ctx context.Context, svc LLMClient, query, lang string) ([]string, error) {
-	prompt := fmt.Sprintf(loadPrompt("keyword", lang), query)
-
-	resp, err := svc.Chat(ctx, []*schema.Message{{Role: schema.User, Content: prompt}})
-	if err != nil {
-		return nil, err
+// tokenizeFallback splits a raw query into search terms without an LLM.
+// Non-CJK words come from whitespace splitting with surrounding punctuation
+// dropped (only letters and digits are kept); maximal Han runs are broken into
+// overlapping bigrams (a single Han rune is kept as-is) so that an untokenized
+// Chinese sentence can still match its substrings. Terms are lowercased and
+// deduplicated, preserving first-seen order.
+func tokenizeFallback(query string) []string {
+	var terms []string
+	seen := make(map[string]struct{})
+	add := func(t string) {
+		if t == "" {
+			return
+		}
+		if _, ok := seen[t]; ok {
+			return
+		}
+		seen[t] = struct{}{}
+		terms = append(terms, t)
 	}
 
-	cleaned := stripJSONFences(resp)
-	var keywords []string
-	if err := json.Unmarshal([]byte(cleaned), &keywords); err != nil {
-		return nil, fmt.Errorf("parse keyword response: %w (raw: %s)", err, resp)
+	var han []rune
+	flushHan := func() {
+		if len(han) == 1 {
+			add(string(han))
+		} else {
+			for i := 0; i+2 <= len(han); i++ {
+				add(string(han[i : i+2]))
+			}
+		}
+		han = han[:0]
 	}
-
-	out := make([]string, 0, len(keywords))
-	for _, k := range keywords {
-		k = strings.TrimSpace(k)
-		if k != "" {
-			out = append(out, k)
+	var word []rune
+	flushWord := func() {
+		if len(word) > 0 {
+			add(string(word))
+			word = word[:0]
 		}
 	}
-	return out, nil
+
+	for _, r := range strings.ToLower(query) {
+		switch {
+		case unicode.Is(unicode.Han, r):
+			flushWord()
+			han = append(han, r)
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			flushHan()
+			word = append(word, r)
+		default:
+			flushWord()
+			flushHan()
+		}
+	}
+	flushWord()
+	flushHan()
+	return terms
+}
+
+// extractJSONObject returns the substring from the first '{' to the last '}',
+// tolerating explanatory prose that reasoning models emit around the JSON
+// payload. Returns s unchanged when no such pair exists.
+func extractJSONObject(s string) string {
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start < 0 || end < start {
+		return s
+	}
+	return s[start : end+1]
 }
 
 func summarizeSnippets(ctx context.Context, svc LLMClient, query string, snippets []Snippet, lang string) (string, error) {

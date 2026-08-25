@@ -2,22 +2,33 @@ package retrieval
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"mindstack/internal/meta"
 )
 
 const (
-	tagWeight     = 5
-	titleWeight   = 4
-	aliasWeight   = 4
-	summaryWeight = 3
-	headingWeight = 3
-	keywordWeight = 3
+	tagWeight     = 5.0
+	titleWeight   = 4.0
+	aliasWeight   = 4.0
+	summaryWeight = 3.0
+	headingWeight = 3.0
+	keywordWeight = 3.0
+	phraseWeight  = 8.0
 	contentCap    = 20
+	// phraseContentCap caps phrase occurrences counted in body content. It is
+	// stricter than contentCap because each occurrence is multiplied by
+	// phraseWeight (8.0 vs at most 1.0 per term occurrence), so far fewer
+	// repetitions are needed before a spammed phrase dominates the score.
+	phraseContentCap = 5
+	// shortDocLines is the reference document length; content hits in longer
+	// documents are downweighted so sheer length does not dominate ranking.
+	shortDocLines = 200.0
 )
 
 // Search runs a retrieval query against the knowledge base.
@@ -28,8 +39,7 @@ func Search(kbRoot string, query Query, opts Options) (*ResultSet, error) {
 		return nil, fmt.Errorf("scan meta: %w", err)
 	}
 
-	cache := newContentCache()
-	tagVocab := buildTagVocab(metas)
+	tagVocab := CollectTagVocab(metas)
 
 	// If the caller supplied an empty query but the raw string looks like a tag list,
 	// re-normalize it. This keeps the CLI tag mode simple.
@@ -37,30 +47,76 @@ func Search(kbRoot string, query Query, opts Options) (*ResultSet, error) {
 		query.Tags = NormalizeTagQuery(query.Raw)
 	}
 
+	cache := newContentCache()
+	results := scoreAll(kbRoot, metas, cache, query, opts)
+
+	// An empty mode behaves as ModeTag (see scoreDocument); normalize once so
+	// the fallback and suggestion branches below agree with that.
+	mode := opts.Mode
+	if mode == "" {
+		mode = ModeTag
+	}
+
+	effectiveMode := opts.Mode
+	if mode == ModeTag && len(results) == 0 && len(query.Tags) > 0 {
+		// Automatic fallback: exact tag matching found nothing; retry as
+		// hybrid so the same words can still hit title/summary/content.
+		fb := opts
+		fb.Mode = ModeHybrid
+		fb.TagMode = TagModeOR
+		results = scoreAll(kbRoot, metas, cache, query, fb)
+		effectiveMode = ModeHybrid
+	}
+
+	sortResults(results)
+
+	total := len(results)
+	if opts.Limit > 0 && len(results) > opts.Limit {
+		results = results[:opts.Limit]
+	}
+
+	rs := &ResultSet{
+		Query:    query.Raw,
+		Mode:     opts.Mode,
+		Results:  results,
+		Total:    total,
+		Returned: len(results),
+	}
+	if effectiveMode != "" && effectiveMode != opts.Mode {
+		rs.EffectiveMode = effectiveMode
+	}
+	if mode == ModeTag {
+		if missed := missingTags(query.Tags, tagVocab); len(missed) > 0 {
+			rs.Suggestions = SuggestTags(missed, tagVocab, 5)
+		}
+	}
+	return rs, nil
+}
+
+func scoreAll(kbRoot string, metas []*meta.DocumentMeta, cache *contentCache, query Query, opts Options) []Result {
 	var results []Result
 	for _, m := range metas {
-		r, ok := scoreDocument(kbRoot, m, cache, query, opts, tagVocab)
+		r, ok := scoreDocument(kbRoot, m, cache, query, opts)
 		if !ok {
 			continue
 		}
 		results = append(results, r)
 	}
-
-	sortResults(results)
-
-	if opts.Limit > 0 && len(results) > opts.Limit {
-		results = results[:opts.Limit]
-	}
-
-	return &ResultSet{
-		Query:   query.Raw,
-		Mode:    opts.Mode,
-		Results: results,
-		Total:   len(results),
-	}, nil
+	return results
 }
 
-func scoreDocument(kbRoot string, m *meta.DocumentMeta, cache *contentCache, query Query, opts Options, tagVocab map[string]struct{}) (Result, bool) {
+// missingTags returns the query tags that do not exist in the vocabulary.
+func missingTags(tags []string, vocab map[string]struct{}) []string {
+	var missed []string
+	for _, t := range tags {
+		if _, ok := vocab[t]; !ok {
+			missed = append(missed, t)
+		}
+	}
+	return missed
+}
+
+func scoreDocument(kbRoot string, m *meta.DocumentMeta, cache *contentCache, query Query, opts Options) (Result, bool) {
 	var bd MatchBreakdown
 	var matches []LineMatch
 
@@ -88,36 +144,84 @@ func scoreDocument(kbRoot string, m *meta.DocumentMeta, cache *contentCache, que
 		terms = query.Tags
 	}
 
+	var titleScore, summaryScore, headingScore, keywordScore, aliasScore float64
+	var contentScore, phraseScore float64
+
 	if includeText && len(terms) > 0 {
 		bd.TitleHits, matches = countAndCollect(terms, m.Title, SourceTitle, matches)
+		titleScore = weightedCount(terms, m.Title) * titleWeight
+
 		bd.SummaryHits, matches = countAndCollect(terms, m.Summary, SourceSummary, matches)
+		summaryScore = weightedCount(terms, m.Summary) * summaryWeight
 
 		for _, h := range m.Headings {
 			hits, m2 := countAndCollect(terms, h.Text, SourceHeading, nil)
 			bd.HeadingHits += hits
+			headingScore += weightedCount(terms, h.Text) * headingWeight
 			matches = append(matches, m2...)
 		}
 
-		// Keywords and aliases are added in stage 7; keep the breakdown fields
-		// ready but do not read them until DocumentMeta is extended.
 		bd.KeywordHits, matches = countSliceAndCollect(terms, m.Keywords, SourceKeyword, matches)
-		bd.AliasHits, matches = countSliceAndCollect(terms, m.Aliases, SourceAlias, matches)
+		keywordScore = weightedSliceCount(terms, m.Keywords) * keywordWeight
 
+		bd.AliasHits, matches = countSliceAndCollect(terms, m.Aliases, SourceAlias, matches)
+		aliasScore = weightedSliceCount(terms, m.Aliases) * aliasWeight
+	}
+
+	if includeText && (len(terms) > 0 || len(query.Phrases) > 0) {
 		content, err := cache.getRaw(filepath.Join(kbRoot, m.Path))
 		if err == nil {
-			hits, contentMatches := countContentAndCollect(terms, content)
-			bd.ContentHits = min(hits, contentCap)
-			matches = append(matches, contentMatches...)
+			lower := strings.ToLower(content)
+			if len(terms) > 0 {
+				hits, contentMatches, lineCount := countContentAndCollect(terms, content)
+				bd.ContentHits = min(hits, contentCap)
+				matches = append(matches, contentMatches...)
+				wc := 0.0
+				for _, term := range terms {
+					// Cap per-term occurrences before weighting, so a
+					// low-weight single-rune term repeated hundreds of
+					// times cannot reach the cap.
+					wc += termWeight(term) * float64(min(strings.Count(lower, term), contentCap))
+				}
+				contentScore = math.Min(wc, float64(contentCap)) * lengthFactor(lineCount)
+			}
+			for _, p := range query.Phrases {
+				if p == "" {
+					continue
+				}
+				// Whole-string CJK queries are also matched as a unit with a
+				// high weight, so exact-phrase documents outrank documents
+				// that merely contain the individual terms. Matching ignores
+				// whitespace on both sides ("复审第 7 轮" == "复审第7轮").
+				titleNospace := stripWhitespace(strings.ToLower(m.Title))
+				if c := strings.Count(titleNospace, p); c > 0 {
+					phraseScore += float64(c) * phraseWeight
+					matches = append(matches, LineMatch{Line: 0, Text: truncate(m.Title, 200), Term: p, Source: SourceTitle})
+				}
+				summaryNospace := stripWhitespace(strings.ToLower(m.Summary))
+				if c := strings.Count(summaryNospace, p); c > 0 {
+					phraseScore += float64(c) * phraseWeight
+					matches = append(matches, LineMatch{Line: 0, Text: truncate(m.Summary, 200), Term: p, Source: SourceSummary})
+				}
+				if c := min(strings.Count(stripWhitespace(lower), p), phraseContentCap); c > 0 {
+					phraseScore += float64(c) * phraseWeight
+					// Body hits have no single line to point at; record a
+					// placeholder so content phrase hits stay explainable
+					// like the title/summary phrase hits above.
+					matches = append(matches, LineMatch{Line: 0, Term: p, Source: SourceContent})
+				}
+			}
 		}
 	}
 
-	score := bd.TagHits*tagWeight +
-		bd.TitleHits*titleWeight +
-		bd.AliasHits*aliasWeight +
-		bd.SummaryHits*summaryWeight +
-		bd.HeadingHits*headingWeight +
-		bd.KeywordHits*keywordWeight +
-		bd.ContentHits
+	score := float64(bd.TagHits)*tagWeight +
+		titleScore +
+		aliasScore +
+		summaryScore +
+		headingScore +
+		keywordScore +
+		contentScore +
+		phraseScore
 
 	if score == 0 {
 		return Result{}, false
@@ -136,17 +240,41 @@ func scoreDocument(kbRoot string, m *meta.DocumentMeta, cache *contentCache, que
 	}, true
 }
 
-func buildTagVocab(metas []*meta.DocumentMeta) map[string]struct{} {
-	vocab := make(map[string]struct{})
-	for _, m := range metas {
-		for _, t := range m.Tags {
-			t = strings.ToLower(strings.TrimSpace(t))
-			if t != "" {
-				vocab[t] = struct{}{}
-			}
-		}
+// termWeight downweights single-rune terms, which match almost everywhere
+// (a lone digit or CJK character) and mostly produce noise.
+func termWeight(term string) float64 {
+	if utf8.RuneCountInString(term) <= 1 {
+		return 0.2
 	}
-	return vocab
+	return 1.0
+}
+
+// weightedCount sums per-term occurrence counts in text, each multiplied by
+// the term's weight.
+func weightedCount(terms []string, text string) float64 {
+	lower := strings.ToLower(text)
+	total := 0.0
+	for _, term := range terms {
+		total += termWeight(term) * float64(strings.Count(lower, term))
+	}
+	return total
+}
+
+// weightedSliceCount is weightedCount over a list of strings.
+func weightedSliceCount(terms []string, items []string) float64 {
+	total := 0.0
+	for _, item := range items {
+		total += weightedCount(terms, item)
+	}
+	return total
+}
+
+// lengthFactor downweights content hits in long documents.
+func lengthFactor(lines int) float64 {
+	if float64(lines) <= shortDocLines {
+		return 1.0
+	}
+	return shortDocLines / float64(lines)
 }
 
 func matchTags(docTags []string, searchTags []string, mode TagMode) (int, []LineMatch) {
@@ -203,7 +331,7 @@ func countSliceAndCollect(terms []string, items []string, source string, base []
 	return total, matches
 }
 
-func countContentAndCollect(terms []string, content string) (int, []LineMatch) {
+func countContentAndCollect(terms []string, content string) (int, []LineMatch, int) {
 	lines := splitLines(content)
 	total := 0
 	var matches []LineMatch
@@ -222,7 +350,7 @@ func countContentAndCollect(terms []string, content string) (int, []LineMatch) {
 			}
 		}
 	}
-	return total, matches
+	return total, matches, len(lines)
 }
 
 func appendLineMatches(base []LineMatch, text, term, source string, count int) []LineMatch {
@@ -239,10 +367,11 @@ func appendLineMatches(base []LineMatch, text, term, source string, count int) [
 }
 
 func truncate(s string, max int) string {
-	if len(s) <= max {
+	r := []rune(s)
+	if len(r) <= max {
 		return s
 	}
-	return s[:max] + "..."
+	return string(r[:max]) + "..."
 }
 
 func dedupeMatches(matches []LineMatch) []LineMatch {

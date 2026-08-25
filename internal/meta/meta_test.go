@@ -1,8 +1,10 @@
 package meta
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"mindstack/internal/workspace"
@@ -372,5 +374,32 @@ func TestSaveMeta_InvalidPath(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error for invalid path %q", p)
 		}
+	}
+}
+
+func TestLoadAll_MetaFileTooLarge(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	oversized := make([]byte, maxMetaSize+1)
+	for i := range oversized {
+		oversized[i] = 'x'
+	}
+	path := filepath.Join(kbRoot, workspace.KnowledgeBaseDir, "meta.json")
+	if err := os.WriteFile(path, oversized, 0644); err != nil {
+		t.Fatalf("write oversized meta file: %v", err)
+	}
+
+	_, err := LoadMeta(kbRoot, "docs/test.md")
+	if err == nil {
+		t.Fatal("expected error for oversized meta file")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("expected 'too large' error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Fatalf("expected path in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), fmt.Sprintf("%d bytes exceeds %d byte limit", maxMetaSize+1, maxMetaSize)) {
+		t.Fatalf("expected actual size and limit in error, got: %v", err)
 	}
 }

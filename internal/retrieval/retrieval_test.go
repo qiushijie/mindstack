@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"mindstack/internal/meta"
 	"mindstack/internal/workspace"
@@ -72,17 +73,21 @@ func TestSearch_TagOR(t *testing.T) {
 	}
 }
 
-func TestSearch_DefaultTagModeIsAND(t *testing.T) {
+func TestSearch_TagZeroResultFallsBackToHybrid(t *testing.T) {
 	kbRoot := setupTestKB(t)
 
-	// No document has both "rest" and "architecture". With the default (empty)
-	// TagMode, the query should behave like TagModeAND and return no results.
+	// No document has both "rest" and "architecture". The strict AND tag
+	// match finds nothing, so Search automatically falls back to hybrid mode
+	// and reports the effective mode.
 	rs, err := Search(kbRoot, Query{Raw: "rest,architecture", Tags: []string{"rest", "architecture"}}, Options{Mode: ModeTag})
 	if err != nil {
 		t.Fatalf("search error: %v", err)
 	}
-	if rs.Total != 0 {
-		t.Fatalf("expected 0 results with default AND semantics, got %d", rs.Total)
+	if rs.Total == 0 {
+		t.Fatalf("expected hybrid fallback results, got none")
+	}
+	if rs.EffectiveMode != ModeHybrid {
+		t.Fatalf("expected EffectiveMode %q, got %q", ModeHybrid, rs.EffectiveMode)
 	}
 }
 
@@ -185,8 +190,63 @@ func TestSearch_Limit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search error: %v", err)
 	}
-	if rs.Total != 1 {
-		t.Fatalf("expected 1 result due to limit, got %d", rs.Total)
+	if rs.Total != 2 {
+		t.Fatalf("expected Total=2 (matches before limit), got %d", rs.Total)
+	}
+	if rs.Returned != 1 || len(rs.Results) != 1 {
+		t.Fatalf("expected Returned=1 due to limit, got %d", rs.Returned)
+	}
+}
+
+func TestBuildQueryForMode(t *testing.T) {
+	vocab := map[string]struct{}{"api-spec": {}}
+
+	q, opts := BuildQueryForMode("rest,frontend", ModeTag, nil)
+	if opts.Mode != ModeTag || opts.TagMode != TagModeAND {
+		t.Fatalf("tag mode: unexpected opts %+v", opts)
+	}
+	if len(q.Tags) != 2 || len(q.Terms) != 0 {
+		t.Fatalf("tag mode: unexpected query %+v", q)
+	}
+
+	q, opts = BuildQueryForMode("retry policy", ModeFulltext, nil)
+	if opts.TagMode != TagModeOR || len(q.Terms) != 2 || len(q.Tags) != 0 {
+		t.Fatalf("fulltext mode: unexpected query %+v opts %+v", q, opts)
+	}
+
+	q, _ = BuildQueryForMode("retry api-spec", ModeHybrid, vocab)
+	if len(q.Tags) != 1 || q.Tags[0] != "api-spec" || len(q.Terms) != 2 {
+		t.Fatalf("hybrid mode: unexpected query %+v", q)
+	}
+}
+
+func TestCollectTagVocab(t *testing.T) {
+	metas := []*meta.DocumentMeta{
+		{Tags: []string{"Rest-API", " go "}},
+		{Tags: []string{"rest-api", ""}},
+	}
+	vocab := CollectTagVocab(metas)
+	if len(vocab) != 2 {
+		t.Fatalf("expected 2 vocab entries, got %v", vocab)
+	}
+	if _, ok := vocab["rest-api"]; !ok {
+		t.Fatalf("expected lowercased trimmed tag in vocab, got %v", vocab)
+	}
+}
+
+func TestTruncateMultibyte(t *testing.T) {
+	in := strings.Repeat("复审", 30) // 60 runes, 180 bytes
+	out := truncate(in, 50)
+	if !utf8.ValidString(out) {
+		t.Fatalf("truncate produced invalid UTF-8: %q", out)
+	}
+	if got := utf8.RuneCountInString(out); got != 53 { // 50 runes + "..."
+		t.Fatalf("expected 53 runes, got %d", got)
+	}
+
+	short := "短文本"
+	if truncate(short, 50) != short {
+		t.Fatalf("short string should pass through unchanged")
 	}
 }
 
@@ -269,5 +329,184 @@ func TestSearch_KeywordsAndAliases(t *testing.T) {
 	}
 	if rs.Results[0].Breakdown.AliasHits == 0 {
 		t.Fatalf("expected aliasHits > 0")
+	}
+}
+
+func TestSuggestTags_NormalizedEqualRanksFirst(t *testing.T) {
+	vocab := map[string]struct{}{
+		"rest-api":    {},
+		"rest-api-v2": {},
+		"playwright":  {},
+	}
+
+	// "rest api" normalizes to the same form as the vocabulary tag "rest-api"
+	// but differs in raw form; it is the strongest did-you-mean candidate and
+	// must rank before mere prefix matches like "rest-api-v2".
+	got := SuggestTags([]string{"rest api"}, vocab, 5)
+	if len(got) == 0 || got[0] != "rest-api" {
+		t.Fatalf("expected rest-api as top suggestion for %q, got %v", "rest api", got)
+	}
+
+	// Only a raw exact match is skipped entirely.
+	for _, s := range SuggestTags([]string{"rest-api"}, vocab, 5) {
+		if s == "rest-api" {
+			t.Fatalf("raw-equal tag should not be suggested, got %v", s)
+		}
+	}
+}
+
+func TestSearch_EmptyModeFallsBackToHybrid(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	// An empty mode behaves as ModeTag; the zero-result fallback must trigger
+	// for it just like an explicit ModeTag.
+	rs, err := Search(kbRoot, Query{Raw: "rest,architecture", Tags: []string{"rest", "architecture"}}, Options{})
+	if err != nil {
+		t.Fatalf("search error: %v", err)
+	}
+	if rs.Total == 0 {
+		t.Fatalf("expected hybrid fallback results for empty mode, got none")
+	}
+	if rs.EffectiveMode != ModeHybrid {
+		t.Fatalf("expected EffectiveMode %q, got %q", ModeHybrid, rs.EffectiveMode)
+	}
+}
+
+func TestSearch_EmptyModeYieldsSuggestions(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	rs, err := Search(kbRoot, Query{Raw: "rst", Tags: []string{"rst"}}, Options{})
+	if err != nil {
+		t.Fatalf("search error: %v", err)
+	}
+	found := false
+	for _, s := range rs.Suggestions {
+		if s == "rest" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected suggestion rest for empty mode, got %v", rs.Suggestions)
+	}
+}
+
+func TestSearch_PhraseWhitespaceInsensitive(t *testing.T) {
+	kbRoot := t.TempDir()
+	os.MkdirAll(filepath.Join(kbRoot, workspace.KnowledgeBaseDir), 0755)
+
+	// a.md contains only the no-whitespace form of the phrase; the query uses
+	// the spaced form. b.md contains the individual terms scattered, never
+	// adjacent, so only a.md can score a phrase hit.
+	os.WriteFile(filepath.Join(kbRoot, "a.md"), []byte("# 复审第7轮总结\n\n复审第7轮的结论。\n"), 0644)
+	os.WriteFile(filepath.Join(kbRoot, "b.md"), []byte("# 其他\n\n复审第若干次会议记录，数字 7 与 轮 换。\n"), 0644)
+
+	meta.SaveMeta(kbRoot, "a.md", &meta.DocumentMeta{Title: "复审第7轮总结", Summary: ""})
+	meta.SaveMeta(kbRoot, "b.md", &meta.DocumentMeta{Title: "其他", Summary: ""})
+
+	q, opts := BuildQueryForMode("复审第 7 轮", ModeFulltext, nil)
+	rs, err := Search(kbRoot, q, opts)
+	if err != nil {
+		t.Fatalf("search error: %v", err)
+	}
+	if len(rs.Results) < 2 {
+		t.Fatalf("expected 2 results, got %d", len(rs.Results))
+	}
+	if rs.Results[0].RelPath != "a.md" {
+		t.Fatalf("expected a.md (whitespace-insensitive phrase hit) first, got %s", rs.Results[0].RelPath)
+	}
+
+	// The phrase placeholder match proves the phrase actually matched despite
+	// the whitespace difference; it disappears if whitespace stripping is
+	// removed from phrase matching.
+	found := false
+	for _, m := range rs.Results[0].Matches {
+		if m.Source == SourceContent && m.Term == "复审第7轮" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected content phrase match for %q in a.md, got %+v", "复审第7轮", rs.Results[0].Matches)
+	}
+}
+
+func TestSuggestTags(t *testing.T) {
+	vocab := map[string]struct{}{
+		"e2e-testing": {},
+		"playwright":  {},
+		"rest":        {},
+	}
+
+	got := SuggestTags([]string{"e2e"}, vocab, 5)
+	if len(got) == 0 || got[0] != "e2e-testing" {
+		t.Fatalf("expected e2e-testing suggested for e2e, got %v", got)
+	}
+
+	got = SuggestTags([]string{"playwrigt"}, vocab, 5)
+	if len(got) == 0 || got[0] != "playwright" {
+		t.Fatalf("expected playwright suggested for playwrigt, got %v", got)
+	}
+
+	if got := SuggestTags([]string{"rest"}, vocab, 5); len(got) != 0 {
+		t.Fatalf("exact vocab tag should not be suggested, got %v", got)
+	}
+}
+
+func TestSearch_TagSuggestionsInResultSet(t *testing.T) {
+	kbRoot := setupTestKB(t)
+
+	// "rst" matches no tag exactly; in tag mode the result set should carry
+	// suggestions pointing at the real vocabulary tag "rest".
+	rs, err := Search(kbRoot, Query{Raw: "rst", Tags: []string{"rst"}}, Options{Mode: ModeTag})
+	if err != nil {
+		t.Fatalf("search error: %v", err)
+	}
+	found := false
+	for _, s := range rs.Suggestions {
+		if s == "rest" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected suggestion rest, got %v", rs.Suggestions)
+	}
+}
+
+func TestSearch_PhraseAndLengthScoring(t *testing.T) {
+	kbRoot := t.TempDir()
+	os.MkdirAll(filepath.Join(kbRoot, workspace.KnowledgeBaseDir), 0755)
+
+	// a: phrase in the title.
+	// b: phrase only in the body of a short doc.
+	// c: a long doc where only the single character "轮" appears many times.
+	var longBody strings.Builder
+	longBody.WriteString("# 长文档\n")
+	for i := 0; i < 400; i++ {
+		longBody.WriteString("这一轮讨论了很多内容。\n")
+	}
+
+	os.WriteFile(filepath.Join(kbRoot, "a.md"), []byte("# 复审第 7 轮记录\n\n短文档。"), 0644)
+	os.WriteFile(filepath.Join(kbRoot, "b.md"), []byte("# 其他\n\n复审第 7 轮的结论。\n"), 0644)
+	os.WriteFile(filepath.Join(kbRoot, "c.md"), []byte(longBody.String()), 0644)
+
+	meta.SaveMeta(kbRoot, "a.md", &meta.DocumentMeta{Title: "复审第 7 轮记录", Summary: ""})
+	meta.SaveMeta(kbRoot, "b.md", &meta.DocumentMeta{Title: "其他", Summary: ""})
+	meta.SaveMeta(kbRoot, "c.md", &meta.DocumentMeta{Title: "长文档", Summary: ""})
+
+	q, opts := BuildQueryForMode("复审第 7 轮", ModeFulltext, nil)
+	rs, err := Search(kbRoot, q, opts)
+	if err != nil {
+		t.Fatalf("search error: %v", err)
+	}
+	if len(rs.Results) < 3 {
+		t.Fatalf("expected 3 results, got %d", len(rs.Results))
+	}
+	if rs.Results[0].RelPath != "a.md" {
+		t.Fatalf("expected a.md (phrase in title) first, got %s", rs.Results[0].RelPath)
+	}
+	if rs.Results[1].RelPath != "b.md" {
+		t.Fatalf("expected b.md (phrase in short body) second, got %s", rs.Results[1].RelPath)
+	}
+	if rs.Results[2].RelPath != "c.md" {
+		t.Fatalf("expected c.md (long doc, single-char noise) last, got %s", rs.Results[2].RelPath)
 	}
 }

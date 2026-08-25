@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,14 +15,15 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 	einoschema "github.com/cloudwego/eino/schema"
+	goopenai "github.com/meguminnnnnnnnn/go-openai"
 	"github.com/pkoukk/tiktoken-go"
 )
 
 type ActiveModelConfig struct {
-	ID      string `json:"id"`
-	Model   string `json:"model"`
-	ApiURL  string `json:"apiUrl"`
-	ApiKey  string `json:"apiKey"`
+	ID     string `json:"id"`
+	Model  string `json:"model"`
+	ApiURL string `json:"apiUrl"`
+	ApiKey string `json:"apiKey"`
 }
 
 type Service struct {
@@ -60,8 +62,8 @@ func loadActiveModel(configPath string) (*ActiveModelConfig, error) {
 	}
 
 	var settings struct {
-		Models       []ActiveModelConfig `json:"models"`
-		ActiveModelID string             `json:"activeModelId"`
+		Models        []ActiveModelConfig `json:"models"`
+		ActiveModelID string              `json:"activeModelId"`
 	}
 	if err := json.Unmarshal(settingsRaw, &settings); err != nil {
 		return nil, fmt.Errorf("parse settings: %w", err)
@@ -290,4 +292,91 @@ func (s *Service) CountTokens(text string) int {
 		return utf8.RuneCountInString(text) / 3
 	}
 	return len(enc.Encode(text, nil, nil))
+}
+
+// HeadTokens returns a prefix of text whose token count does not exceed
+// maxTokens. The result is always valid UTF-8: token boundaries can split a
+// multi-byte character, so trailing partial runes are dropped.
+// If the encoder is unavailable it falls back to a rune-boundary truncation
+// at 3 runes per token. That ratio is chosen to stay consistent with the
+// CountTokens fallback (rune count / 3); it is not a measured token rate.
+func (s *Service) HeadTokens(text string, maxTokens int) string {
+	if maxTokens <= 0 {
+		return ""
+	}
+	enc := getTiktokenEncoder()
+	if enc == nil {
+		return runePrefix(text, maxTokens*3)
+	}
+	tokens := enc.Encode(text, nil, nil)
+	if len(tokens) <= maxTokens {
+		return text
+	}
+	return trimInvalidUTF8Right(enc.Decode(tokens[:maxTokens]))
+}
+
+// TailTokens returns a suffix of text whose token count does not exceed
+// maxTokens. The result is always valid UTF-8: leading partial runes left by
+// token boundaries are dropped.
+// If the encoder is unavailable it falls back to a rune-boundary truncation
+// at 3 runes per token. That ratio is chosen to stay consistent with the
+// CountTokens fallback (rune count / 3); it is not a measured token rate.
+func (s *Service) TailTokens(text string, maxTokens int) string {
+	if maxTokens <= 0 {
+		return ""
+	}
+	enc := getTiktokenEncoder()
+	if enc == nil {
+		return runeSuffix(text, maxTokens*3)
+	}
+	tokens := enc.Encode(text, nil, nil)
+	if len(tokens) <= maxTokens {
+		return text
+	}
+	return trimInvalidUTF8Left(enc.Decode(tokens[len(tokens)-maxTokens:]))
+}
+
+func runePrefix(text string, maxRunes int) string {
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	return string(runes[:maxRunes])
+}
+
+func runeSuffix(text string, maxRunes int) string {
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	return string(runes[len(runes)-maxRunes:])
+}
+
+func trimInvalidUTF8Right(s string) string {
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+func trimInvalidUTF8Left(s string) string {
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[1:]
+	}
+	return s
+}
+
+// HTTPStatusCode extracts the HTTP status code from an error returned by the
+// chat model. ok is false when the error carries no HTTP status information
+// (e.g. network failures before a response was received).
+func HTTPStatusCode(err error) (code int, ok bool) {
+	var apiErr *openai.APIError
+	if errors.As(err, &apiErr) && apiErr.HTTPStatusCode > 0 {
+		return apiErr.HTTPStatusCode, true
+	}
+	var reqErr *goopenai.RequestError
+	if errors.As(err, &reqErr) && reqErr.HTTPStatusCode > 0 {
+		return reqErr.HTTPStatusCode, true
+	}
+	return 0, false
 }

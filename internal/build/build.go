@@ -5,22 +5,35 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"mindstack/internal/llm"
 	"mindstack/internal/meta"
 	"mindstack/internal/relation"
+	"mindstack/internal/retrieval"
+	"mindstack/internal/tagnorm"
 	"mindstack/internal/workspace"
 
 	einoschema "github.com/cloudwego/eino/schema"
+	"golang.org/x/sync/errgroup"
 )
 
 // BuildProgress is emitted for each step processed.
 type BuildProgress struct {
-	File    string `json:"file"`
+	File string `json:"file"`
+	// Current is a monotonically non-decreasing count of completed files
+	// within the phase (done, error, and skipped each count as completed).
+	// In-progress events ("processing"/"analyzing") report the count of
+	// files completed so far.
 	Current int    `json:"current"`
 	Total   int    `json:"total"`
 	Status  string `json:"status"` // "processing" | "done" | "error" | "complete" | "skipped" | "analyzing"
@@ -37,6 +50,10 @@ type candidateInfo struct {
 // BuildWorkspace scans all markdown files under rootPath and generates
 // summary + tags metadata for each one using the LLM service,
 // then analyzes document relations based on shared tags.
+//
+// The onProgress callback is serialized via an internal mutex: workers emit
+// events concurrently, but callers never observe concurrent invocations.
+// BuildProgress.Current is monotonically non-decreasing within each phase.
 func BuildWorkspace(
 	ctx context.Context,
 	llmSvc *llm.Service,
@@ -46,6 +63,15 @@ func BuildWorkspace(
 ) error {
 	if onProgress == nil {
 		onProgress = func(BuildProgress) {}
+	}
+	// Workers emit progress concurrently; serialize the callback so callers
+	// never observe concurrent invocations.
+	var progressMu sync.Mutex
+	inner := onProgress
+	onProgress = func(p BuildProgress) {
+		progressMu.Lock()
+		inner(p)
+		progressMu.Unlock()
 	}
 
 	files := listMarkdownFiles(rootPath)
@@ -79,92 +105,106 @@ func BuildWorkspace(
 		return nil
 	}
 
-	// Phase 1: Meta generation (incremental)
+	// Build the tag vocabulary once before the meta phase so the LLM can
+	// reuse existing tags instead of inventing near-duplicates.
+	vocabCounts := collectTagCounts(rootPath)
+
+	// Phase 1: Meta generation (incremental), processed by a worker pool.
+	metaStore, err := meta.OpenStore(rootPath)
+	if err != nil {
+		return fmt.Errorf("open meta store: %w", err)
+	}
+
 	changedDocs := make(map[string]bool)
+	var changedMu sync.Mutex
+	var completedCount atomic.Int32
+	// progressEmitMu makes counter update + event emission one critical
+	// section; otherwise concurrent workers can emit events out of counter
+	// order and Current goes backwards.
+	var progressEmitMu sync.Mutex
 
-	for i, relPath := range files {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(buildWorkers())
 
-		onProgress(BuildProgress{
-			File:    relPath,
-			Current: i + 1,
-			Total:   total,
-			Status:  "processing",
-			Phase:   "meta",
+	for _, relPath := range files {
+		g.Go(func() error {
+			select {
+			case <-gctx.Done():
+				return gctx.Err()
+			default:
+			}
+
+			progress := func(status, errMsg, summary string) {
+				progressEmitMu.Lock()
+				defer progressEmitMu.Unlock()
+				current := int(completedCount.Load())
+				if status != "processing" {
+					// done, error, and skipped each mark one file completed.
+					current = int(completedCount.Add(1))
+				}
+				onProgress(BuildProgress{
+					File:    relPath,
+					Current: current,
+					Total:   total,
+					Status:  status,
+					Error:   errMsg,
+					Summary: summary,
+					Phase:   "meta",
+				})
+			}
+			progress("processing", "", "")
+
+			absPath := filepath.Join(rootPath, relPath)
+			content, err := os.ReadFile(absPath)
+			if err != nil {
+				progress("error", fmt.Sprintf("read: %v", err), "")
+				return nil
+			}
+
+			hash := computeHash(content)
+			existing := metaStore.Get(relPath)
+			if !force && existing != nil && existing.ContentHash == hash && len(existing.Headings) > 0 {
+				progress("skipped", "", "")
+				return nil
+			}
+
+			result, err := generateMeta(gctx, llmSvc, relPath, string(content), selectVocabForDoc(vocabCounts, relPath, maxTagVocab))
+			if err != nil {
+				if gctx.Err() != nil {
+					return gctx.Err()
+				}
+				progress("error", fmt.Sprintf("llm: %v", err), "")
+				return nil
+			}
+
+			if existing != nil && existing.Status != "" {
+				result.Status = existing.Status
+			}
+			result.Path = relPath
+			result.ContentHash = hash
+
+			if err := metaStore.Set(relPath, result); err != nil {
+				progress("error", fmt.Sprintf("save: %v", err), "")
+				return nil
+			}
+
+			changedMu.Lock()
+			changedDocs[relPath] = true
+			changedMu.Unlock()
+
+			progress("done", "", result.Summary)
+			return nil
 		})
+	}
+	groupErr := g.Wait()
 
-		absPath := filepath.Join(rootPath, relPath)
-		content, err := os.ReadFile(absPath)
-		if err != nil {
-			onProgress(BuildProgress{
-				File:    relPath,
-				Current: i + 1,
-				Total:   total,
-				Status:  "error",
-				Error:   fmt.Sprintf("read: %v", err),
-				Phase:   "meta",
-			})
-			continue
-		}
-
-		hash := computeHash(content)
-		existing, _ := meta.LoadMeta(rootPath, relPath)
-		if !force && existing != nil && existing.ContentHash == hash && len(existing.Headings) > 0 {
-			onProgress(BuildProgress{
-				File:    relPath,
-				Current: i + 1,
-				Total:   total,
-				Status:  "skipped",
-				Phase:   "meta",
-			})
-			continue
-		}
-
-		result, err := generateMeta(ctx, llmSvc, relPath, string(content))
-		if err != nil {
-			onProgress(BuildProgress{
-				File:    relPath,
-				Current: i + 1,
-				Total:   total,
-				Status:  "error",
-				Error:   fmt.Sprintf("llm: %v", err),
-				Phase:   "meta",
-			})
-			continue
-		}
-
-		if existing != nil && existing.Status != "" {
-			result.Status = existing.Status
-		}
-		result.Path = relPath
-		result.ContentHash = hash
-
-		if err := meta.SaveMeta(rootPath, relPath, result); err != nil {
-			onProgress(BuildProgress{
-				File:    relPath,
-				Current: i + 1,
-				Total:   total,
-				Status:  "error",
-				Error:   fmt.Sprintf("save: %v", err),
-				Phase:   "meta",
-			})
-			continue
-		}
-
-		changedDocs[relPath] = true
-
-		onProgress(BuildProgress{
-			File:    relPath,
-			Current: i + 1,
-			Total:   total,
-			Status:  "done",
-			Summary: result.Summary,
-			Phase:   "meta",
-		})
+	// Persist everything the workers managed to process, even on cancellation.
+	if err := metaStore.Save(); err != nil {
+		onProgress(BuildProgress{Status: "error", Error: fmt.Sprintf("save meta: %v", err), Phase: "meta"})
+		return fmt.Errorf("save meta store: %w", err)
+	}
+	if groupErr != nil {
+		return groupErr
 	}
 
 	onProgress(BuildProgress{
@@ -238,45 +278,61 @@ func analyzeRelations(
 	docList := sortedKeys(candidates)
 	totalDocs := len(docList)
 
-	for i, docPath := range docList {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	var storeMu sync.Mutex
+	var completedCount atomic.Int32
+	// See the meta phase: counter update + emission must be atomic.
+	var progressEmitMu sync.Mutex
 
-		onProgress(BuildProgress{
-			File:    docPath,
-			Current: i + 1,
-			Total:   totalDocs,
-			Status:  "analyzing",
-			Phase:   "relation",
-			Summary: fmt.Sprintf("%d candidates", len(candidates[docPath])),
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(buildWorkers())
+
+	for _, docPath := range docList {
+		g.Go(func() error {
+			select {
+			case <-gctx.Done():
+				return gctx.Err()
+			default:
+			}
+
+			progress := func(status, errMsg, summary string) {
+				progressEmitMu.Lock()
+				defer progressEmitMu.Unlock()
+				current := int(completedCount.Load())
+				if status != "analyzing" {
+					// done and error each mark one document completed.
+					current = int(completedCount.Add(1))
+				}
+				onProgress(BuildProgress{
+					File:    docPath,
+					Current: current,
+					Total:   totalDocs,
+					Status:  status,
+					Error:   errMsg,
+					Summary: summary,
+					Phase:   "relation",
+				})
+			}
+			progress("analyzing", "", fmt.Sprintf("%d candidates", len(candidates[docPath])))
+
+			relations, err := analyzeDocRelations(gctx, llmSvc, docPath, candidates[docPath], metaMap)
+			if err != nil {
+				if gctx.Err() != nil {
+					return gctx.Err()
+				}
+				progress("error", fmt.Sprintf("%v", err), "")
+				return nil
+			}
+
+			storeMu.Lock()
+			relation.AddRelations(store, relations)
+			storeMu.Unlock()
+
+			progress("done", "", fmt.Sprintf("found %d relations", len(relations)))
+			return nil
 		})
-
-		relations, err := analyzeDocRelations(ctx, llmSvc, docPath, candidates[docPath], metaMap)
-		if err != nil {
-			onProgress(BuildProgress{
-				File:    docPath,
-				Current: i + 1,
-				Total:   totalDocs,
-				Status:  "error",
-				Error:   fmt.Sprintf("%v", err),
-				Phase:   "relation",
-			})
-			continue
-		}
-
-		relation.AddRelations(store, relations)
-
-		onProgress(BuildProgress{
-			File:    docPath,
-			Current: i + 1,
-			Total:   totalDocs,
-			Status:  "done",
-			Phase:   "relation",
-			Summary: fmt.Sprintf("found %d relations", len(relations)),
-		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	if err := relation.Save(rootPath, store); err != nil {
@@ -290,7 +346,221 @@ func analyzeRelations(
 	return nil
 }
 
-func generateMeta(ctx context.Context, svc *llm.Service, filename string, content string) (*meta.DocumentMeta, error) {
+// maxTagVocab caps how many existing tags are injected into the meta prompt.
+const maxTagVocab = 200
+
+// maxRelationCandidates caps how many candidate documents are sent to the LLM
+// when scoring relations for a single document.
+const maxRelationCandidates = 20
+
+// minRelationScore is the minimum LLM-assigned score for a relation to be kept.
+const minRelationScore = 0.3
+
+// defaultBuildWorkers is the number of concurrent document-processing workers.
+const defaultBuildWorkers = 4
+
+// buildWorkers returns the worker count for the build pipeline, overridable via
+// the MINDSTACK_BUILD_WORKERS environment variable.
+func buildWorkers() int {
+	if v := os.Getenv("MINDSTACK_BUILD_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultBuildWorkers
+}
+
+// Retry configuration for LLM calls. Delays are variables so tests can shrink them.
+var (
+	retryMaxAttempts = 4 // 1 initial attempt + 3 retries
+	retryBaseDelay   = 500 * time.Millisecond
+	retryMaxJitter   = 250 * time.Millisecond
+)
+
+// chatWithRetry calls svc.Chat with exponential backoff on transient failures.
+// Retryable failures are network errors, 5xx responses, 429 rate limits, and
+// 408 request timeouts; any other response carrying an HTTP status code is
+// returned immediately.
+func chatWithRetry(ctx context.Context, svc *llm.Service, messages []*einoschema.Message) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt < retryMaxAttempts; attempt++ {
+		if attempt > 0 {
+			delay := retryBaseDelay << (attempt - 1)
+			if retryMaxJitter > 0 {
+				delay += time.Duration(rand.Int63n(int64(retryMaxJitter)))
+			}
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return "", ctx.Err()
+			case <-timer.C:
+			}
+		}
+
+		resp, err := svc.Chat(ctx, messages)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if !isRetryableError(err) {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("llm call failed after %d attempts: %w", retryMaxAttempts, lastErr)
+}
+
+// isRetryableError reports whether an LLM call failure is transient.
+// Failures without an HTTP status code (e.g. network errors) are treated as
+// transient. Failures carrying a status code are retried only for 429, 408,
+// and 5xx; every other status code is not retried.
+func isRetryableError(err error) bool {
+	if code, ok := llm.HTTPStatusCode(err); ok {
+		if code == http.StatusTooManyRequests || code == http.StatusRequestTimeout {
+			return true
+		}
+		return code >= 500
+	}
+	return true
+}
+
+// promptOverheadTokens reserves context space for the prompt template, the
+// system message, and the model response when computing the content budget.
+const promptOverheadTokens = 4000
+
+// headKeepRatio and tailKeepRatio split the truncation budget between the
+// document head and tail; the omitted middle is replaced by truncationMarker.
+const (
+	headKeepRatio = 0.7
+	tailKeepRatio = 0.2
+)
+
+// truncationMarker marks where document content was omitted.
+const truncationMarker = "\n\n... [middle truncated] ...\n\n"
+
+// truncateContentForPrompt caps the document content so the meta prompt fits
+// within the model context window. Content within budget is returned
+// unchanged; over-budget content keeps the head and tail with a marker in
+// between. When the configured context window leaves no room after the prompt
+// overhead, a fallback budget of 1000 tokens is used so over-long content is
+// still truncated instead of being sent in full.
+func truncateContentForPrompt(svc *llm.Service, content string) string {
+	budget := svc.GetContextWindow() - promptOverheadTokens
+	if budget <= 0 {
+		budget = 1000
+	}
+	if svc.CountTokens(content) <= budget {
+		return content
+	}
+	head := svc.HeadTokens(content, int(float64(budget)*headKeepRatio))
+	tail := svc.TailTokens(content, int(float64(budget)*tailKeepRatio))
+	return head + truncationMarker + tail
+}
+
+// collectTagCounts scans the meta store and counts how many documents use
+// each tag. Scan failures yield an empty vocabulary, which keeps the prompt
+// identical to the no-vocabulary behavior.
+func collectTagCounts(rootPath string) map[string]int {
+	counts := make(map[string]int)
+	metas, err := meta.ScanAll(rootPath, "")
+	if err != nil {
+		return counts
+	}
+	for _, m := range metas {
+		seen := make(map[string]bool, len(m.Tags))
+		for _, t := range m.Tags {
+			t = strings.TrimSpace(t)
+			if t != "" && !seen[t] {
+				counts[t]++
+				seen[t] = true
+			}
+		}
+	}
+	return counts
+}
+
+// selectVocabForDoc picks which vocabulary tags to inject into the meta
+// prompt for one document. Tags used by at least two documents are always
+// kept; single-document tags are kept only when one of their tokens appears
+// in the filename (without extension). Tokens shorter than 3 characters are
+// ignored for filename matching so short tokens like "go" do not match
+// unrelated names like "golang" or "django". The result is capped at max
+// entries, truncated by count descending.
+func selectVocabForDoc(vocabCounts map[string]int, filename string, max int) []string {
+	if len(vocabCounts) == 0 || max <= 0 {
+		return nil
+	}
+
+	base := filepath.Base(filename)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	fnCompact := strings.ReplaceAll(retrieval.ToLowerAlphanumeric(name), " ", "")
+
+	type tagCount struct {
+		tag   string
+		count int
+	}
+	var picked []tagCount
+	for tag, count := range vocabCounts {
+		if count >= 2 {
+			picked = append(picked, tagCount{tag, count})
+			continue
+		}
+		for _, tok := range strings.Fields(retrieval.ToLowerAlphanumeric(tag)) {
+			if len(tok) >= 3 && strings.Contains(fnCompact, tok) {
+				picked = append(picked, tagCount{tag, count})
+				break
+			}
+		}
+	}
+
+	sort.Slice(picked, func(i, j int) bool {
+		if picked[i].count != picked[j].count {
+			return picked[i].count > picked[j].count
+		}
+		return picked[i].tag < picked[j].tag
+	})
+	if len(picked) > max {
+		picked = picked[:max]
+	}
+
+	out := make([]string, 0, len(picked))
+	for _, p := range picked {
+		out = append(out, p.tag)
+	}
+	return out
+}
+
+// cleanStringList trims entries, drops empties, and dedupes preserving
+// first-seen order.
+func cleanStringList(items []string) []string {
+	var out []string
+	seen := make(map[string]struct{}, len(items))
+	for _, it := range items {
+		it = strings.TrimSpace(it)
+		if it == "" {
+			continue
+		}
+		if _, ok := seen[it]; ok {
+			continue
+		}
+		seen[it] = struct{}{}
+		out = append(out, it)
+	}
+	return out
+}
+
+func generateMeta(ctx context.Context, svc *llm.Service, filename string, content string, tagVocab []string) (*meta.DocumentMeta, error) {
+	content = truncateContentForPrompt(svc, content)
+
+	var vocabBlock, vocabRule string
+	if len(tagVocab) > 0 {
+		vocabBlock = fmt.Sprintf("Existing tags in this knowledge base (prefer reusing): %s\n\n", strings.Join(tagVocab, ", "))
+		vocabRule = "\n  - Prefer tags from the existing vocabulary when they fit; only invent a new tag when no existing tag covers the concept."
+	}
+
 	prompt := fmt.Sprintf(`Analyze the following markdown document and generate metadata.
 
 Document filename: %s
@@ -300,23 +570,24 @@ Document content:
 
 Respond with ONLY a JSON object (no markdown, no code fences) with these fields:
 - "summary": a 1-3 sentence summary of the document's content. Write the summary in the SAME language as the document content. If the document is in Chinese, write the summary in Chinese. If the document is in English, write the summary in English. Do not mix languages.
-- "tags": an array of 3-5 domain-specific tags. Rules:
+%s- "tags": an array of 3-5 domain-specific tags. Rules:
   - Use lowercase with hyphens for multi-word tags (e.g. "rest-api", "error-handling").
   - Prefer specific, discriminating terms over generic ones. Good: "rest-api", "exponential-backoff". Bad: "system", "design", "filter", "approach".
   - Each tag should be useful for distinguishing this document from others in the same knowledge base.
-  - Only include tags that capture the document's core topic, not every technology mentioned in passing.
+  - Only include tags that capture the document's core topic, not every technology mentioned in passing.%s
 - "keywords": an array of 5-12 searchable terms that capture the document's key concepts. Include acronyms, technical terms, and common synonyms. Mix Chinese and English when the document contains both.
 - "aliases": an array of 2-6 alternative names, abbreviations, or common aliases for the topic. Examples: "RBAC", "role-based access control", "权限控制".
 - "headings": an array of ALL section headings in the document, starting from level 1 (the top-level heading). Each item is an object with "level" (integer 1-6, where 1 is the document's main heading) and "text" (string, the heading text). Preserve the original heading hierarchy and include every meaningful heading. Skip generic headings like "Introduction", "Summary", or "Conclusion". Merge closely related subsections when appropriate.
 
 Example response:
-{"summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["rest-api","http-status-codes","pagination"],"keywords":["restful","api design","http","status code","pagination","url structure"],"aliases":["REST API","Representational State Transfer"],"headings":[{"level":1,"text":"Overview"},{"level":2,"text":"URL Structure"},{"level":2,"text":"Status Codes"},{"level":3,"text":"Pagination"}]}`, filename, content)
+{"summary":"Guidelines for designing RESTful APIs including URL structure, status codes, and pagination patterns.","tags":["rest-api","http-status-codes","pagination"],"keywords":["restful","api design","http","status code","pagination","url structure"],"aliases":["REST API","Representational State Transfer"],"headings":[{"level":1,"text":"Overview"},{"level":2,"text":"URL Structure"},{"level":2,"text":"Status Codes"},{"level":3,"text":"Pagination"}]}`, filename, content, vocabBlock, vocabRule)
 
 	messages := []*einoschema.Message{
+		{Role: einoschema.System, Content: "You are generating metadata for a document in a markdown knowledge base. Reuse the existing tag vocabulary whenever possible to keep tags consistent across documents."},
 		{Role: einoschema.User, Content: prompt},
 	}
 
-	resp, err := svc.Chat(ctx, messages)
+	resp, err := chatWithRetry(ctx, svc, messages)
 	if err != nil {
 		return nil, err
 	}
@@ -343,13 +614,13 @@ Example response:
 	}
 
 	return &meta.DocumentMeta{
-		Title:     title,
-		Summary:   parsed.Summary,
-		Tags:      parsed.Tags,
-		Keywords:  parsed.Keywords,
-		Aliases:   parsed.Aliases,
-		Headings:  parsed.Headings,
-		Status:    "active",
+		Title:    title,
+		Summary:  parsed.Summary,
+		Tags:     tagnorm.NormalizeAll(parsed.Tags),
+		Keywords: cleanStringList(parsed.Keywords),
+		Aliases:  cleanStringList(parsed.Aliases),
+		Headings: parsed.Headings,
+		Status:   "active",
 	}, nil
 }
 
@@ -414,7 +685,7 @@ Rules:
 	}
 
 	// Initial LLM call
-	resp, err := svc.Chat(ctx, messages)
+	resp, err := chatWithRetry(ctx, svc, messages)
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +720,7 @@ Rules:
 Respond with ONLY a JSON array:
 [{"target":"path/to/doc.md","score":0.8,"reason":"brief explanation","type":"references"}]`, strings.Join(missing, "\n"))
 
-		retryResp, err := svc.Chat(ctx, []*einoschema.Message{
+		retryResp, err := chatWithRetry(ctx, svc, []*einoschema.Message{
 			{Role: einoschema.User, Content: prompt},
 			{Role: einoschema.Assistant, Content: resp},
 			{Role: einoschema.User, Content: retryPrompt},
@@ -469,7 +740,7 @@ Respond with ONLY a JSON array:
 
 	var filtered []relation.Relation
 	for _, r := range results {
-		if r.Score < 0.3 {
+		if r.Score < minRelationScore {
 			continue
 		}
 		if !candidateKeys[r.Target] {
@@ -524,6 +795,23 @@ func findCandidateDocs(allMetas []*meta.DocumentMeta, changedDocs map[string]boo
 				})
 			}
 		}
+
+		// Keep the strongest candidates: most shared tags first, then by path
+		// for determinism, capped at maxRelationCandidates.
+		cands := result[changedDoc]
+		if len(cands) == 0 {
+			continue
+		}
+		sort.Slice(cands, func(i, j int) bool {
+			if len(cands[i].sharedTags) != len(cands[j].sharedTags) {
+				return len(cands[i].sharedTags) > len(cands[j].sharedTags)
+			}
+			return cands[i].path < cands[j].path
+		})
+		if len(cands) > maxRelationCandidates {
+			cands = cands[:maxRelationCandidates]
+		}
+		result[changedDoc] = cands
 	}
 
 	return result

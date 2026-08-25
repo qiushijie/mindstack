@@ -1,8 +1,10 @@
 package relation
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"mindstack/internal/workspace"
@@ -86,5 +88,36 @@ func TestAddRelations(t *testing.T) {
 	}
 	if len(store["b.md"]) != 1 {
 		t.Fatalf("expected 1 relation for b.md, got %d", len(store["b.md"]))
+	}
+}
+
+func TestLoad_RelationsFileTooLarge(t *testing.T) {
+	dir := t.TempDir()
+	kbDir := filepath.Join(dir, workspace.KnowledgeBaseDir)
+	if err := os.MkdirAll(kbDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	oversized := make([]byte, maxRelationSize+1)
+	for i := range oversized {
+		oversized[i] = 'x'
+	}
+	path := filepath.Join(kbDir, "relations.json")
+	if err := os.WriteFile(path, oversized, 0644); err != nil {
+		t.Fatalf("write oversized relations file: %v", err)
+	}
+
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for oversized relations file")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("expected 'too large' error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Fatalf("expected path in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), fmt.Sprintf("%d bytes exceeds %d byte limit", maxRelationSize+1, maxRelationSize)) {
+		t.Fatalf("expected actual size and limit in error, got: %v", err)
 	}
 }

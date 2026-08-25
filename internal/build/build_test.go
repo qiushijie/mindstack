@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -268,31 +269,28 @@ func TestBuildWorkspace_LLMError_ReportsError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Expected: 2 * (processing + error) + meta complete + relation complete = 6 events
+	// Expected: 2 * (processing + error) + meta complete + relation complete = 6 events.
+	// Workers run concurrently, so the per-file events may interleave.
 	if len(progresses) != 6 {
 		t.Fatalf("expected 6 progress events, got %d", len(progresses))
 	}
 
-	// File 1: processing -> error
-	if progresses[0].Status != "processing" {
-		t.Fatalf("progress[0]: expected processing, got %s", progresses[0].Status)
+	processingCount, errorCount := 0, 0
+	for i, p := range progresses[:4] {
+		switch p.Status {
+		case "processing":
+			processingCount++
+		case "error":
+			errorCount++
+			if p.Error == "" {
+				t.Fatalf("progress[%d]: expected non-empty error message", i)
+			}
+		default:
+			t.Fatalf("progress[%d]: expected processing or error, got %s", i, p.Status)
+		}
 	}
-	if progresses[1].Status != "error" {
-		t.Fatalf("progress[1]: expected error, got %s", progresses[1].Status)
-	}
-	if progresses[1].Error == "" {
-		t.Fatal("progress[1]: expected non-empty error message")
-	}
-
-	// File 2: processing -> error
-	if progresses[2].Status != "processing" {
-		t.Fatalf("progress[2]: expected processing, got %s", progresses[2].Status)
-	}
-	if progresses[3].Status != "error" {
-		t.Fatalf("progress[3]: expected error, got %s", progresses[3].Status)
-	}
-	if progresses[3].Error == "" {
-		t.Fatal("progress[3]: expected non-empty error message")
+	if processingCount != 2 || errorCount != 2 {
+		t.Fatalf("expected 2 processing + 2 error events, got %d processing + %d error", processingCount, errorCount)
 	}
 
 	// Meta complete
@@ -370,18 +368,71 @@ func TestBuildWorkspace_ReportsProgressOrder(t *testing.T) {
 	if progresses[0].File != "a.md" {
 		t.Fatalf("first event file should be a.md, got %s", progresses[0].File)
 	}
-	if progresses[0].Current != 1 || progresses[0].Total != 1 {
-		t.Fatalf("first event: expected current=1 total=1, got current=%d total=%d",
+	if progresses[0].Current != 0 || progresses[0].Total != 1 {
+		t.Fatalf("first event: expected current=0 total=1 (nothing completed yet), got current=%d total=%d",
 			progresses[0].Current, progresses[0].Total)
 	}
 	if progresses[1].Status != "error" {
 		t.Fatalf("second event should be error, got %s", progresses[1].Status)
+	}
+	if progresses[1].Current != 1 {
+		t.Fatalf("second event: expected current=1 (one file completed), got %d", progresses[1].Current)
 	}
 	if progresses[2].Status != "complete" || progresses[2].Phase != "meta" {
 		t.Fatalf("third event should be meta complete, got status=%s phase=%s", progresses[2].Status, progresses[2].Phase)
 	}
 	if progresses[3].Status != "complete" || progresses[3].Phase != "relation" {
 		t.Fatalf("fourth event should be relation complete, got status=%s phase=%s", progresses[3].Status, progresses[3].Phase)
+	}
+}
+
+func TestBuildWorkspace_MetaStoreSaveFailure_ReturnsError(t *testing.T) {
+	dir := setupTestWorkspace(t)
+	svc := newNilLLMService()
+
+	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc"), 0644)
+
+	// Make the .mindstack directory read-only so metaStore.Save fails at the
+	// end of the meta phase.
+	kbDir := filepath.Join(dir, workspace.KnowledgeBaseDir)
+	if err := os.Chmod(kbDir, 0555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(kbDir, 0755) // restore for cleanup
+
+	err := BuildWorkspace(context.Background(), svc, dir, false, func(BuildProgress) {})
+	if err == nil {
+		t.Fatal("expected error when meta store save fails")
+	}
+	if !strings.Contains(err.Error(), "save meta store") {
+		t.Fatalf("expected 'save meta store' error, got: %v", err)
+	}
+}
+
+func TestBuildWorkspace_ProgressCurrentIsMonotonic(t *testing.T) {
+	dir := setupTestWorkspace(t)
+	svc := newNilLLMService()
+
+	// Enough files that workers interleave; every file errors on the nil model.
+	for i := 0; i < 16; i++ {
+		os.WriteFile(filepath.Join(dir, "doc"+strings.Repeat("x", i+1)+".md"), []byte("# Doc"), 0644)
+	}
+
+	var progresses []BuildProgress
+	err := BuildWorkspace(context.Background(), svc, dir, false, func(p BuildProgress) {
+		progresses = append(progresses, p)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Within each phase, Current must never decrease.
+	lastByPhase := map[string]int{"meta": 0, "relation": 0}
+	for _, p := range progresses {
+		if p.Current < lastByPhase[p.Phase] {
+			t.Fatalf("phase %s: Current went backwards: %d after %d", p.Phase, p.Current, lastByPhase[p.Phase])
+		}
+		lastByPhase[p.Phase] = p.Current
 	}
 }
 
@@ -619,10 +670,8 @@ func TestGenerateMeta_Success(t *testing.T) {
 	}
 }
 
-
 func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
-	metaCallCount := 0
-	relationCallCount := 0
+	var metaCallCount, relationCallCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Detect prompt type from request body
 		var reqBody struct {
@@ -632,34 +681,32 @@ func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 		}
 		json.NewDecoder(r.Body).Decode(&reqBody)
 
-		promptContent := ""
-		if len(reqBody.Messages) > 0 {
-			promptContent = reqBody.Messages[0].Content
+		var promptContent strings.Builder
+		for _, m := range reqBody.Messages {
+			promptContent.WriteString(m.Content)
 		}
+		prompt := promptContent.String()
 
-		isRelationPrompt := strings.Contains(promptContent, "Evaluate how related it is to each")
+		isRelationPrompt := strings.Contains(prompt, "Evaluate how related it is to each")
 
 		var responseContent string
 		if isRelationPrompt {
-			relationCallCount++
+			relationCallCount.Add(1)
 			// Determine the source doc from the prompt line "- path: \"xxx\"" to return matching target
 			var targetDoc string
-			if strings.Contains(promptContent, `- path: "a.md"`) {
+			if strings.Contains(prompt, `- path: "a.md"`) {
 				targetDoc = "b.md"
 			} else {
 				targetDoc = "a.md"
 			}
 			responseContent = `[{"target":"` + targetDoc + `","score":0.9,"reason":"both are test docs"}]`
 		} else {
-			metaCallCount++
-			var title, summary string
-			switch metaCallCount {
-			case 1:
-				title = "First Doc"
-				summary = "The first document."
-			default:
-				title = "Second Doc"
-				summary = "The second document."
+			metaCallCount.Add(1)
+			// Files are processed concurrently, so derive the title from the
+			// filename in the prompt rather than the call order.
+			title, summary := "Second Doc", "The second document."
+			if strings.Contains(prompt, "Document filename: a.md") {
+				title, summary = "First Doc", "The first document."
 			}
 			responseContent = `{"summary":"` + summary + `","tags":["test"],"headings":[{"level":1,"text":"` + title + `"}]}`
 		}
@@ -717,11 +764,11 @@ func TestGenerateMeta_Success_MultipleFiles(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if metaCallCount != 2 {
-		t.Fatalf("expected 2 meta LLM calls, got %d", metaCallCount)
+	if got := metaCallCount.Load(); got != 2 {
+		t.Fatalf("expected 2 meta LLM calls, got %d", got)
 	}
-	if relationCallCount != 2 {
-		t.Fatalf("expected 2 relation LLM calls, got %d", relationCallCount)
+	if got := relationCallCount.Load(); got != 2 {
+		t.Fatalf("expected 2 relation LLM calls, got %d", got)
 	}
 
 	m1, err := meta.LoadMeta(dir, "a.md")
@@ -1082,6 +1129,224 @@ func TestBuildWorkspace_ReprocessesChangedFile(t *testing.T) {
 	}
 }
 
+// --- selectVocabForDoc tests ---
+
+func TestSelectVocabForDoc(t *testing.T) {
+	cases := []struct {
+		name     string
+		vocab    map[string]int
+		filename string
+		max      int
+		want     []string
+	}{
+		{
+			name:     "empty vocab",
+			vocab:    map[string]int{},
+			filename: "doc.md",
+			max:      200,
+			want:     nil,
+		},
+		{
+			name:     "count>=2 always kept",
+			vocab:    map[string]int{"rest-api": 3, "pagination": 2},
+			filename: "unrelated.md",
+			max:      200,
+			want:     []string{"rest-api", "pagination"},
+		},
+		{
+			name:     "count==1 kept only on filename token match",
+			vocab:    map[string]int{"unit-testing": 1, "obscure-tag": 1},
+			filename: "unit-testing-guide.md",
+			max:      200,
+			want:     []string{"unit-testing"},
+		},
+		{
+			name:     "count==1 token substring match",
+			vocab:    map[string]int{"playwright-test": 1},
+			filename: "playwright.md",
+			max:      200,
+			want:     []string{"playwright-test"},
+		},
+		{
+			name:     "count==1 short token does not substring match",
+			vocab:    map[string]int{"go": 1},
+			filename: "golang-guide.md",
+			max:      200,
+			want:     nil,
+		},
+		{
+			name:     "cap truncates by count desc",
+			vocab:    map[string]int{"a": 5, "b": 3, "c": 1, "d": 2},
+			filename: "d.md",
+			max:      2,
+			want:     []string{"a", "b"},
+		},
+		{
+			name:     "zero max returns nil",
+			vocab:    map[string]int{"a": 5},
+			filename: "a.md",
+			max:      0,
+			want:     nil,
+		},
+	}
+	for _, c := range cases {
+		got := selectVocabForDoc(c.vocab, c.filename, c.max)
+		if len(got) != len(c.want) {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+				break
+			}
+		}
+	}
+}
+
+// --- tag vocabulary injection tests ---
+
+func TestGenerateMeta_InjectsTagVocab(t *testing.T) {
+	var capturedMessages []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&reqBody)
+
+		isRelation := false
+		for _, m := range reqBody.Messages {
+			if strings.Contains(m.Content, "Evaluate how related it is to each") {
+				isRelation = true
+				break
+			}
+		}
+		if isRelation {
+			writeOpenAIResponse(t, w, `[]`)
+			return
+		}
+		capturedMessages = reqBody.Messages
+		writeOpenAIResponse(t, w, `{"summary":"New doc.","tags":["Rest_API","REST API","New Tag"],"keywords":[" kw ","kw","",""],"aliases":[" Alias ","Alias"],"headings":[{"level":1,"text":"New"}]}`)
+	}))
+	defer server.Close()
+
+	svc := llm.NewService(t.TempDir())
+	if err := svc.UpdateModel(&llm.ActiveModelConfig{
+		ID: "test", Model: "test-model", ApiURL: server.URL, ApiKey: "test-key",
+	}); err != nil {
+		t.Fatalf("failed to update model: %v", err)
+	}
+
+	dir := setupTestWorkspace(t)
+
+	// Two pre-existing docs sharing "rest-api" give it count 2 in the vocab.
+	// Their metas carry matching content hashes so the build skips them.
+	for _, name := range []string{"old1.md", "old2.md"} {
+		content := []byte("# Old")
+		os.WriteFile(filepath.Join(dir, name), content, 0644)
+		if err := meta.SaveMeta(dir, name, &meta.DocumentMeta{
+			Title:       "Old",
+			Tags:        []string{"rest-api"},
+			Headings:    []meta.Heading{{Level: 1, Text: "Old"}},
+			Status:      "active",
+			ContentHash: computeHash(content),
+		}); err != nil {
+			t.Fatalf("save meta %s: %v", name, err)
+		}
+	}
+	os.WriteFile(filepath.Join(dir, "new.md"), []byte("# New"), 0644)
+
+	if err := BuildWorkspace(context.Background(), svc, dir, false, func(BuildProgress) {}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The fake must have received a system message plus a user prompt that
+	// contains the vocabulary block.
+	if len(capturedMessages) != 2 {
+		t.Fatalf("expected 2 messages (system+user), got %d", len(capturedMessages))
+	}
+	if capturedMessages[0].Role != "system" {
+		t.Fatalf("first message role = %q, want system", capturedMessages[0].Role)
+	}
+	prompt := capturedMessages[1].Content
+	if !strings.Contains(prompt, "Existing tags in this knowledge base (prefer reusing):") {
+		t.Fatalf("prompt missing vocab block:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "rest-api") {
+		t.Fatalf("prompt missing vocab tag rest-api:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Prefer tags from the existing vocabulary") {
+		t.Fatalf("prompt missing reuse rule:\n%s", prompt)
+	}
+
+	// Output tags must be normalized and deduped; keywords/aliases trimmed.
+	m, err := meta.LoadMeta(dir, "new.md")
+	if err != nil {
+		t.Fatalf("load meta: %v", err)
+	}
+	wantTags := []string{"rest-api", "new-tag"}
+	if len(m.Tags) != len(wantTags) {
+		t.Fatalf("tags = %v, want %v", m.Tags, wantTags)
+	}
+	for i := range wantTags {
+		if m.Tags[i] != wantTags[i] {
+			t.Fatalf("tags = %v, want %v", m.Tags, wantTags)
+		}
+	}
+	if len(m.Keywords) != 1 || m.Keywords[0] != "kw" {
+		t.Fatalf("keywords = %v, want [kw]", m.Keywords)
+	}
+	if len(m.Aliases) != 1 || m.Aliases[0] != "Alias" {
+		t.Fatalf("aliases = %v, want [Alias]", m.Aliases)
+	}
+}
+
+func TestGenerateMeta_NoVocabBlockWhenEmpty(t *testing.T) {
+	var captured string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&reqBody)
+		for _, m := range reqBody.Messages {
+			if strings.Contains(m.Content, "Analyze the following markdown document") {
+				captured = m.Content
+			}
+		}
+		writeOpenAIResponse(t, w, `{"summary":"A doc.","tags":["test"],"headings":[{"level":1,"text":"Doc"}]}`)
+	}))
+	defer server.Close()
+
+	svc := llm.NewService(t.TempDir())
+	if err := svc.UpdateModel(&llm.ActiveModelConfig{
+		ID: "test", Model: "test-model", ApiURL: server.URL, ApiKey: "test-key",
+	}); err != nil {
+		t.Fatalf("failed to update model: %v", err)
+	}
+
+	dir := setupTestWorkspace(t)
+	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Doc"), 0644)
+
+	if err := BuildWorkspace(context.Background(), svc, dir, false, func(BuildProgress) {}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if captured == "" {
+		t.Fatal("did not capture meta prompt")
+	}
+	if strings.Contains(captured, "Existing tags in this knowledge base") {
+		t.Fatalf("prompt should not contain vocab block when vocab is empty:\n%s", captured)
+	}
+}
+
 // --- computeHash tests ---
 
 func TestComputeHash(t *testing.T) {
@@ -1186,8 +1451,6 @@ func TestFindCandidateDocs_TagMatch(t *testing.T) {
 		t.Fatalf("expected b.md as candidate, got %s", result["a.md"][0].path)
 	}
 }
-
-
 
 // --- analyzeDocRelations tests ---
 

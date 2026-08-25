@@ -8,9 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 	einoschema "github.com/cloudwego/eino/schema"
+	goopenai "github.com/meguminnnnnnnnn/go-openai"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -734,5 +737,135 @@ func TestGenerateWithTool_Success(t *testing.T) {
 	}
 	if msg != expectedMsg {
 		t.Fatalf("expected message %v, got %v", expectedMsg, msg)
+	}
+}
+
+// -------------------------------------------------------
+// HeadTokens / TailTokens
+// -------------------------------------------------------
+
+func TestHeadTokens(t *testing.T) {
+	svc := NewService("dummy")
+	text := "hello world this is a longer sentence for token truncation testing"
+
+	got := svc.HeadTokens(text, 3)
+	if got == "" {
+		t.Fatal("expected non-empty head")
+	}
+	if !strings.HasPrefix(text, got) {
+		t.Fatalf("expected head to be a prefix of the text, got %q", got)
+	}
+	if svc.CountTokens(got) > 3 {
+		t.Fatalf("expected head within 3 tokens, got %d", svc.CountTokens(got))
+	}
+}
+
+func TestHeadTokens_WithinLimit(t *testing.T) {
+	svc := NewService("dummy")
+	text := "short text"
+	if got := svc.HeadTokens(text, 1000); got != text {
+		t.Fatalf("expected text unchanged when within limit, got %q", got)
+	}
+}
+
+func TestHeadTokens_ZeroLimit(t *testing.T) {
+	svc := NewService("dummy")
+	if got := svc.HeadTokens("anything", 0); got != "" {
+		t.Fatalf("expected empty string for zero limit, got %q", got)
+	}
+}
+
+func TestHeadTokens_ValidUTF8(t *testing.T) {
+	svc := NewService("dummy")
+	text := strings.Repeat("中文内容用于测试多字节截断。", 20)
+	got := svc.HeadTokens(text, 5)
+	if !utf8.ValidString(got) {
+		t.Fatalf("expected valid UTF-8, got %q", got)
+	}
+}
+
+func TestTailTokens(t *testing.T) {
+	svc := NewService("dummy")
+	text := "hello world this is a longer sentence for token truncation testing"
+
+	got := svc.TailTokens(text, 3)
+	if got == "" {
+		t.Fatal("expected non-empty tail")
+	}
+	if !strings.HasSuffix(text, got) {
+		t.Fatalf("expected tail to be a suffix of the text, got %q", got)
+	}
+	if svc.CountTokens(got) > 3 {
+		t.Fatalf("expected tail within 3 tokens, got %d", svc.CountTokens(got))
+	}
+}
+
+func TestTailTokens_WithinLimit(t *testing.T) {
+	svc := NewService("dummy")
+	text := "short text"
+	if got := svc.TailTokens(text, 1000); got != text {
+		t.Fatalf("expected text unchanged when within limit, got %q", got)
+	}
+}
+
+func TestTailTokens_ZeroLimit(t *testing.T) {
+	svc := NewService("dummy")
+	if got := svc.TailTokens("anything", 0); got != "" {
+		t.Fatalf("expected empty string for zero limit, got %q", got)
+	}
+}
+
+func TestTailTokens_ValidUTF8(t *testing.T) {
+	svc := NewService("dummy")
+	text := strings.Repeat("中文内容用于测试多字节截断。", 20)
+	got := svc.TailTokens(text, 5)
+	if !utf8.ValidString(got) {
+		t.Fatalf("expected valid UTF-8, got %q", got)
+	}
+}
+
+func TestHeadTailTokens_NilEncoder(t *testing.T) {
+	orig := encoderProvider
+	encoderProvider = func() *tiktoken.Tiktoken { return nil }
+	defer func() { encoderProvider = orig }()
+
+	svc := NewService("dummy")
+	text := "hello world" // 11 runes
+
+	// Fallback: 2 tokens -> 6 runes.
+	if got := svc.HeadTokens(text, 2); got != "hello " {
+		t.Fatalf("expected rune fallback prefix %q, got %q", "hello ", got)
+	}
+	if got := svc.TailTokens(text, 2); got != " world" {
+		t.Fatalf("expected rune fallback suffix %q, got %q", " world", got)
+	}
+	// Within limit returns text unchanged.
+	if got := svc.HeadTokens(text, 100); got != text {
+		t.Fatalf("expected text unchanged, got %q", got)
+	}
+}
+
+// -------------------------------------------------------
+// HTTPStatusCode
+// -------------------------------------------------------
+
+func TestHTTPStatusCode(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		wantCode int
+		wantOK   bool
+	}{
+		{"api error", &openai.APIError{HTTPStatusCode: 429, Message: "rate limited"}, 429, true},
+		{"wrapped api error", fmt.Errorf("generate: %w", &openai.APIError{HTTPStatusCode: 500}), 500, true},
+		{"request error", &goopenai.RequestError{HTTPStatusCode: 502}, 502, true},
+		{"no status", fmt.Errorf("dial tcp: connection refused"), 0, false},
+		{"zero status", &openai.APIError{HTTPStatusCode: 0, Message: "no status"}, 0, false},
+	}
+	for _, c := range cases {
+		code, ok := HTTPStatusCode(c.err)
+		if code != c.wantCode || ok != c.wantOK {
+			t.Errorf("%s: HTTPStatusCode = (%d, %v), want (%d, %v)", c.name, code, ok, c.wantCode, c.wantOK)
+		}
 	}
 }

@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
+	buildpkg "mindstack/internal/build"
 	"mindstack/internal/config"
 	"mindstack/internal/llm"
-	buildpkg "mindstack/internal/build"
 
 	"github.com/spf13/cobra"
 )
@@ -23,10 +24,10 @@ var buildCmd = &cobra.Command{
 
 		if buildForce {
 			fmt.Fprintln(os.Stderr, "WARNING: --force will reprocess ALL files and overwrite existing metadata. This may consume significant LLM tokens.")
-			fmt.Fprint(os.Stderr, "Are you sure you want to continue? [Y/n] ")
+			fmt.Fprint(os.Stderr, "Are you sure you want to continue? [y/N] ")
 			var input string
 			fmt.Scanln(&input)
-			if input != "Y" {
+			if !strings.EqualFold(strings.TrimSpace(input), "y") {
 				fmt.Fprintln(os.Stderr, "Aborted.")
 				os.Exit(0)
 			}
@@ -41,13 +42,19 @@ var buildCmd = &cobra.Command{
 		var errs []string
 
 		err := buildpkg.BuildWorkspace(context.Background(), svc, root, buildForce, func(p buildpkg.BuildProgress) {
+			// BuildWorkspace serializes progress callbacks, so plain variables
+			// and unguarded stderr writes are safe here.
 			switch p.Status {
 			case "done":
 				processed++
 			case "skipped":
 				skipped++
 			case "error":
-				errs = append(errs, fmt.Sprintf("%s: %s", p.File, p.Error))
+				if p.File == "" {
+					errs = append(errs, p.Error)
+				} else {
+					errs = append(errs, fmt.Sprintf("%s: %s", p.File, p.Error))
+				}
 			}
 			data, _ := json.Marshal(p)
 			fmt.Fprintln(os.Stderr, string(data))

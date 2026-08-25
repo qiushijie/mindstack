@@ -155,10 +155,13 @@ var historyDelCmd = &cobra.Command{
 	},
 }
 
-// saveToHistory persists a search/ack interaction as a chat session.
+// saveToHistory persists a search/ack interaction as a chat session of the
+// given kind (chat.SessionKindAck or chat.SessionKindSearch(mode)).
 // kbRoot is the knowledge base path used to associate the session with the KB.
+// Repeated identical queries within a short window are merged into the existing
+// session instead of creating duplicates.
 // Errors are silently ignored to not affect the main command result.
-func saveToHistory(kbRoot, query string, result interface{}) {
+func saveToHistory(kbRoot, kind, query string, result interface{}) {
 	d, err := db.Init()
 	if err != nil {
 		return
@@ -170,21 +173,7 @@ func saveToHistory(kbRoot, query string, result interface{}) {
 		return
 	}
 
-	title := query
-	if len(title) > 50 {
-		title = title[:50] + "..."
-	}
-
-	session, err := store.CreateSession(kbRoot, title)
-	if err != nil {
-		return
-	}
-	if _, err := store.AddMessage(session.ID, "user", query); err != nil {
-		return
-	}
-	if _, err := store.AddMessage(session.ID, "assistant", string(resultJSON)); err != nil {
-		return
-	}
+	_ = chat.RecordQuerySession(store, kbRoot, kind, query, string(resultJSON))
 }
 
 func init() {

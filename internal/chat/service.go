@@ -36,6 +36,11 @@ func (s *Service) Init() error {
 	return s.store.AutoMigrate()
 }
 
+// Store returns the underlying chat store.
+func (s *Service) Store() *Store {
+	return s.store
+}
+
 func (s *Service) SetContext(ctx context.Context) {
 	s.ctx = ctx
 }
