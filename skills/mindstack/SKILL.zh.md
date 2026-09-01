@@ -34,7 +34,7 @@ mindstack --kb kb2 doc meta /path/to/kb2/docs/example.md
 
 ## 输出格式
 
-所有命令向 **stdout** 输出 JSON，向 **stderr** 输出错误。
+所有命令向 **stdout** 输出 JSON，向 **stderr** 输出错误。例外：`read` 命令直接输出文件原始内容（非 JSON）。
 
 错误格式：
 ```json
@@ -47,11 +47,9 @@ Exit code：0 成功，1 用户错误，2 未初始化，3 LLM 不可用。
 
 ## 文件读写
 
-**CLI 不提供 read、write 和 edit 命令。** 所有返回的文档路径都是绝对路径，直接使用 Read/Write/Edit 工具操作这些路径：
-
-- 读取文档：对 `doc ls`、`search`、`doc meta`、`doc relation` 等命令返回的绝对路径调用 Read 工具
-- 写入文档：对要创建/覆盖的绝对路径调用 Write 工具
-- 编辑文档：对绝对路径调用 Edit 工具
+- 读取文档：用 `mindstack read <path>` 一步完成，路径可以是相对知识库根目录的相对路径，也可以是 `doc ls`、`search` 等命令返回的绝对路径
+- 写入文档：CLI 不提供 write 命令。`doc ls`、`search` 等命令返回的文档路径都是绝对路径，对要创建/覆盖的绝对路径调用 Write 工具
+- 编辑文档：CLI 不提供 edit 命令。对绝对路径调用 Edit 工具
 
 ## 命令参考
 
@@ -107,6 +105,17 @@ mindstack info
 `documentCount` 统计的是有元数据的文档数，不一定等于文件系统中所有 markdown 文件数。
 
 ### 文档操作
+
+#### `mindstack read <path>`
+
+读取文档内容，原样输出到 stdout（非 JSON，可直接消费或管道处理）。路径可以是相对知识库根目录的相对路径，也可以是知识库内的绝对路径。
+
+```bash
+mindstack read docs/api.md
+mindstack read /path/to/kb/docs/api.md
+```
+
+错误码：`NOT_FOUND`（文件不存在）、`IS_DIRECTORY`（路径是目录）、`INVALID_PATH`（路径越出知识库）、`READ_ERROR`（读取失败）。
 
 #### `mindstack doc ls [path]`
 
@@ -365,8 +374,8 @@ mindstack related docs /path/to/kb/docs/example.md
 ### 浏览和读取
 
 ```bash
-mindstack doc ls                                          # 列出文档结构，获取绝对路径
-# 对返回的路径直接调用 Read 工具读取内容
+mindstack doc ls                                          # 列出文档结构
+mindstack read docs/interesting.md                        # 读取内容（相对路径或绝对路径均可）
 mindstack doc meta /path/to/kb/docs/interesting.md        # 查看元数据（输入绝对路径）
 mindstack doc relation /path/to/kb/docs/interesting.md    # 查看关联（输入绝对路径）
 ```
@@ -377,7 +386,7 @@ mindstack doc relation /path/to/kb/docs/interesting.md    # 查看关联（输�
 mindstack search "api"                                # 标签搜索，返回匹配文档的绝对路径
 mindstack search "api,rest"                           # 多标签 AND 搜索
 mindstack search "keyword" --fulltext                 # 全文搜索
-# 对搜索结果中的路径调用 Read 工具读取内容
+mindstack read /path/to/kb/docs/api/auth.md           # 读取搜索结果内容
 mindstack doc relation /path/to/kb/docs/api/auth.md   # 探索关联文档（输入绝对路径）
 ```
 
@@ -386,7 +395,7 @@ mindstack doc relation /path/to/kb/docs/api/auth.md   # 探索关联文档（输
 ```bash
 mindstack ack "what is the api retry policy"        # 检索片段并合成回答（需要 LLM）
 # 输出包含 summary 与 snippets，每个片段含绝对路径与起止行号
-# 可对 snippets[*].path 调用 Read 工具读取上下文
+# 可用 mindstack read 读取 snippets[*].path 获取完整上下文
 ```
 
 ### 创建和编辑
@@ -405,7 +414,9 @@ mindstack tags       # 查看标签分布
 | 错误码 | 原因 | 处理 |
 |--------|------|------|
 | `NOT_INITIALIZED` (exit 2) | 既未找到 `.mindstack/config.yaml`（知识库）也未找到 `mindstack.yaml`（关联项目） | 提示用户执行 `init` 或 `link` |
-| `NOT_FOUND` | 文件路径不正确 | 用 `ls` 确认文件存在 |
+| `NOT_FOUND` | 文件路径不正确 | 用 `doc ls` 确认文件存在 |
+| `IS_DIRECTORY` | `read` 的路径是目录 | 用 `doc ls` 浏览目录 |
+| `INVALID_PATH` | 路径越出知识库 | 传入知识库内的路径 |
 | `KB_AMBIGUOUS` | 多知识库未指定目标 | 添加 `--kb <name>` |
 | `KB_NOT_FOUND` | `--kb` 名称不存在 | 用 `info` 查看可用知识库列表 |
 | `NAME_CONFLICT` | 知识库名字已被其他本机路径注册 | 给 `init` 或 `link` 加 `--name <别名>` |
@@ -414,7 +425,8 @@ mindstack tags       # 查看标签分布
 
 ## 注意事项
 
-- **路径**：所有命令返回的文档路径均为绝对路径，可直接用于 Read/Write/Edit 工具
+- **路径**：所有命令返回的文档路径均为绝对路径，可直接用于 Write/Edit 工具或 `read` 命令
+- **`read` 路径**：`read` 同时接受相对路径（相对知识库根目录）和知识库内的绝对路径，已知道相对路径时无需先取绝对路径
 - **输入路径**：`doc meta`、`doc relation` 等命令的输入路径为绝对路径（直接传入 `doc ls` / `search` 返回的 `path`）
 - **`--kb` 位置**：必须在子命令之前 `mindstack --kb name doc ls`，不能放在后面
 - **`doc meta` found: false**：exit 0 不是错误，表示文档尚未 build，可执行 `build` 生成

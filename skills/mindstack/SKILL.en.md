@@ -34,7 +34,7 @@ The `build` command requires the LLM service to be available; otherwise it retur
 
 ## Output Format
 
-All commands write JSON to **stdout** and errors to **stderr**.
+All commands write JSON to **stdout** and errors to **stderr**. Exception: `read` prints the raw file content (not JSON).
 
 Error format:
 ```json
@@ -47,11 +47,9 @@ The `build` command emits per-line progress events (JSON) to stderr; the final r
 
 ## File I/O
 
-**The CLI does not provide read, write, or edit commands.** All document paths returned by commands are absolute paths — operate on them directly with the Read/Write/Edit tools:
-
-- Read a document: call the Read tool on the absolute path returned by `doc ls`, `search`, `doc meta`, `doc relation`, etc.
-- Write a document: call the Write tool on the absolute path you want to create or overwrite.
-- Edit a document: call the Edit tool on the absolute path.
+- Read a document: use `mindstack read <path>` in one step. The path may be relative to the knowledge base root or an absolute path returned by `doc ls`, `search`, etc.
+- Write a document: the CLI does not provide a write command. Document paths returned by `doc ls`, `search`, etc. are absolute — call the Write tool on the absolute path you want to create or overwrite.
+- Edit a document: the CLI does not provide an edit command. Call the Edit tool on the absolute path.
 
 ## Command Reference
 
@@ -105,6 +103,17 @@ Success output:
 ```
 
 `documentCount` counts documents that have metadata, which is not necessarily the same as the total number of markdown files on disk.
+
+#### `mindstack read <path>`
+
+Reads a document and prints its raw content to stdout (not JSON — consume or pipe it directly). The path may be relative to the knowledge base root or an absolute path inside the knowledge base.
+
+```bash
+mindstack read docs/api.md
+mindstack read /path/to/kb/docs/api.md
+```
+
+Error codes: `NOT_FOUND` (file does not exist), `IS_DIRECTORY` (path is a directory), `INVALID_PATH` (path escapes the knowledge base), `READ_ERROR` (read failed).
 
 #### `mindstack doc ls [path]`
 
@@ -363,8 +372,8 @@ Error codes: `LLM_UNAVAILABLE` (exit 3), `BUILD_FAILED` (exit 1).
 ### Browse and Read
 
 ```bash
-mindstack doc ls                                        # List structure, get absolute paths
-# Call the Read tool on the returned paths to read content
+mindstack doc ls                                        # List structure
+mindstack read docs/interesting.md                      # Read content (relative or absolute path)
 mindstack doc meta /path/to/kb/docs/interesting.md      # View metadata (absolute path)
 mindstack doc relation /path/to/kb/docs/interesting.md  # View relations (absolute path)
 ```
@@ -375,7 +384,7 @@ mindstack doc relation /path/to/kb/docs/interesting.md  # View relations (absolu
 mindstack search "api"                                  # Tag search, returns absolute paths
 mindstack search "api,rest"                             # Multi-tag AND search
 mindstack search "keyword" --fulltext                   # Full-text search
-# Call the Read tool on result paths to read content
+mindstack read /path/to/kb/docs/api/auth.md             # Read a search result
 mindstack doc relation /path/to/kb/docs/api/auth.md     # Explore related docs (absolute path)
 ```
 
@@ -384,7 +393,7 @@ mindstack doc relation /path/to/kb/docs/api/auth.md     # Explore related docs (
 ```bash
 mindstack ack "what is the api retry policy"        # Retrieve snippets and synthesize an answer (requires LLM)
 # Output contains a `summary` and `snippets`; each snippet has an absolute path and line range
-# Call the Read tool on snippets[*].path for surrounding context
+# Use mindstack read on snippets[*].path for the full context
 ```
 
 ### Create and Edit
@@ -403,7 +412,9 @@ mindstack tags       # Inspect the tag distribution
 | Error code | Cause | Action |
 |------------|-------|--------|
 | `NOT_INITIALIZED` (exit 2) | Neither `.mindstack/config.yaml` (knowledge base) nor `mindstack.yaml` (linked project) found | Tell the user to run `init` or `link` |
-| `NOT_FOUND` | Wrong file path | Use `ls` to verify the file exists |
+| `NOT_FOUND` | Wrong file path | Use `doc ls` to verify the file exists |
+| `IS_DIRECTORY` | `read` target is a directory | Browse it with `doc ls` |
+| `INVALID_PATH` | Path escapes the knowledge base | Pass a path inside the knowledge base |
 | `KB_AMBIGUOUS` | Multiple KBs without a target | Add `--kb <name>` |
 | `KB_NOT_FOUND` | `--kb` name does not exist | Use `info` to see the list of available KBs |
 | `NAME_CONFLICT` | KB name already registered for a different local path | Pass `--name <alias>` to `init` or `link` |
@@ -412,7 +423,8 @@ mindstack tags       # Inspect the tag distribution
 
 ## Notes
 
-- **Paths**: All document paths returned by commands are absolute and can be passed directly to the Read/Write/Edit tools.
+- **Paths**: All document paths returned by commands are absolute and can be passed directly to the Write/Edit tools or the `read` command.
+- **`read` paths**: `read` accepts both relative paths (against the knowledge base root) and absolute paths inside the knowledge base — no need to resolve an absolute path first when you already know the relative one.
 - **Input paths**: `doc meta`, `doc relation`, and similar commands take absolute paths as input (pass through the `path` returned by `doc ls` / `search`).
 - **`--kb` position**: must come *before* the subcommand — `mindstack --kb name doc ls`, not after.
 - **`doc meta` `found: false`**: exit 0 is not an error; it means the document has not been built yet, run `build` to generate metadata.

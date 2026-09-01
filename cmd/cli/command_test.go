@@ -1509,6 +1509,91 @@ func TestCmdPathPermissionDenied(t *testing.T) {
 	}
 }
 
+// --- read command ---
+
+func TestCmdReadRelativePath(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "docs/api.md", "# API\nhello world\n")
+
+	stdout, _, code := runCmd(t, "read", "docs/api.md")
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	if stdout != "# API\nhello world\n" {
+		t.Errorf("got %q", stdout)
+	}
+}
+
+func TestCmdReadAbsolutePath(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, dir, "docs/api.md", "# API\n")
+
+	absPath := filepath.Join(dir, "docs/api.md")
+	stdout, _, code := runCmd(t, "read", absPath)
+	if code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	if stdout != "# API\n" {
+		t.Errorf("got %q", stdout)
+	}
+}
+
+func TestCmdReadNotFound(t *testing.T) {
+	setupTestKB(t)
+
+	_, stderr, code := runCmd(t, "read", "nonexistent.md")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "NOT_FOUND") {
+		t.Errorf("expected NOT_FOUND, got: %s", stderr)
+	}
+}
+
+func TestCmdReadDirectory(t *testing.T) {
+	dir := setupTestKB(t)
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, code := runCmd(t, "read", "docs")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "IS_DIRECTORY") {
+		t.Errorf("expected IS_DIRECTORY, got: %s", stderr)
+	}
+}
+
+func TestCmdReadEscapesWorkspace(t *testing.T) {
+	dir := setupTestKB(t)
+	createTestFile(t, filepath.Dir(dir), "secret.md", "top secret")
+	t.Cleanup(func() { os.Remove(filepath.Join(filepath.Dir(dir), "secret.md")) })
+
+	_, stderr, code := runCmd(t, "read", "../secret.md")
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "INVALID_PATH") {
+		t.Errorf("expected INVALID_PATH, got: %s", stderr)
+	}
+}
+
+func TestCmdReadNotInitialized(t *testing.T) {
+	dir := t.TempDir()
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(oldDir) })
+
+	_, stderr, code := runCmd(t, "read", "test.md")
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got %d", code)
+	}
+	if !bytes.Contains([]byte(stderr), []byte("NOT_INITIALIZED")) {
+		t.Errorf("expected NOT_INITIALIZED, got: %s", stderr)
+	}
+}
+
 func TestCmdPathNotInitialized(t *testing.T) {
 	dir := t.TempDir()
 	oldDir, _ := os.Getwd()

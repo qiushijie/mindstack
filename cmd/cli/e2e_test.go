@@ -688,3 +688,69 @@ func TestE2E_ErrorScenarios(t *testing.T) {
 		}
 	})
 }
+
+// --- Read command ---
+
+func TestE2E_Read(t *testing.T) {
+	kbDir := setupFixtureKB(t)
+
+	expected, err := os.ReadFile(filepath.Join(kbDir, "api/rest.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("relative_path", func(t *testing.T) {
+		stdout, _, code := e2eRun(kbDir, "", "read", "api/rest.md")
+		if code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+		if stdout != string(expected) {
+			t.Errorf("content mismatch:\ngot  %q\nwant %q", stdout, expected)
+		}
+	})
+
+	t.Run("absolute_path", func(t *testing.T) {
+		stdout, _, code := e2eRun(kbDir, "", "read", filepath.Join(kbDir, "api/rest.md"))
+		if code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+		if stdout != string(expected) {
+			t.Errorf("content mismatch:\ngot  %q\nwant %q", stdout, expected)
+		}
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		_, stderr, code := e2eRun(kbDir, "", "read", "missing.md")
+		if code != 1 {
+			t.Fatalf("expected exit 1, got %d", code)
+		}
+		if !strings.Contains(stderr, "NOT_FOUND") {
+			t.Errorf("expected NOT_FOUND, got: %s", stderr)
+		}
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		_, stderr, code := e2eRun(kbDir, "", "read", "api")
+		if code != 1 {
+			t.Fatalf("expected exit 1, got %d", code)
+		}
+		if !strings.Contains(stderr, "IS_DIRECTORY") {
+			t.Errorf("expected IS_DIRECTORY, got: %s", stderr)
+		}
+	})
+
+	t.Run("escapes_workspace", func(t *testing.T) {
+		outside := filepath.Join(filepath.Dir(kbDir), "outside.md")
+		if err := os.WriteFile(outside, []byte("secret"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Remove(outside) })
+		_, stderr, code := e2eRun(kbDir, "", "read", "../outside.md")
+		if code != 1 {
+			t.Fatalf("expected exit 1, got %d", code)
+		}
+		if !strings.Contains(stderr, "INVALID_PATH") {
+			t.Errorf("expected INVALID_PATH, got: %s", stderr)
+		}
+	})
+}
