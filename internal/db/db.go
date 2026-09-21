@@ -14,16 +14,27 @@ import (
 
 var instance *gorm.DB
 
+// dbPathOverrideEnv lets tests and embedded callers redirect the database
+// away from the user's real config directory.
+const dbPathOverrideEnv = "MINDSTACK_DB_PATH"
+
+func resolveDBPath() string {
+	if p := os.Getenv(dbPathOverrideEnv); p != "" {
+		return p
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		dir = "."
+	}
+	return filepath.Join(dir, "mindstack", "chat.db")
+}
+
 func Init() (*gorm.DB, error) {
 	if instance != nil {
 		return instance, nil
 	}
 
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		dir = "."
-	}
-	dbPath := filepath.Join(dir, "mindstack", "chat.db")
+	dbPath := resolveDBPath()
 
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)

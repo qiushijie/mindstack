@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1606,5 +1607,78 @@ func TestCmdPathNotInitialized(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(stderr), []byte("NOT_INITIALIZED")) {
 		t.Errorf("expected NOT_INITIALIZED, got: %s", stderr)
+	}
+}
+
+// --- saveToHistory ---
+
+// captureStderr runs fn with os.Stderr redirected to a pipe and returns what
+// was written.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	fn()
+	w.Close()
+	os.Stderr = old
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	return string(out)
+}
+
+func TestSaveToHistoryRecordsSession(t *testing.T) {
+	dir := t.TempDir()
+	d := setupTestDB(t)
+
+	// setupTestDB intentionally skips migration; openChatStore must migrate.
+	saveToHistory(dir, "search:tag", "hello world", map[string]int{"total": 1})
+
+	store := chat.NewStore(d)
+	sessions, err := store.ListRecentSessions(dir, 10)
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].Kind != "search:tag" {
+		t.Errorf("kind = %q, want search:tag", sessions[0].Kind)
+	}
+}
+
+func TestSaveToHistoryWarnsOnDBFailure(t *testing.T) {
+	db.Reset()
+	t.Cleanup(db.Reset)
+
+	// A database path under an existing regular file cannot be opened.
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MINDSTACK_DB_PATH", filepath.Join(blocker, "chat.db"))
+
+	out := captureStderr(t, func() {
+		saveToHistory(t.TempDir(), "search:tag", "q", map[string]int{"total": 0})
+	})
+	if !strings.Contains(out, "warning: history unavailable") {
+		t.Errorf("expected db failure warning on stderr, got: %q", out)
+	}
+}
+
+func TestSaveToHistoryWarnsOnMarshalFailure(t *testing.T) {
+	setupTestDB(t)
+
+	out := captureStderr(t, func() {
+		// func values are not JSON-marshalable.
+		saveToHistory(t.TempDir(), "search:tag", "q", map[string]func(){"bad": func() {}})
+	})
+	if !strings.Contains(out, "warning: history marshal failed") {
+		t.Errorf("expected marshal failure warning on stderr, got: %q", out)
 	}
 }

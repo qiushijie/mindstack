@@ -49,8 +49,14 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	// Redirect the chat database into a temp file so test subprocesses never
+	// touch the developer's real history database.
+	dbFile := filepath.Join(os.TempDir(), fmt.Sprintf("mindstack-e2e-%d.db", os.Getpid()))
+	os.Setenv("MINDSTACK_DB_PATH", dbFile)
+
 	code := m.Run()
 	os.Remove(e2eBinary)
+	os.Remove(dbFile)
 	os.Exit(code)
 }
 

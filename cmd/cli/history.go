@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 
 	"mindstack/internal/chat"
@@ -12,6 +13,23 @@ import (
 )
 
 var historyLimit int
+
+// openChatStore initializes the database and runs schema migrations. The CLI
+// process is short-lived and may be the only writer for long stretches (the
+// desktop app migrates on startup), so every entry point that touches chat
+// history must migrate first — otherwise writes against a pre-migration
+// database fail on unknown columns.
+func openChatStore() (*chat.Store, error) {
+	d, err := db.Init()
+	if err != nil {
+		return nil, err
+	}
+	store := chat.NewStore(d)
+	if err := store.AutoMigrate(); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
 
 var historyCmd = &cobra.Command{
 	Use:   "history",
@@ -25,11 +43,10 @@ var historyLsCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		kbRoot := requireRoot()
 
-		d, err := db.Init()
+		store, err := openChatStore()
 		if err != nil {
 			writeError(1, "DB_INIT_FAILED", err.Error())
 		}
-		store := chat.NewStore(d)
 
 		sessions, err := store.ListRecentSessions(kbRoot, historyLimit)
 		if err != nil {
@@ -77,11 +94,10 @@ var historyShowCmd = &cobra.Command{
 			writeError(1, "INVALID_ID", "session ID must be a number")
 		}
 
-		d, err := db.Init()
+		store, err := openChatStore()
 		if err != nil {
 			writeError(1, "DB_INIT_FAILED", err.Error())
 		}
-		store := chat.NewStore(d)
 
 		session, err := store.GetSession(uint(sessionID))
 		if err != nil {
@@ -130,11 +146,10 @@ var historyDelCmd = &cobra.Command{
 			writeError(1, "INVALID_ID", "session ID must be a number")
 		}
 
-		d, err := db.Init()
+		store, err := openChatStore()
 		if err != nil {
 			writeError(1, "DB_INIT_FAILED", err.Error())
 		}
-		store := chat.NewStore(d)
 
 		session, err := store.GetSession(uint(sessionID))
 		if err != nil {
@@ -160,20 +175,24 @@ var historyDelCmd = &cobra.Command{
 // kbRoot is the knowledge base path used to associate the session with the KB.
 // Repeated identical queries within a short window are merged into the existing
 // session instead of creating duplicates.
-// Errors are silently ignored to not affect the main command result.
+// Failures are reported on stderr (never stdout, which is JSON-only) and do
+// not affect the main command result.
 func saveToHistory(kbRoot, kind, query string, result interface{}) {
-	d, err := db.Init()
+	store, err := openChatStore()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: history unavailable: %v\n", err)
 		return
 	}
-	store := chat.NewStore(d)
 
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: history marshal failed: %v\n", err)
 		return
 	}
 
-	_ = chat.RecordQuerySession(store, kbRoot, kind, query, string(resultJSON))
+	if err := chat.RecordQuerySession(store, kbRoot, kind, query, string(resultJSON)); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: history record failed: %v\n", err)
+	}
 }
 
 func init() {
