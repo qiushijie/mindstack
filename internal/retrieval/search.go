@@ -58,14 +58,49 @@ func Search(kbRoot string, query Query, opts Options) (*ResultSet, error) {
 	}
 
 	effectiveMode := opts.Mode
+	// triedTerms tracks the term set of the most recent attempt so the
+	// second-stage fallback can skip a re-search that would score the exact
+	// same terms again (e.g. a tag query whose loose terms already equal the
+	// expanded ones).
+	triedTerms := query.Terms
 	if mode == ModeTag && len(results) == 0 && len(query.Tags) > 0 {
 		// Automatic fallback: exact tag matching found nothing; retry as
 		// hybrid so the same words can still hit title/summary/content.
+		// The raw input is re-tokenized on whitespace and commas so a
+		// multi-word "tag" like "application release tombstone" becomes
+		// independent text terms instead of one unmatchable substring.
 		fb := opts
 		fb.Mode = ModeHybrid
 		fb.TagMode = TagModeOR
-		results = scoreAll(kbRoot, metas, cache, query, fb)
+		q2 := query
+		q2.Terms = dedupeTerms(append(append([]string{}, query.Terms...), normalizeLooseTerms(query.Raw)...))
+		triedTerms = q2.Terms
+		results = scoreAll(kbRoot, metas, cache, q2, fb)
 		effectiveMode = ModeHybrid
+	}
+
+	termsExpanded := false
+	if len(results) == 0 {
+		// Second-stage fallback: re-tokenize the raw query (CJK bigrams,
+		// camelCase/snake_case sub-words) and retry with the most permissive
+		// mode reached so far. A long CJK sentence is one unmatchable
+		// substring term, and "exitCode" never substring-matches content
+		// written as "exit code" — both are rescued here.
+		if terms := expandFallbackTerms(query.Raw); len(terms) > 0 && !sameStringSet(terms, triedTerms) {
+			fb := opts
+			if effectiveMode != "" {
+				fb.Mode = effectiveMode
+			}
+			if fb.Mode == "" || fb.Mode == ModeTag {
+				fb.Mode = ModeHybrid
+			}
+			fb.TagMode = TagModeOR
+			q2 := query
+			q2.Tags = nil
+			q2.Terms = terms
+			results = scoreAll(kbRoot, metas, cache, q2, fb)
+			termsExpanded = true
+		}
 	}
 
 	sortResults(results)
@@ -76,11 +111,12 @@ func Search(kbRoot string, query Query, opts Options) (*ResultSet, error) {
 	}
 
 	rs := &ResultSet{
-		Query:    query.Raw,
-		Mode:     opts.Mode,
-		Results:  results,
-		Total:    total,
-		Returned: len(results),
+		Query:         query.Raw,
+		Mode:          opts.Mode,
+		Results:       results,
+		Total:         total,
+		Returned:      len(results),
+		TermsExpanded: termsExpanded,
 	}
 	if effectiveMode != "" && effectiveMode != opts.Mode {
 		rs.EffectiveMode = effectiveMode

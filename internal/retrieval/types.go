@@ -77,6 +77,10 @@ type ResultSet struct {
 	Total         int      `json:"total"`                 // matches before Limit is applied
 	Returned      int      `json:"returned"`              // len(Results) after Limit
 	Suggestions   []string `json:"suggestions,omitempty"` // similar vocabulary tags for missed query tags
+	// TermsExpanded is true when the zero-result fallback re-tokenized the
+	// query (CJK bigrams, camelCase/snake_case sub-words), meaning the
+	// results come from expanded terms rather than the literal query text.
+	TermsExpanded bool `json:"termsExpanded,omitempty"`
 }
 
 // Source names for LineMatch.Source.

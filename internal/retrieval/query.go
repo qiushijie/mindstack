@@ -125,6 +125,128 @@ func stripWhitespace(s string) string {
 	return sb.String()
 }
 
+// expandFallbackTerms re-tokenizes a raw query for the zero-result fallback:
+//   - each CJK run is split into overlapping bigrams (a single-character run
+//     stays a unigram), because CJK text has no word separators and a long
+//     Chinese sentence otherwise becomes one unmatchable substring term;
+//   - latin tokens are kept whole (lowercased), and camelCase / snake_case /
+//     kebab-case tokens additionally contribute their sub-words, so
+//     "exitCode" can still match content written as "exit code".
+//
+// All returned terms are lowercased and deduplicated.
+func expandFallbackTerms(raw string) []string {
+	var terms []string
+	for _, word := range strings.Fields(raw) {
+		if strings.TrimSpace(word) == "" {
+			continue
+		}
+		var cjkRun, latinRun []rune
+		flushCJK := func() {
+			if len(cjkRun) == 1 {
+				terms = append(terms, string(cjkRun))
+			} else {
+				for i := 0; i+1 < len(cjkRun); i++ {
+					terms = append(terms, string(cjkRun[i:i+2]))
+				}
+			}
+			cjkRun = nil
+		}
+		flushLatin := func() {
+			if len(latinRun) == 0 {
+				return
+			}
+			w := string(latinRun) // original case: camel boundaries still visible
+			terms = append(terms, strings.ToLower(w))
+			for _, sub := range splitLatinSubwords(w) {
+				terms = append(terms, strings.ToLower(sub))
+			}
+			latinRun = nil
+		}
+		for _, r := range word {
+			// Fields already split on whitespace, so a word contains only
+			// CJK and non-space latin/punctuation runes.
+			switch {
+			case unicode.Is(unicode.Han, r):
+				flushLatin()
+				cjkRun = append(cjkRun, r)
+			default:
+				flushCJK()
+				latinRun = append(latinRun, r)
+			}
+		}
+		flushCJK()
+		flushLatin()
+	}
+	return dedupeTerms(terms)
+}
+
+// splitLatinSubwords breaks w on '-', '_', '.' and lower→Upper case
+// boundaries, returning the sub-words in their original case. Returns nil
+// when w is already a single plain word.
+func splitLatinSubwords(w string) []string {
+	var subs []string
+	var cur []rune
+	runes := []rune(w)
+	flush := func() {
+		if len(cur) > 0 {
+			subs = append(subs, string(cur))
+		}
+		cur = nil
+	}
+	for i, r := range runes {
+		if r == '-' || r == '_' || r == '.' {
+			flush()
+			continue
+		}
+		if i > 0 && unicode.IsUpper(r) && len(cur) > 0 && unicode.IsLower(cur[len(cur)-1]) {
+			flush()
+		}
+		cur = append(cur, r)
+	}
+	flush()
+	if len(subs) <= 1 {
+		return nil
+	}
+	return subs
+}
+
+func dedupeTerms(terms []string) []string {
+	seen := make(map[string]struct{}, len(terms))
+	out := terms[:0]
+	for _, t := range terms {
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	return out
+}
+
+// sameStringSet reports whether a and b contain the same strings, ignoring
+// order and duplicates.
+func sameStringSet(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return len(a) == len(b)
+	}
+	set := make(map[string]int, len(a))
+	for _, s := range a {
+		set[s]++
+	}
+	for _, s := range b {
+		set[s]--
+		if set[s] < 0 {
+			return false
+		}
+	}
+	for _, n := range set {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // NormalizeTagQuery parses a comma-separated tag query into individual tags.
 func NormalizeTagQuery(raw string) []string {
 	raw = strings.TrimSpace(raw)
@@ -157,6 +279,22 @@ func NormalizeFulltextQuery(raw string) []string {
 		}
 	}
 	return terms
+}
+
+// normalizeLooseTerms splits raw on whitespace and commas, lowercasing each
+// token. Used by zero-result fallbacks where the original query syntax (a
+// single tag, a comma list) must be reinterpreted as free text.
+func normalizeLooseTerms(raw string) []string {
+	var terms []string
+	for _, p := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || unicode.IsSpace(r)
+	}) {
+		p = normalizeTerm(p)
+		if p != "" {
+			terms = append(terms, p)
+		}
+	}
+	return dedupeTerms(terms)
 }
 
 func normalizeTerm(s string) string {

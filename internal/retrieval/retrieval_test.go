@@ -510,3 +510,113 @@ func TestSearch_PhraseAndLengthScoring(t *testing.T) {
 		t.Fatalf("expected c.md (long doc, single-char noise) last, got %s", rs.Results[2].RelPath)
 	}
 }
+
+func TestExpandFallbackTerms(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want []string
+	}{
+		{"", nil},
+		{"hello", []string{"hello"}},
+		{"登录", []string{"登录"}},
+		{"exitCode", []string{"exitcode", "exit", "code"}},
+		{"StopPointersForProject", []string{"stoppointersforproject", "stop", "pointers", "for", "project"}},
+		{"best-practices", []string{"best-practices", "best", "practices"}},
+		{"good_case", []string{"good_case", "good", "case"}},
+		{"workflow", []string{"workflow"}},
+		{"歧义澄清机制", []string{"歧义", "义澄", "澄清", "清机", "机制"}},
+		{"设计页 AI 对话", []string{"设计", "计页", "ai", "对话"}},
+		{"release审核gate", []string{"release", "审核", "gate"}},
+		{"审", []string{"审"}},
+		{"审批 审批", []string{"审批"}},
+	}
+	for _, c := range cases {
+		got := expandFallbackTerms(c.raw)
+		if strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("expandFallbackTerms(%q) = %v, want %v", c.raw, got, c.want)
+		}
+	}
+}
+
+func TestSearch_CJKBigramFallback(t *testing.T) {
+	kbRoot := t.TempDir()
+	os.MkdirAll(filepath.Join(kbRoot, workspace.KnowledgeBaseDir), 0755)
+
+	// The document contains the concepts scattered across the text, never the
+	// literal sentence, so a whole-string match must fail and only bigram
+	// expansion can find it.
+	content := "# 设计评审记录\n\n本文讨论设计页中的对话交互，涉及金额列的展示与歧义处理，需要澄清机制保障。"
+	os.WriteFile(filepath.Join(kbRoot, "design.md"), []byte(content), 0644)
+	meta.SaveMeta(kbRoot, "design.md", &meta.DocumentMeta{
+		Title:   "设计评审记录",
+		Summary: "设计页对话交互的歧义澄清机制讨论。",
+		Tags:    []string{"design"},
+		Status:  "active",
+	})
+
+	raw := "评审纪要中关于金额列歧义澄清的讨论"
+	q, opts := BuildQueryForMode(raw, ModeFulltext, nil)
+	rs, err := Search(kbRoot, q, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs.Results) == 0 {
+		t.Fatal("expected bigram fallback to find the document")
+	}
+	if !rs.TermsExpanded {
+		t.Fatal("expected TermsExpanded to be set")
+	}
+	if rs.Results[0].RelPath != "design.md" {
+		t.Fatalf("unexpected top result: %s", rs.Results[0].RelPath)
+	}
+}
+
+func TestSearch_CJKFallbackNotTriggeredWhenResultsExist(t *testing.T) {
+	kbRoot := t.TempDir()
+	os.MkdirAll(filepath.Join(kbRoot, workspace.KnowledgeBaseDir), 0755)
+
+	os.WriteFile(filepath.Join(kbRoot, "login.md"), []byte("# 登录\n\n登录流程说明。"), 0644)
+	meta.SaveMeta(kbRoot, "login.md", &meta.DocumentMeta{
+		Title:   "登录",
+		Summary: "登录流程说明。",
+		Status:  "active",
+	})
+
+	q, opts := BuildQueryForMode("登录", ModeFulltext, nil)
+	rs, err := Search(kbRoot, q, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs.Results) == 0 {
+		t.Fatal("expected direct hit")
+	}
+	if rs.TermsExpanded {
+		t.Fatal("TermsExpanded must not be set when the primary search finds results")
+	}
+}
+
+func TestSearch_TagFallbackSplitsMultiWordInput(t *testing.T) {
+	kbRoot := t.TempDir()
+	os.MkdirAll(filepath.Join(kbRoot, workspace.KnowledgeBaseDir), 0755)
+
+	os.WriteFile(filepath.Join(kbRoot, "release.md"), []byte("# Release\n\nTombstone cleanup for released applications."), 0644)
+	meta.SaveMeta(kbRoot, "release.md", &meta.DocumentMeta{
+		Title:   "Release",
+		Summary: "Tombstone cleanup for released applications.",
+		Status:  "active",
+	})
+
+	// No such single tag exists; the fallback must split the raw input into
+	// separate text terms ("application", "release", "tombstone").
+	q, opts := BuildQueryForMode("application release tombstone", ModeTag, nil)
+	rs, err := Search(kbRoot, q, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs.Results) == 0 {
+		t.Fatal("expected hybrid fallback with loose terms to find the document")
+	}
+	if rs.EffectiveMode != ModeHybrid {
+		t.Fatalf("expected effectiveMode=hybrid, got %q", rs.EffectiveMode)
+	}
+}
